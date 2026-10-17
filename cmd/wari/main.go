@@ -3,32 +3,95 @@ package main
 
 import (
 	"context"
+	"errors"
 	"flag"
 	"fmt"
 	"os"
 	"os/signal"
+	"sync"
 	"syscall"
 	"time"
 
+	tea "charm.land/bubbletea/v2"
+
 	"github.com/dpa23/wari/internal/agent"
 	"github.com/dpa23/wari/internal/agent/claude"
+	"github.com/dpa23/wari/internal/tui"
 )
 
 // version se fija en el build con -ldflags "-X main.version=...".
 var version = "dev"
 
 func main() {
-	prompt := flag.String("prompt", "", "lanza un turno del agente claude con este prompt y vuelca su salida")
+	prompt := flag.String("prompt", "", "sin TUI: lanza un turno del agente claude con este prompt y vuelca su salida")
 	model := flag.String("model", "", "modelo del agente (vacío: el predeterminado de la CLI)")
-	killAfter := flag.Duration("kill-after", 0, "termina el turno y sus subprocesos después de este tiempo")
+	killAfter := flag.Duration("kill-after", 0, "con -prompt: termina el turno y sus subprocesos después de este tiempo")
+	showVersion := flag.Bool("version", false, "muestra la versión y sale")
 	flag.Parse()
 
-	if *prompt == "" {
-		fmt.Printf("wari %s — en desarrollo (fase 1)\n", version)
-		flag.Usage()
-		return
+	switch {
+	case *showVersion:
+		fmt.Printf("wari %s\n", version)
+	case *prompt != "":
+		os.Exit(runTurn(agent.Task{Prompt: *prompt, Model: *model}, *killAfter))
+	case *killAfter > 0:
+		fmt.Fprintln(os.Stderr, "wari: -kill-after solo se usa junto con -prompt")
+		os.Exit(2)
+	default:
+		os.Exit(runTUI(agent.Task{Model: *model}))
 	}
-	os.Exit(runTurn(agent.Task{Prompt: *prompt, Model: *model}, *killAfter))
+}
+
+// runTUI abre el panel de chat. Al salir, por la vía que sea (atajo, señal o
+// pánico en el bucle de eventos), no debe quedar ningún agente vivo.
+func runTUI(task agent.Task) int {
+	var reg registry
+	defer reg.killAll()
+
+	p := tea.NewProgram(tui.New(tui.Config{NewAgent: reg.newClaude, Task: task}))
+
+	// Bubble Tea atrapa SIGINT y SIGTERM, pero no SIGHUP: al cerrarse la
+	// terminal, wari moriría sin matar a los agentes, que viven en sus propios
+	// grupos de procesos y no reciben el SIGHUP de la terminal.
+	hup := make(chan os.Signal, 1)
+	signal.Notify(hup, syscall.SIGHUP)
+	defer signal.Stop(hup)
+	go func() {
+		<-hup
+		p.Kill()
+	}()
+
+	if _, err := p.Run(); err != nil && !errors.Is(err, tea.ErrProgramKilled) {
+		fmt.Fprintln(os.Stderr, "wari:", err)
+		return 1
+	}
+	return 0
+}
+
+// registry recuerda todos los agentes creados para matarlos al salir. No
+// depende del modelo final de Program.Run, que es nil si hubo un pánico.
+type registry struct {
+	mu     sync.Mutex
+	agents []agent.Agent
+}
+
+func (r *registry) newClaude() agent.Agent {
+	a := claude.New("")
+	r.mu.Lock()
+	r.agents = append(r.agents, a)
+	r.mu.Unlock()
+	return a
+}
+
+// killAll mata a todos los agentes; Kill sobre uno ya terminado vuelve en el
+// acto.
+func (r *registry) killAll() {
+	r.mu.Lock()
+	agents := r.agents
+	r.mu.Unlock()
+	for _, a := range agents {
+		a.Kill()
+	}
 }
 
 // runTurn ejecuta un turno: la respuesta va a stdout y el resto de los
