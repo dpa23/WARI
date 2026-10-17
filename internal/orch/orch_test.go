@@ -25,6 +25,13 @@ type fake struct {
 	closes   int
 	startErr error
 	closed   bool
+
+	// ops registra, en orden, start, start-end, cancel y close. gate (si no es
+	// nil) retiene a Start hasta que se cierre; entered avisa de que Start
+	// empezó.
+	ops     []string
+	gate    chan struct{}
+	entered chan struct{}
 }
 
 var _ agent.Agent = (*fake)(nil)
@@ -33,12 +40,34 @@ func newFake() *fake { return &fake{events: make(chan agent.Event, 64)} }
 
 func (f *fake) Start(_ context.Context, t agent.Task) error {
 	f.mu.Lock()
-	defer f.mu.Unlock()
 	if f.startErr != nil {
+		defer f.mu.Unlock()
 		return f.startErr
 	}
 	f.starts = append(f.starts, t)
+	f.ops = append(f.ops, "start")
+	gate, entered := f.gate, f.entered
+	f.mu.Unlock()
+	if entered != nil {
+		entered <- struct{}{}
+	}
+	if gate != nil {
+		<-gate
+	}
+	f.log("start-end")
 	return nil
+}
+
+func (f *fake) log(op string) {
+	f.mu.Lock()
+	f.ops = append(f.ops, op)
+	f.mu.Unlock()
+}
+
+func (f *fake) opsCopy() []string {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	return append([]string(nil), f.ops...)
 }
 
 func (f *fake) Send(msg string) error {
@@ -52,12 +81,13 @@ func (f *fake) Events() <-chan agent.Event { return f.events }
 
 func (f *fake) Pause() error  { f.count(&f.pauses); return nil }
 func (f *fake) Resume() error { f.count(&f.resumes); return nil }
-func (f *fake) Cancel() error { f.count(&f.cancels); return nil }
+func (f *fake) Cancel() error { f.log("cancel"); f.count(&f.cancels); return nil }
 
 func (f *fake) Close() error {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	f.closes++
+	f.ops = append(f.ops, "close")
 	if !f.closed {
 		f.closed = true
 		close(f.events)

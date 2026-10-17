@@ -37,6 +37,13 @@ var (
 )
 
 // Budget limita a un agente. El valor cero de un campo significa sin límite.
+//
+// Semántica del límite. A mitad de un turno, el agente se corta solo al
+// superar el límite (estrictamente más): llegar justo a MaxTokens o a
+// MaxDuration no interrumpe el turno en curso. Pero con el límite ya
+// alcanzado (tokens >= MaxTokens, tiempo >= MaxDuration o turnos >= MaxTurns),
+// el siguiente Send se rechaza con ErrBudget y el agente queda
+// BudgetExceeded.
 type Budget struct {
 	// MaxTurns es el máximo de turnos (cada Start o Send cuenta uno).
 	MaxTurns int
@@ -143,6 +150,11 @@ type entry struct {
 	runSince time.Time     // inicio del tramo actual; cero si no corre
 	timer    *time.Timer
 	timerSeq int
+
+	// launching está abierto mientras un turno reservado todavía no terminó
+	// su llamada a Start/Send; cancelAndRelease lo espera para que Cancel vea
+	// el turno ya lanzado.
+	launching chan struct{}
 }
 
 // launch es un turno ya reservado (con cupo y contadores) pendiente de
@@ -153,6 +165,7 @@ type launch struct {
 	send bool
 	msg  string
 	task agent.Task
+	done chan struct{} // se cierra al terminar run
 }
 
 // Supervisor controla a un conjunto de agentes.
@@ -161,9 +174,16 @@ type Supervisor struct {
 	now       func() time.Time
 	ctx       context.Context
 	cancelCtx context.CancelFunc
-	quit      chan struct{}
-	wg        sync.WaitGroup
-	closeDone chan struct{}
+	// agentsClosed se cierra cuando Close ya cerró a todos los agentes; hasta
+	// entonces, los lectores siguen drenando (sin reenviar) para que ningún
+	// agente quede bloqueado al emitir.
+	agentsClosed chan struct{}
+	wg           sync.WaitGroup
+	closeDone    chan struct{}
+
+	// hookBeforeLaunch es un gancho de pruebas: se llama justo antes de
+	// lanzar un turno reservado, fuera del mutex.
+	hookBeforeLaunch func(launch)
 
 	mu      sync.Mutex
 	entries []*entry // en orden de ID
@@ -182,13 +202,13 @@ func New(maxActive int) *Supervisor {
 	}
 	ctx, cancel := context.WithCancel(context.Background())
 	return &Supervisor{
-		maxActive: maxActive,
-		now:       time.Now,
-		ctx:       ctx,
-		cancelCtx: cancel,
-		quit:      make(chan struct{}),
-		closeDone: make(chan struct{}),
-		updates:   make(chan Update, updateBuffer),
+		maxActive:    maxActive,
+		now:          time.Now,
+		ctx:          ctx,
+		cancelCtx:    cancel,
+		agentsClosed: make(chan struct{}),
+		closeDone:    make(chan struct{}),
+		updates:      make(chan Update, updateBuffer),
 	}
 }
 
@@ -264,8 +284,7 @@ func (s *Supervisor) Send(id ID, msg string) error {
 		s.mu.Unlock()
 		return fmt.Errorf("%w: el agente %d está %s", ErrState, id, st)
 	}
-	if b := e.budget; b.MaxTurns > 0 && e.turns >= b.MaxTurns {
-		reason := fmt.Sprintf("presupuesto de turnos superado: %d/%d", e.turns+1, b.MaxTurns)
+	if reason := s.exhaustedLocked(e); reason != "" {
 		s.setStateLocked(e, BudgetExceeded, reason)
 		s.mu.Unlock()
 		return fmt.Errorf("%w: %s", ErrBudget, reason)
@@ -280,6 +299,22 @@ func (s *Supervisor) Send(id ID, msg string) error {
 	l := s.reserveLocked(e)
 	s.mu.Unlock()
 	return s.run(l)
+}
+
+// exhaustedLocked devuelve por qué el agente ya no puede empezar otro turno
+// ("" si puede): ya alcanzó (>=) alguno de sus límites.
+func (s *Supervisor) exhaustedLocked(e *entry) string {
+	b := e.budget
+	switch {
+	case b.MaxTokens > 0 && e.tokens >= b.MaxTokens:
+		return fmt.Sprintf("presupuesto de tokens agotado: %d/%d", e.tokens, b.MaxTokens)
+	case b.MaxDuration > 0 && s.elapsedLocked(e) >= b.MaxDuration:
+		return fmt.Sprintf("presupuesto de tiempo agotado: %s/%s",
+			s.elapsedLocked(e).Round(time.Millisecond), b.MaxDuration)
+	case b.MaxTurns > 0 && e.turns >= b.MaxTurns:
+		return fmt.Sprintf("presupuesto de turnos superado: %d/%d", e.turns+1, b.MaxTurns)
+	}
+	return ""
 }
 
 // Pause congela el turno en curso del agente. Sigue ocupando su cupo.
@@ -385,7 +420,6 @@ func (s *Supervisor) Close() {
 		return
 	}
 	s.closing = true
-	close(s.quit)
 	s.queue = nil
 	agents := make([]agent.Agent, 0, len(s.entries))
 	for _, e := range s.entries {
@@ -408,6 +442,7 @@ func (s *Supervisor) Close() {
 		}()
 	}
 	wg.Wait()
+	close(s.agentsClosed)
 	s.wg.Wait()
 
 	s.mu.Lock()
@@ -535,7 +570,9 @@ func (s *Supervisor) stopClockLocked(e *entry) {
 // reserveLocked toma el cupo para el siguiente turno del agente y deja el
 // lanzamiento pendiente para hacerlo con el mutex suelto.
 func (s *Supervisor) reserveLocked(e *entry) launch {
-	l := launch{e: e, send: e.pendSend, msg: e.pendMsg, task: e.task}
+	l := launch{e: e, send: e.pendSend, msg: e.pendMsg, task: e.task, done: make(chan struct{})}
+	e.launching = l.done
+	s.wg.Add(1) // lo cierra run; Close espera a los lanzamientos reservados
 	e.pendSend, e.pendMsg = false, ""
 	e.holding = true
 	e.turns++
@@ -579,23 +616,52 @@ func (s *Supervisor) dispatch(ls []launch) {
 	}
 }
 
-// run lanza un turno reservado en el agente. Si el agente lo rechaza, el
-// agente queda Failed y se libera su cupo.
+// errAborted indica que el turno reservado se detuvo antes de lanzarse.
+var errAborted = fmt.Errorf("%w: el turno se detuvo antes de arrancar", ErrState)
+
+// run lanza un turno reservado en el agente. Antes de llamarlo comprueba, bajo
+// el mutex, que el turno sigue vigente (no se cerró el supervisor ni se
+// detuvo mientras tanto); si no, no lo lanza. Si el agente lo rechaza, queda
+// Failed y se libera su cupo. Mientras dura la llamada, cancelAndRelease espera
+// (e.launching), así que un Stop concurrente cancela el turno ya lanzado en
+// lugar de liberar el cupo antes de que exista.
 func (s *Supervisor) run(l launch) error {
-	var err error
-	if l.send {
-		err = l.e.a.Send(l.msg)
-	} else {
-		err = l.e.a.Start(s.ctx, l.task)
+	defer s.wg.Done()
+	if s.hookBeforeLaunch != nil {
+		s.hookBeforeLaunch(l)
 	}
-	if err == nil {
-		return nil
-	}
+	e := l.e
 	s.mu.Lock()
-	defer s.mu.Unlock()
-	if e := l.e; e.turnSeq == l.seq && (e.state == Running || e.state == Paused) {
+	ok := !s.closing && e.turnSeq == l.seq && (e.state == Running || e.state == Paused)
+	s.mu.Unlock()
+
+	var err error
+	if ok {
+		if l.send {
+			err = e.a.Send(l.msg)
+		} else {
+			err = e.a.Start(s.ctx, l.task)
+		}
+	}
+
+	s.mu.Lock()
+	close(l.done)
+	if e.launching == l.done {
+		e.launching = nil
+	}
+	closing := s.closing
+	if ok && err != nil && e.turnSeq == l.seq && (e.state == Running || e.state == Paused) {
 		s.failLocked(e, err.Error())
 		s.afterReleaseLocked()
+	}
+	s.mu.Unlock()
+
+	switch {
+	case !ok:
+		return errAborted
+	case err == nil && closing:
+		// Close pudo llamar al agente antes de que este lanzara el turno.
+		_ = e.a.Close()
 	}
 	return err
 }
@@ -643,6 +709,12 @@ func (s *Supervisor) stopLocked(e *entry) bool {
 // estado ya lo fijó quien lo llama. Con async, el arranque del siguiente va a
 // otra goroutine (para llamadas desde el lector de eventos).
 func (s *Supervisor) cancelAndRelease(e *entry, async bool) {
+	s.mu.Lock()
+	launching := e.launching
+	s.mu.Unlock()
+	if launching != nil {
+		<-launching // que Start/Send termine: Cancel debe ver el turno
+	}
 	err := e.a.Cancel()
 	s.mu.Lock()
 	e.holding = false
@@ -696,8 +768,9 @@ func (s *Supervisor) onTimer(e *entry, seq int) {
 	}
 }
 
-// read reenvía los eventos de un agente hasta que cierra su canal o se cierra
-// el supervisor.
+// read reenvía los eventos de un agente hasta que cierra su canal. Cuando el
+// supervisor se cierra deja de reenviar pero sigue leyendo (handle los
+// descarta) hasta que el agente cierre su canal o Close haya cerrado a todos.
 func (s *Supervisor) read(e *entry) {
 	defer s.wg.Done()
 	events := e.a.Events()
@@ -709,7 +782,7 @@ func (s *Supervisor) read(e *entry) {
 				return
 			}
 			s.handle(e, ev)
-		case <-s.quit:
+		case <-s.agentsClosed:
 			return
 		}
 	}
