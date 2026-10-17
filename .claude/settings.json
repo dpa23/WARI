@@ -1,0 +1,23 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(go build:*)",
+      "Bash(go vet:*)",
+      "Bash(go test:*)",
+      "Bash(gofmt -l:*)",
+      "Bash(staticcheck:*)",
+      "Bash(scripts/check.sh)",
+      "Bash(scripts/orphans.sh:*)",
+      "Bash(git status:*)",
+      "Bash(git diff:*)",
+      "Bash(git log:*)",
+      "Bash(herdr agent list:*)",
+      "Bash(herdr agent get:*)",
+      "Bash(herdr agent read:*)",
+      "Bash(herdr pane list:*)",
+      "Bash(herdr pane get:*)",
+      "Bash(herdr pane layout:*)",
+      "Bash(herdr pane read:*)"
+    ]
+  }
+}
