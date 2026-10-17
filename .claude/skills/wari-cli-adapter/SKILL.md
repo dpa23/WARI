@@ -30,5 +30,5 @@ Un adaptador traduce la salida en streaming de una CLI oficial a los eventos nor
 - Todo el código vive en `internal/agent/<cli>/`. Si necesitas tocar `orch`, `tui` u otro adaptador, la abstracción está mal: detente y propón el cambio de contrato al líder.
 
 ## Notas por CLI
-- **claude:** confirma con `--help` los flags de modo print, formato `stream-json` y reanudación antes de usarlos.
+- **claude (2.1.302):** `-p --output-format stream-json --verbose --include-partial-messages`, `--resume <id>`, `--permission-mode manual|acceptEdits|plan` con `--permission-prompts none`, y el prompt después de `--`. Stdin en `/dev/null` (si no, espera 3 s). `is_error` manda sobre `subtype`. Las denegaciones llegan en `result.permission_denials`. Fixtures: `scripts/record-claude-fixtures.sh`.
 - **agy (≥ 1.4.0):** el prompt va pegado al flag (`-p="..."`). `--output-format stream-json` emite `init` (`conversation_id`, `model`, `tools`), `step_update` (`step_index`, `state`, `step_type`, `text_delta`, `usage`) y `result` (`status`, `response`, `num_turns`, `usage`). Reanuda con `--conversation <id>`. En modo print los permisos se auto-deniegan y la corrida termina sin salida: hacen falta reglas `permissions.allow`. `--mode plan` se ignora junto con `--disable-slash-commands`.
