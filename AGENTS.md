@@ -7,7 +7,7 @@ Editor de código TUI en Go con agentes múltiples (las CLIs oficiales `claude` 
 2. **Pequeño y verificable.** Un cambio lógico por commit. Antes de entregar: `scripts/check.sh` en verde.
 3. **Tests primero en lo difícil:** buffer, undo/redo, snippets, parsers de eventos de CLIs, supervisor de procesos.
 4. **No inventes flags ni formatos de las CLIs.** Ejecuta `<cli> --help` y graba salidas reales en `testdata/<cli>/*.jsonl` (sanitizadas con `scripts/sanitize-fixture.sh`). Declara la versión mínima en el adaptador.
-5. **Dependencias mínimas:** bubbletea, bubbles, lipgloss, chroma, fsnotify, creack/pty. Cualquier otra requiere aprobación y una entrada en `docs/decisions.md`.
+5. **Dependencias mínimas:** bubbletea, bubbles, lipgloss, chroma, fsnotify, creack/pty. Cualquier otra requiere aprobación y una entrada en `docs/decisions.md`. Los tests usan solo el paquete `testing` de la biblioteca estándar: testify, goleak u otras requieren aprobación aunque un skill las sugiera.
 6. **Decisión abierta → detente y pregunta** (PLAN §10) con opciones concretas.
 7. **Procesos:** todo hijo en su propio grupo, terminable con sus descendientes (`internal/proc`). Nada se da por terminado si `scripts/orphans.sh` muestra huérfanos.
 8. **Nada destructivo sin confirmar:** no borres archivos del autor, no reescribas el historial de git, nada contra bases de datos reales. Push solo a pedido del autor.

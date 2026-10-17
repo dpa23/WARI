@@ -33,6 +33,11 @@ Formato: fecha · decisión · motivo · alternativas descartadas.
 - **Motivo:** staticcheck es un binario instalado con `go install`, no entra a `go.mod` y es ligero en máquinas de 2 núcleos.
 - **Descartado:** golangci-lint (más pesado y con más configuración, poco valor extra para este stack).
 
+## 2026-10-17 · Skills y plugins externos (entorno del autor, no del repo)
+- **Decisión:** a nivel usuario, skills `samber/cc-skills-golang` (golang-testing, golang-concurrency, golang-error-handling, golang-safety) y `mattpocock/skills@tdd`; plugin oficial `gopls-lsp` con gopls v0.23.0 (la v0.24 exige Go 1.27; Fedora trae 1.26 con `GOTOOLCHAIN=local`). Se revisó su contenido antes de usarlos: solo markdown y evals.
+- **Regla:** las sugerencias de los skills no anulan la regla de dependencias mínimas; testify y goleak no se usan sin aprobación.
+- **Descartado:** skills de bubbletea/TUI (poca reputación: menos de 1.2K instalaciones, repos con 37 estrellas o menos); plugins LSP de Java, Kotlin y C# (no ayudan a construir WARI). `github/awesome-copilot@java-springboot` se reevalúa en las fases 9–10.
+
 ## 2026-10-17 · CI
 - **Decisión:** GitHub Actions: `go test -race`, `go vet` y `staticcheck` en ubuntu y macos; `go build` y `go vet` para Windows.
 - **Motivo:** el autor no tiene Mac, y el stub de Windows debe seguir compilando.
