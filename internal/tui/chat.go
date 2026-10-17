@@ -15,6 +15,7 @@ import (
 	"charm.land/lipgloss/v2"
 
 	"github.com/dpa23/wari/internal/agent"
+	"github.com/dpa23/wari/internal/config"
 )
 
 // inputLines es la altura de la entrada; statusLines, la de la línea de estado.
@@ -33,6 +34,8 @@ type Config struct {
 	// Task es la plantilla de los turnos (Dir, Model, Permissions); el panel
 	// rellena Prompt y SessionID.
 	Task agent.Task
+	// Keymap son los atajos de la configuración; nil usa los predeterminados.
+	Keymap config.Keymap
 }
 
 // Mensajes internos. Todos los que vienen de un agente llevan la generación
@@ -86,6 +89,9 @@ type Model struct {
 	gen    int
 	dying  agent.Agent
 
+	// blurred indica que el panel está embebido sin foco: sin cursor real.
+	blurred bool
+
 	busy       bool
 	cancelling bool
 	// refreshes cuenta los volcados del historial al viewport.
@@ -104,7 +110,7 @@ var _ tea.Model = Model{}
 
 // New crea el modelo del panel.
 func New(cfg Config) Model {
-	km := DefaultKeyMap()
+	km := NewKeyMap(cfg.Keymap)
 
 	ta := textarea.New()
 	ta.ShowLineNumbers = false
@@ -511,8 +517,19 @@ func (m Model) statusLine() string {
 	return m.styles.status.MaxWidth(max(m.width, 1)).Render(line)
 }
 
-// View implementa tea.Model.
+// View implementa tea.Model. Es la vista autónoma (con AltScreen); un layout
+// que embeba el panel usa Body y Cursor en su lugar.
 func (m Model) View() tea.View {
+	v := tea.NewView(m.Body())
+	v.AltScreen = true
+	v.WindowTitle = "WARI"
+	v.Cursor = m.Cursor()
+	return v
+}
+
+// Body devuelve el contenido del panel sin AltScreen ni título, para
+// componerlo dentro de un layout.
+func (m Model) Body() string {
 	var rows []string
 	if m.histH > 0 {
 		rows = append(rows, m.vp.View())
@@ -521,12 +538,46 @@ func (m Model) View() tea.View {
 		rows = append(rows, m.statusLine())
 	}
 	rows = append(rows, m.input.View())
-	v := tea.NewView(lipgloss.JoinVertical(lipgloss.Left, rows...))
-	v.AltScreen = true
-	v.WindowTitle = "WARI"
-	if c := m.input.Cursor(); c != nil {
-		c.Position.Y += m.histH + m.statH
-		v.Cursor = c
-	}
-	return v
+	return lipgloss.JoinVertical(lipgloss.Left, rows...)
 }
+
+// Cursor devuelve la posición del cursor relativa a la esquina superior
+// izquierda del panel, o nil si no tiene foco.
+func (m Model) Cursor() *tea.Cursor {
+	if m.blurred {
+		return nil
+	}
+	c := m.input.Cursor()
+	if c == nil {
+		return nil
+	}
+	c.Position.Y += m.histH + m.statH
+	return c
+}
+
+// SetSize fija el tamaño del panel cuando está embebido.
+func (m *Model) SetSize(w, h int) { m.layout(w, h) }
+
+// Focus da el foco a la entrada; Blur se lo quita y oculta el cursor.
+func (m *Model) Focus() {
+	m.blurred = false
+	m.input.Focus()
+}
+
+// Blur quita el foco del panel.
+func (m *Model) Blur() {
+	m.blurred = true
+	m.input.Blur()
+}
+
+// Focused indica si el panel tiene el foco.
+func (m Model) Focused() bool { return !m.blurred }
+
+// Handle es Update con el tipo concreto del modelo, para embeberlo.
+func (m Model) Handle(msg tea.Msg) (Model, tea.Cmd) { return m.update(msg) }
+
+// NewSession descarta la sesión actual, igual que su atajo.
+func (m Model) NewSession() (Model, tea.Cmd) { return m.newSession() }
+
+// Quit mata a los agentes y sale, igual que el atajo de salida.
+func (m Model) Quit() (Model, tea.Cmd) { return m.quit() }

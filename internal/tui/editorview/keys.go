@@ -1,6 +1,10 @@
 package editorview
 
-import "charm.land/bubbles/v2/key"
+import (
+	"charm.land/bubbles/v2/key"
+
+	"github.com/dpa23/wari/internal/config"
+)
 
 // KeyMap reúne los atajos del editor. Update solo consulta estos bindings
 // (salvo el texto imprimible y el pegado). Cada movimiento tiene una variante
@@ -78,4 +82,23 @@ func DefaultKeyMap() KeyMap {
 		Undo: key.NewBinding(key.WithKeys("ctrl+z"), key.WithHelp("ctrl+z", "deshacer")),
 		Redo: key.NewBinding(key.WithKeys("ctrl+y"), key.WithHelp("ctrl+y", "rehacer")),
 	}
+}
+
+// KeyMapFrom parte de DefaultKeyMap y reemplaza Save, Undo, Redo, PageUp y
+// PageDown con las teclas de las acciones save, undo, redo, page_up y
+// page_down de km. Las acciones ausentes conservan el valor predeterminado.
+// El resto (movimiento, edición) es propio del componente.
+func KeyMapFrom(km config.Keymap) KeyMap {
+	k := DefaultKeyMap()
+	over := func(dst *key.Binding, action, desc string) {
+		if keys := km[action]; len(keys) > 0 {
+			*dst = key.NewBinding(key.WithKeys(keys...), key.WithHelp(keys[0], desc))
+		}
+	}
+	over(&k.Save, "save", "guardar")
+	over(&k.Undo, "undo", "deshacer")
+	over(&k.Redo, "redo", "rehacer")
+	over(&k.PageUp, "page_up", "subir")
+	over(&k.PageDown, "page_down", "bajar")
+	return k
 }

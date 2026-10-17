@@ -256,6 +256,13 @@ func (m *Model) page(dir int, sel bool) {
 	}
 }
 
+// Save guarda el buffer en disco aunque el editor no tenga el foco y devuelve
+// un Cmd que emite el resultado como SavedMsg.
+func (m *Model) Save() tea.Cmd { return m.save() }
+
+// Keys devuelve los atajos del editor.
+func (m Model) Keys() KeyMap { return m.keys }
+
 // save guarda el buffer en disco y devuelve el resultado como SavedMsg.
 func (m *Model) save() tea.Cmd {
 	fi := m.fi

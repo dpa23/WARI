@@ -1,9 +1,13 @@
 package tui
 
-import "charm.land/bubbles/v2/key"
+import (
+	"charm.land/bubbles/v2/key"
 
-// KeyMap reúne los atajos del panel de chat. En la fase 4 se cargarán desde
-// la configuración; Update solo consulta estos bindings, nunca teclas sueltas.
+	"github.com/dpa23/wari/internal/config"
+)
+
+// KeyMap reúne los atajos del panel de chat. Se cargan desde la
+// configuración (NewKeyMap); Update solo consulta estos bindings, nunca teclas sueltas.
 type KeyMap struct {
 	// Send envía el mensaje de la entrada.
 	Send key.Binding
@@ -20,16 +24,31 @@ type KeyMap struct {
 	PageDown key.Binding
 }
 
-// DefaultKeyMap devuelve los atajos predeterminados.
-func DefaultKeyMap() KeyMap {
+// DefaultKeyMap devuelve los atajos predeterminados (los de config.Default).
+func DefaultKeyMap() KeyMap { return NewKeyMap(config.Default()) }
+
+// NewKeyMap construye los atajos del panel a partir del mapa de la
+// configuración. Una acción ausente o sin teclas deja el binding sin teclas
+// (deshabilitado), salvo que km sea nil: entonces se usan los predeterminados.
+func NewKeyMap(km config.Keymap) KeyMap {
+	if km == nil {
+		km = config.Default()
+	}
+	b := func(action, desc string) key.Binding {
+		keys := km[action]
+		if len(keys) == 0 {
+			return key.NewBinding(key.WithDisabled())
+		}
+		return key.NewBinding(key.WithKeys(keys...), key.WithHelp(keys[0], desc))
+	}
 	return KeyMap{
-		Send:       key.NewBinding(key.WithKeys("enter"), key.WithHelp("enter", "enviar")),
-		Newline:    key.NewBinding(key.WithKeys("alt+enter", "ctrl+j"), key.WithHelp("alt+enter", "nueva línea")),
-		Cancel:     key.NewBinding(key.WithKeys("esc"), key.WithHelp("esc", "cancelar")),
-		NewSession: key.NewBinding(key.WithKeys("ctrl+n"), key.WithHelp("ctrl+n", "sesión nueva")),
-		Quit:       key.NewBinding(key.WithKeys("ctrl+c"), key.WithHelp("ctrl+c", "salir")),
-		PageUp:     key.NewBinding(key.WithKeys("pgup"), key.WithHelp("pgup", "subir")),
-		PageDown:   key.NewBinding(key.WithKeys("pgdown"), key.WithHelp("pgdown", "bajar")),
+		Send:       b("send", "enviar"),
+		Newline:    b("newline", "nueva línea"),
+		Cancel:     b("cancel", "cancelar"),
+		NewSession: b("new_session", "sesión nueva"),
+		Quit:       b("quit", "salir"),
+		PageUp:     b("page_up", "subir"),
+		PageDown:   b("page_down", "bajar"),
 	}
 }
 
