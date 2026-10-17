@@ -1,0 +1,42 @@
+# Go
+/bin/
+/dist/
+/wari
+*.exe
+*.test
+*.out
+*.prof
+coverage.*
+go.work
+go.work.sum
+
+# Estado de WARI en ejecución (dogfooding sobre este repo)
+.wari/checkpoints/
+.wari/sessions/
+.wari/logs/
+.wari/cache/
+
+# Agentes: solo lo local; se versionan .claude/settings.json, .claude/skills/, AGENTS.md y CLAUDE.md
+.claude/settings.local.json
+CLAUDE.local.md
+.agy/
+
+# Artefactos de proyectos de prueba (tier 1 y 3)
+testdata/**/target/
+testdata/**/build/
+testdata/**/bin/
+testdata/**/obj/
+testdata/**/.gradle/
+
+# Secretos y entorno
+.env
+.env.*
+*.pem
+*.key
+
+# Editores y SO
+.idea/
+.vscode/
+*.swp
+*~
+.DS_Store
