@@ -192,6 +192,10 @@ func New(maxActive int) *Supervisor {
 	}
 }
 
+// MaxActive devuelve cuántos agentes pueden estar activos (Running o Paused) a
+// la vez.
+func (s *Supervisor) MaxActive() int { return s.maxActive }
+
 // Updates reenvía los eventos de cada agente y sus cambios de estado, en orden
 // por agente. Se cierra con Close.
 //

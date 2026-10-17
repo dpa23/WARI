@@ -1,16 +1,20 @@
 package layout
 
 import (
+	"context"
 	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 	"testing"
 
 	tea "charm.land/bubbletea/v2"
 	"charm.land/lipgloss/v2"
 
+	"github.com/dpa23/wari/internal/agent"
 	"github.com/dpa23/wari/internal/config"
+	"github.com/dpa23/wari/internal/orch"
 	"github.com/dpa23/wari/internal/tui"
 	"github.com/dpa23/wari/internal/tui/filetree"
 )
@@ -781,5 +785,69 @@ func TestDisplayRelativeToRoot(t *testing.T) {
 		if got := m.display(in); got != want {
 			t.Errorf("display(%q) = %q, quería %q", in, got, want)
 		}
+	}
+}
+
+// qfake es un agente mínimo para probar la parada global desde el layout.
+type qfake struct {
+	mu      sync.Mutex
+	ch      chan agent.Event
+	cancels int
+}
+
+func (f *qfake) Start(context.Context, agent.Task) error { return nil }
+func (f *qfake) Send(string) error                       { return nil }
+func (f *qfake) Events() <-chan agent.Event              { return f.ch }
+func (f *qfake) Pause() error                            { return nil }
+func (f *qfake) Resume() error                           { return nil }
+func (f *qfake) Close() error                            { return nil }
+func (f *qfake) Status() agent.Status                    { return agent.StatusIdle }
+func (f *qfake) Cancel() error {
+	f.mu.Lock()
+	f.cancels++
+	f.mu.Unlock()
+	return nil
+}
+func (f *qfake) count() int {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	return f.cancels
+}
+
+func TestStatusBarShowsAgentsAndGlobalStop(t *testing.T) {
+	// Sin supervisor: contadores en cero y el atajo de parada siempre visible,
+	// incluso con poco ancho.
+	for _, w := range []int{120, 60, 48} {
+		m := newLayout(t, Config{}, w, 24)
+		bar := lines(m)[len(lines(m))-1]
+		if want := "activos 0/2 · en cola 0 · ctrl+k parar todo"; !strings.Contains(plain(bar), want) {
+			t.Errorf("ancho %d: la barra no contiene %q: %q", w, want, plain(bar))
+		}
+	}
+	// Con un supervisor de 3 y un agente corriendo.
+	sup := orch.New(3)
+	defer sup.Close()
+	f := &qfake{ch: make(chan agent.Event, 4)}
+	sup.Submit("a", f, agent.Task{Prompt: "x"}, orch.Budget{})
+	m := New(Config{Root: project(t), Chat: tui.Config{Supervisor: sup}})
+	m, _ = m.update(tea.WindowSizeMsg{Width: 120, Height: 24})
+	if !strings.Contains(screen(m), "activos 0/3 · en cola 0") {
+		t.Errorf("el límite del supervisor no se muestra:\n%s", screen(m))
+	}
+
+	// ctrl+k es global: vale con el foco en el árbol y cancela a todos.
+	if m.focus != focusTree {
+		t.Fatalf("foco = %v", m.focus)
+	}
+	m, cmd := send(m, press('k', tea.ModCtrl))
+	if cmd == nil {
+		t.Fatal("stop_all debe devolver un Cmd")
+	}
+	cmd()
+	if f.count() != 1 {
+		t.Fatalf("cancels = %d", f.count())
+	}
+	if !strings.Contains(screen(m), "parando todos los agentes") {
+		t.Error("falta el aviso de la parada global")
 	}
 }

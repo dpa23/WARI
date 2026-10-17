@@ -4,7 +4,6 @@ package tui
 
 import (
 	"context"
-	"errors"
 	"strings"
 
 	"charm.land/bubbles/v2/key"
@@ -16,6 +15,7 @@ import (
 
 	"github.com/dpa23/wari/internal/agent"
 	"github.com/dpa23/wari/internal/config"
+	"github.com/dpa23/wari/internal/orch"
 )
 
 // inputLines es la altura de la entrada; statusLines, la de la línea de estado.
@@ -37,6 +37,14 @@ type Config struct {
 	Task agent.Task
 	// Keymap son los atajos de la configuración; nil usa los predeterminados.
 	Keymap config.Keymap
+
+	// Supervisor, NewAgent y Budget son para el panel multiagente (Panel).
+	// Supervisor gestiona los agentes; el panel se hace dueño de ellos y no
+	// lo cierra salvo en Quit. NewAgent crea un agente sin iniciar; Budget se
+	// aplica a cada agente nuevo.
+	Supervisor *orch.Supervisor
+	NewAgent   func() agent.Agent
+	Budget     orch.Budget
 }
 
 // Mensajes internos.
@@ -71,12 +79,8 @@ type Model struct {
 	width             int
 	histH, statH, inH int
 
-	entries []entry
-	// asstOpen indica que el último entry es el mensaje del asistente en
-	// curso y los TextDelta se agregan a él; asst acumula su texto.
-	asstOpen bool
-	asst     *strings.Builder
-	cache    historyCache
+	// transcript es el historial y el consumo del agente.
+	transcript
 
 	// ag es el agente de la sesión (nil si no hay). listening indica que hay
 	// un Cmd de escucha en curso sobre su canal; dead, que el canal se cerró.
@@ -87,7 +91,6 @@ type Model struct {
 	// blurred indica que el panel está embebido sin foco: sin cursor real.
 	blurred bool
 
-	busy bool
 	// starting indica que el Cmd de Start no ha vuelto; cancelling, que hay
 	// una cancelación en curso (los eventos que lleguen son del turno
 	// cancelado y se descartan); cancelPending, que Esc llegó antes de que
@@ -99,12 +102,6 @@ type Model struct {
 	refreshes int
 	quitting  bool
 	spinning  bool
-
-	sessionID string
-	model     string
-	tokensIn  int64
-	tokensOut int64
-	costUSD   float64
 }
 
 var _ tea.Model = Model{}
@@ -113,6 +110,22 @@ var _ tea.Model = Model{}
 func New(cfg Config) Model {
 	km := NewKeyMap(cfg.Keymap)
 
+	m := Model{
+		cfg:        cfg,
+		ag:         cfg.Agent,
+		keys:       km,
+		styles:     defaultStyles(),
+		vp:         newViewport(),
+		input:      newInput(km),
+		spin:       newSpinner(),
+		transcript: transcript{newSessionKey: km.NewSession.Help().Key},
+	}
+	m.layout(80, 24)
+	return m
+}
+
+// newInput crea la entrada de texto del panel.
+func newInput(km KeyMap) textarea.Model {
 	ta := textarea.New()
 	ta.ShowLineNumbers = false
 	ta.Prompt = "│ "
@@ -123,23 +136,20 @@ func New(cfg Config) Model {
 	st.Focused.CursorLine = lipgloss.NewStyle()
 	ta.SetStyles(st)
 	ta.Focus()
+	return ta
+}
 
+// newViewport crea el viewport del historial.
+func newViewport() viewport.Model {
 	vp := viewport.New()
 	vp.KeyMap = viewport.KeyMap{} // el desplazamiento lo manejan los atajos de KeyMap
 	vp.MouseWheelEnabled = false
 	vp.FillHeight = true
+	return vp
+}
 
-	m := Model{
-		cfg:    cfg,
-		ag:     cfg.Agent,
-		keys:   km,
-		styles: defaultStyles(),
-		vp:     vp,
-		input:  ta,
-		spin:   spinner.New(spinner.WithSpinner(spinner.MiniDot)),
-	}
-	m.layout(80, 24)
-	return m
+func newSpinner() spinner.Model {
+	return spinner.New(spinner.WithSpinner(spinner.MiniDot))
 }
 
 // Init implementa tea.Model.
@@ -376,68 +386,6 @@ func listen(ch <-chan agent.Event) tea.Cmd {
 	}
 }
 
-// applyEvent aplica un evento del agente al historial y al estado. No vuelca
-// al viewport: quien llama hace un solo refresh por lote.
-func (m *Model) applyEvent(ev agent.Event) {
-	switch ev := ev.(type) {
-	case agent.Started:
-		if ev.SessionID != "" {
-			m.sessionID = ev.SessionID
-		}
-		if ev.Model != "" {
-			m.model = ev.Model
-		}
-	case agent.TextDelta:
-		if !m.asstOpen || len(m.entries) == 0 || m.asst == nil {
-			m.entries = append(m.entries, entry{kind: kindAssistant})
-			m.asst = &strings.Builder{}
-			m.asstOpen = true
-		}
-		m.asst.WriteString(ev.Text)
-		m.entries[len(m.entries)-1].text = m.asst.String()
-	case agent.ToolCall:
-		m.add(kindTool, "⚙ "+toolSummary(ev.Name, ev.Input))
-	case agent.FileEditProposed:
-		m.add(kindEdit, "✎ "+ev.Path)
-	case agent.NeedsApproval:
-		if ev.Denied {
-			m.add(kindDenied, "⛔ denegado: "+toolSummary(ev.Tool, ev.Input))
-		}
-	case agent.Usage:
-		m.tokensIn += ev.InputTokens
-		m.tokensOut += ev.OutputTokens
-		m.costUSD += ev.CostUSD
-	case agent.Error:
-		msg := "error desconocido"
-		if ev.Err != nil {
-			msg = ev.Err.Error()
-		}
-		m.add(kindError, "error: "+msg)
-		if errors.Is(ev.Err, agent.ErrSessionNotFound) {
-			m.add(kindInfo, "no se pudo reanudar la sesión; "+m.keys.NewSession.Help().Key+" empieza una nueva")
-		}
-	case agent.Done:
-		if ev.SessionID != "" {
-			m.sessionID = ev.SessionID
-		}
-		m.busy = false
-		m.asstOpen = false
-		if ev.IsError {
-			text := "el turno terminó con error"
-			if ev.Result != "" {
-				text += ": " + ev.Result
-			}
-			m.add(kindError, text)
-		}
-	}
-}
-
-// add agrega una entrada y cierra el mensaje del asistente en curso.
-func (m *Model) add(k entryKind, text string) {
-	m.entries = append(m.entries, entry{kind: k, text: text})
-	m.asstOpen = false
-}
-
 // refresh vuelca el historial al viewport. Sigue el final solo si la vista ya
 // estaba al final: así el desplazamiento del usuario se respeta.
 func (m *Model) refresh() { m.refreshTo(m.vp.AtBottom()) }
@@ -451,28 +399,33 @@ func (m *Model) refreshTo(follow bool) {
 	}
 }
 
-// layout reparte el espacio: historial, línea de estado y entrada. La suma
-// nunca supera h. Primero se reduce el historial hasta 1 fila, luego la
+// splitRows reparte h filas entre historial, línea de estado y entrada. La
+// suma nunca supera h. Primero se reduce el historial hasta 1 fila, luego la
 // entrada hasta 1 línea, y con menos de 3 filas se omiten el historial y, por
 // último, la línea de estado.
+func splitRows(h int) (histH, statH, inH int) {
+	h = max(h, 1)
+	statH, inH = statusLines, inputLines
+	histH = h - statH - inH
+	if histH < 1 {
+		histH = 1
+		inH = max(h-statH-histH, 1)
+		if histH+statH+inH > h {
+			histH = 0
+		}
+		if histH+statH+inH > h {
+			statH = 0
+		}
+	}
+	return histH, statH, inH
+}
+
+// layout reparte el espacio: historial, línea de estado y entrada.
 func (m *Model) layout(w, h int) {
 	follow := m.vp.AtBottom()
 	m.width = w
 	w = max(w, minWidth)
-	h = max(h, 1)
-
-	m.statH, m.inH = statusLines, inputLines
-	m.histH = h - m.statH - m.inH
-	if m.histH < 1 {
-		m.histH = 1
-		m.inH = max(h-m.statH-m.histH, 1)
-		if m.histH+m.statH+m.inH > h {
-			m.histH = 0
-		}
-		if m.histH+m.statH+m.inH > h {
-			m.statH = 0
-		}
-	}
+	m.histH, m.statH, m.inH = splitRows(h)
 
 	m.vp.SetWidth(w)
 	m.vp.SetHeight(max(m.histH, 1))

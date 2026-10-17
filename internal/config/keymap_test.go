@@ -26,6 +26,12 @@ func TestDefault(t *testing.T) {
 		"find":          {"ctrl+f"},
 		"toggle_tree":   {"ctrl+b"},
 		"toggle_agents": {"ctrl+g"},
+		"agent_new":     {"ctrl+t"},
+		"agent_next":    {"alt+down"},
+		"agent_prev":    {"alt+up"},
+		"agent_pause":   {"ctrl+o"},
+		"agent_stop":    {"ctrl+x"},
+		"stop_all":      {"ctrl+k"},
 	}
 
 	got := Default()

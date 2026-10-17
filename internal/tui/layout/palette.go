@@ -17,7 +17,7 @@ import (
 const maxFiles = 20000
 
 // maxShown es el máximo de resultados visibles en la paleta.
-const maxShown = 8
+const maxShown = 10
 
 // Identificadores de las acciones de la paleta; los archivos usan
 // "open:<ruta relativa>".
@@ -26,6 +26,7 @@ const (
 	cmdToggleTree   = "toggle_tree"
 	cmdToggleAgents = "toggle_agents"
 	cmdNewSession   = "new_session"
+	cmdStopAll      = "stop_all"
 	cmdQuit         = "quit"
 	cmdFocusTree    = "focus_tree"
 	cmdFocusEditor  = "focus_editor"
@@ -71,7 +72,8 @@ func (m Model) paletteItems() []item {
 		newItem(cmdSave, "Guardar archivo", hint("save")),
 		newItem(cmdToggleTree, "Alternar árbol de archivos", hint("toggle_tree")),
 		newItem(cmdToggleAgents, "Alternar panel de agentes", hint("toggle_agents")),
-		newItem(cmdNewSession, "Nueva sesión de agente", hint("new_session")),
+		newItem(cmdNewSession, "Agente nuevo", hint("agent_new")),
+		newItem(cmdStopAll, "Detener todos los agentes", hint("stop_all")),
 		newItem(cmdFocusTree, "Ir al árbol de archivos", ""),
 		newItem(cmdFocusEditor, "Ir al editor", ""),
 		newItem(cmdFocusChat, "Ir al panel de agentes", ""),
@@ -207,6 +209,8 @@ func (m Model) runCommand(id string) (Model, tea.Cmd) {
 		var cmd tea.Cmd
 		m.chat, cmd = m.chat.NewSession()
 		return m, cmd
+	case id == cmdStopAll:
+		return m.stopAll()
 	case id == cmdQuit:
 		return m.requestQuit(armed)
 	case id == cmdFocusTree:

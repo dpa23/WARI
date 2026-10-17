@@ -22,6 +22,15 @@ type KeyMap struct {
 	// PageUp y PageDown desplazan el historial.
 	PageUp   key.Binding
 	PageDown key.Binding
+
+	// Panel multiagente: crear, seleccionar, pausar/reanudar y detener
+	// agentes, y la parada global.
+	AgentNew   key.Binding
+	AgentNext  key.Binding
+	AgentPrev  key.Binding
+	AgentPause key.Binding
+	AgentStop  key.Binding
+	StopAll    key.Binding
 }
 
 // DefaultKeyMap devuelve los atajos predeterminados (los de config.Default).
@@ -49,14 +58,29 @@ func NewKeyMap(km config.Keymap) KeyMap {
 		Quit:       b("quit", "salir"),
 		PageUp:     b("page_up", "subir"),
 		PageDown:   b("page_down", "bajar"),
+		AgentNew:   b("agent_new", "agente nuevo"),
+		AgentNext:  b("agent_next", "siguiente"),
+		AgentPrev:  b("agent_prev", "anterior"),
+		AgentPause: b("agent_pause", "pausar"),
+		AgentStop:  b("agent_stop", "detener"),
+		StopAll:    b("stop_all", "parar todo"),
 	}
 }
 
 // helpLine es la ayuda breve de la línea de estado, construida con los
 // bindings vigentes: "enter enviar · esc cancelar · ctrl+n sesión nueva · ctrl+c salir".
 func (k KeyMap) helpLine() string {
+	return joinHelp(k.Send, k.Cancel, k.NewSession, k.Quit)
+}
+
+// panelHelpLine es la ayuda breve del panel multiagente.
+func (k KeyMap) panelHelpLine() string {
+	return joinHelp(k.Send, k.Cancel, k.AgentNew, k.AgentPause, k.AgentStop, k.Quit)
+}
+
+func joinHelp(bs ...key.Binding) string {
 	s := ""
-	for _, b := range []key.Binding{k.Send, k.Cancel, k.NewSession, k.Quit} {
+	for _, b := range bs {
 		if !b.Enabled() {
 			continue
 		}

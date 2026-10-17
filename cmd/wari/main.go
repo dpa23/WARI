@@ -17,6 +17,7 @@ import (
 	"github.com/dpa23/wari/internal/agent"
 	"github.com/dpa23/wari/internal/agent/claude"
 	"github.com/dpa23/wari/internal/config"
+	"github.com/dpa23/wari/internal/orch"
 	"github.com/dpa23/wari/internal/tui"
 	"github.com/dpa23/wari/internal/tui/layout"
 )
@@ -28,6 +29,10 @@ func main() {
 	prompt := flag.String("prompt", "", "sin TUI: lanza un turno del agente claude con este prompt y vuelca su salida")
 	model := flag.String("model", "", "modelo del agente (vacío: el predeterminado de la CLI)")
 	killAfter := flag.Duration("kill-after", 0, "con -prompt: termina el turno y sus subprocesos después de este tiempo")
+	maxActive := flag.Int("max-active", 2, "agentes activos a la vez; el resto espera en cola")
+	maxTurns := flag.Int("max-turns", 0, "presupuesto de turnos por agente (0: sin límite)")
+	maxTokens := flag.Int64("max-tokens", 0, "presupuesto de tokens de entrada y salida por agente (0: sin límite)")
+	maxTime := flag.Duration("max-time", 0, "presupuesto de tiempo con un turno corriendo, por agente (0: sin límite)")
 	showVersion := flag.Bool("version", false, "muestra la versión y sale")
 	flag.Parse()
 
@@ -48,7 +53,12 @@ func main() {
 			fmt.Fprintln(os.Stderr, "wari:", err)
 			os.Exit(2)
 		}
-		os.Exit(runTUI(agent.Task{Model: *model}, root, file))
+		if *maxActive < 1 || *maxTurns < 0 || *maxTokens < 0 || *maxTime < 0 {
+			fmt.Fprintln(os.Stderr, "wari: -max-active debe ser al menos 1 y los presupuestos no pueden ser negativos")
+			os.Exit(2)
+		}
+		budget := orch.Budget{MaxTurns: *maxTurns, MaxDuration: *maxTime, MaxTokens: *maxTokens}
+		os.Exit(runTUI(agent.Task{Model: *model}, root, file, *maxActive, budget))
 	}
 }
 
@@ -92,19 +102,25 @@ func loadKeymap(root string) config.Keymap {
 	return km
 }
 
-// runTUI abre el layout (árbol, editor y chat) en root, con file abierto si
-// no está vacío. Al salir, por la vía que sea (atajo, señal o pánico en el
-// bucle de eventos), no debe quedar ningún agente vivo: el defer cierra al
-// agente, que mata el turno en curso con todos sus descendientes.
-func runTUI(task agent.Task, root, file string) int {
-	ag := claude.New("")
-	defer ag.Close()
+// runTUI abre el layout (árbol, editor y agentes) en root, con file abierto
+// si no está vacío. Al salir, por la vía que sea (atajo, señal o pánico en el
+// bucle de eventos), no debe quedar ningún agente vivo: el defer cierra el
+// supervisor, que cierra a cada agente y mata su turno en curso con todos sus
+// descendientes.
+func runTUI(task agent.Task, root, file string, maxActive int, budget orch.Budget) int {
+	sup := orch.New(maxActive)
+	defer sup.Close()
 
 	p := tea.NewProgram(layout.New(layout.Config{
 		Root:   root,
 		File:   file,
 		Keymap: loadKeymap(root),
-		Chat:   tui.Config{Agent: ag, Task: task},
+		Chat: tui.Config{
+			Supervisor: sup,
+			NewAgent:   func() agent.Agent { return claude.New("") },
+			Task:       task,
+			Budget:     budget,
+		},
 	}))
 
 	// Bubble Tea atrapa SIGINT y SIGTERM, pero no SIGHUP: al cerrarse la

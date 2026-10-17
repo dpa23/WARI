@@ -13,7 +13,7 @@
 // a otra tecla, funciona también dentro del editor.
 //
 // Atajos globales (valen con cualquier foco): quit, palette, toggle_tree,
-// toggle_agents, save, focus_next, focus_prev. El resto va al panel con foco.
+// toggle_agents, save, stop_all, focus_next, focus_prev. El resto va al panel con foco.
 // Todos salen de config.Keymap.
 //
 // Seguridad de datos: abrir otro archivo con el actual sin guardar, o salir
@@ -25,6 +25,7 @@ package layout
 
 import (
 	"errors"
+	"fmt"
 	"os"
 	"path/filepath"
 	"slices"
@@ -81,7 +82,7 @@ type Model struct {
 	tree  filetree.Model
 	ed    editorview.Model
 	hasEd bool
-	chat  tui.Model
+	chat  tui.Panel
 
 	w, h           int
 	treeOn, chatOn bool
@@ -130,7 +131,7 @@ func New(cfg Config) Model {
 	m := Model{
 		km: km, binds: binds, root: root,
 		tree:   filetree.New(root),
-		chat:   tui.New(chatCfg),
+		chat:   tui.NewPanel(chatCfg),
 		w:      80,
 		h:      24,
 		treeOn: true,
@@ -145,7 +146,7 @@ func New(cfg Config) Model {
 }
 
 // Init implementa tea.Model.
-func (m Model) Init() tea.Cmd { return nil }
+func (m Model) Init() tea.Cmd { return m.chat.Init() }
 
 // Update implementa tea.Model.
 func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) { return m.update(msg) }
@@ -234,6 +235,8 @@ func (m Model) handleKey(k tea.KeyPressMsg) (Model, tea.Cmd) {
 		return m, nil
 	case m.is(k, "save"):
 		return m.save()
+	case m.is(k, "stop_all"):
+		return m.stopAll()
 	case m.is(k, "focus_prev"):
 		return m.moveFocus(-1), nil
 	case m.is(k, "focus_next"):
@@ -273,6 +276,14 @@ func (m Model) routeToFocused(msg tea.Msg) (Model, tea.Cmd) {
 	case focusChat:
 		m.chat, cmd = m.chat.Handle(msg)
 	}
+	return m, cmd
+}
+
+// stopAll es la parada global de agentes.
+func (m Model) stopAll() (Model, tea.Cmd) {
+	var cmd tea.Cmd
+	m.chat, cmd = m.chat.StopAll()
+	m.msg = "parando todos los agentes"
 	return m, cmd
 }
 
@@ -636,7 +647,20 @@ func (m Model) render() string {
 	return strings.Join(rows, "\n")
 }
 
-// statusBar es la última fila: archivo, estado y atajos principales.
+// agentsInfo es lo que la barra de estado muestra siempre: agentes activos y
+// en cola, y el atajo de la parada global.
+func (m Model) agentsInfo() string {
+	active, queued, limit := m.chat.Counts()
+	s := fmt.Sprintf("activos %d/%d · en cola %d", active, limit, queued)
+	if k := m.firstKey("stop_all"); k != "" {
+		s += " · " + k + " parar todo"
+	}
+	return s
+}
+
+// statusBar es la última fila: archivo, estado y atajos principales. A la
+// derecha va siempre agentsInfo; los demás atajos solo si caben, y si no cabe
+// ni eso, el lado izquierdo cede el espacio.
 func (m Model) statusBar() string {
 	left := " (sin archivo)"
 	if m.hasEd {
@@ -656,11 +680,23 @@ func (m Model) statusBar() string {
 			hints = append(hints, k+" "+h.desc)
 		}
 	}
-	hint := strings.Join(hints, " · ")
-	if gap := m.w - lipgloss.Width(left) - lipgloss.Width(hint) - 1; gap >= 2 {
-		left += strings.Repeat(" ", gap) + hint
+	right := m.agentsInfo()
+	// Con espacio, los atajos van pegados a la derecha; se descartan desde el
+	// último hasta que quepan. La información de agentes se queda siempre.
+	for n := len(hints); n >= 0; n-- {
+		r := right
+		if n > 0 {
+			r = strings.Join(hints[:n], " · ") + " · " + right
+		}
+		if gap := m.w - lipgloss.Width(left) - lipgloss.Width(r) - 1; gap >= 2 {
+			return statusStyle.Render(fit(left+strings.Repeat(" ", gap)+r, m.w))
+		}
 	}
-	return statusStyle.Render(fit(left, m.w))
+	rw := lipgloss.Width(right) + 1
+	if rw >= m.w {
+		return statusStyle.Render(fit(" "+right, m.w))
+	}
+	return statusStyle.Render(fit(fit(left, m.w-rw-1)+" "+right, m.w))
 }
 
 // cursor devuelve el cursor del componente con foco en coordenadas absolutas.

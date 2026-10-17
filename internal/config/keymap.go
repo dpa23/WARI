@@ -45,6 +45,12 @@ func Default() Keymap {
 		"find":          []string{"ctrl+f"},
 		"toggle_tree":   []string{"ctrl+b"},
 		"toggle_agents": []string{"ctrl+g"},
+		"agent_new":     []string{"ctrl+t"},
+		"agent_next":    []string{"alt+down"},
+		"agent_prev":    []string{"alt+up"},
+		"agent_pause":   []string{"ctrl+o"},
+		"agent_stop":    []string{"ctrl+x"},
+		"stop_all":      []string{"ctrl+k"},
 	}
 }
 
