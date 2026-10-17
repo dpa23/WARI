@@ -1,7 +1,7 @@
 # Progreso
 
 ## Fase actual
-Fase 2 — TUI mínimo con un agente: **terminada**. Siguiente: fase 3 (editor núcleo), que termina en un punto de decisión con el autor (editor propio o embebido).
+Fase 3 — Editor núcleo: **terminada y verificada**. Punto de decisión con el autor pendiente (editor propio vs. embebido) antes de la fase 4.
 
 ## Hecho
 ### Fase 0 — Arranque
@@ -23,8 +23,18 @@ Fase 2 — TUI mínimo con un agente: **terminada**. Siguiente: fase 3 (editor n
 - Aceptación en herdr con la CLI real: conversar, cancelar a mitad de respuesta, reanudar (`--resume` con la misma sesión; el agente recuerda el pedido, no el texto parcial), ctrl+n, cerrar la terminal a mitad de turno: sin procesos vivos.
 - Revisiones: `/code-review` (9, atendidos), Antigravity por herdr (3: 1 aplicado, 2 rechazados), `/simplify` (aplicados los de eficiencia, simplificación y el error tipado; el refactor de altitud queda para la fase 5).
 
+### Fase 3 — Editor núcleo
+- `internal/editor`: buffer `[][]rune`, cursor y selección, movimientos (carácter, palabra, línea, doc), copy/cut/paste sin portapapeles del sistema.
+- Inserción con auto-indentación al insertar salto de línea (copia la indentación de la línea anterior).
+- Undo/redo con pila de operaciones inversas; agrupación por pausa configurable (por defecto 1 s); reloj inyectable para tests.
+- Abrir/guardar UTF-8 preservando estilo de salto de línea (LF o CRLF) y trailing newline; guardado atómico (temp + fsync + rename) conservando permisos.
+- Búsqueda y reemplazo con regexp de Go: siguiente coincidencia desde el cursor con wrap-around, reemplazar una y todas; expansión de grupos de captura; todo deshacible como un solo paso.
+- Aceptación: `TestAcceptanceLargeJavaFile` (5000 líneas: abrir ~1,4 ms, 100 ediciones ~0,2 ms, 100 undos y guardado idéntico byte a byte).
+- Revisiones: staticcheck (bug de undo en DeleteForward), test de aceptación (undo partido por lecturas de reloj), Gemini 3.8 (5 hallazgos de redo, saltos y permisos, los 5 reproducidos con tests y corregidos).
+
 ## Pendiente
-- Fase 3: editor núcleo (buffer, undo/redo, búsqueda, guardado atómico).
-- Inicio de la fase 5: ejecutor de turnos genérico y `Cancel`/`Close` (ver `docs/decisions.md`).
+- Punto de decisión (PLAN §10.4): editor propio vs. embebido — esperar valoración del autor.
+- Fase 4: layout editor+chat (árbol de archivos, panel de agentes, resaltado con chroma, atajos en config).
+
 - CI se ejecuta por primera vez con el primer push que apruebe el autor.
 - Límite conocido: un descendiente que escape del grupo con `setsid` no se controla (ver `docs/decisions.md`).

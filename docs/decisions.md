@@ -86,6 +86,11 @@ Formato: fecha · decisión · motivo · alternativas descartadas.
 - **Hallazgo de `/simplify`** (altitud): `Kill` sirve a la vez para cancelar un turno y terminar el agente, lo que obliga al TUI a recrear agentes (generaciones, `dying`) y a `main` a llevar un registro. Además, la maquinaria de turnos (serialización, `Done` retenido, síntesis de `Done`, Kill/Pause) es genérica pero vive en el adaptador de claude.
 - **Decisión**: extraer un ejecutor de turnos a `internal/agent` (el adaptador solo aporta `Spec` y `ParseLine`) y separar `Cancel` (turno) de `Close` (agente) **al inicio de la fase 5**, junto con el orquestador. Es requisito antes del adaptador de agy (fase 8).
 
+## 2026-10-17 · Editor núcleo (fase 3)
+- **Buffer `[][]rune`** como pide el PLAN: con el `.java` de 5000 líneas, abrir tarda ~1,4 ms y 100 ediciones ~0,2 ms; no hace falta rope ni gap buffer.
+- **Reloj inyectable para agrupar el undo**: cada llamada pública lee el reloj una sola vez; leerlo por primitiva partía una edición en varios grupos (bug detectado por el test de aceptación).
+- **Implementación orquestada**: Antigravity (Claude Sonnet 4.6, `accept-edits`, limitado a `internal/editor/`) implementó; Haiku generó el fixture con `scripts/gen-java-fixture.sh`; Gemini 3.8 revisó; staticcheck encontró un bug de undo en DeleteForward. Al agotarse la cuota de Claude en Antigravity, la verificación pasó a Sonnet (respaldo previsto).
+
 ## 2026-10-17 · Orquestación del desarrollo
 - **Decisión:** Claude Code (Opus) lidera y es el único que hace commit; subagentes Sonnet implementan y Haiku hace tareas mecánicas; Antigravity (Gemini 3.8 Flash) revisa los diffs con otra familia de modelos y genera los datos del tier 1. Máximo 2 agentes activos a la vez. Commits locales; push solo a pedido del autor. Detalle en `AGENTS.md` y `CLAUDE.md`.
 - **Motivo:** máquina de 2 núcleos y 5,6 GB; la diversidad de modelos encuentra errores distintos, pero todo hallazgo se verifica (Antigravity adivinó mal flags y nombres de eventos de su propia CLI).
