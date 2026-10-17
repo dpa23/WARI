@@ -13,8 +13,7 @@ Una fase está hecha solo si se cumple todo lo siguiente, con evidencia (comando
 4. **Revisiones:**
    - `/code-review` (high) sobre el diff de la fase.
    - Fases 1, 5, 6 y 13: además `/security-review`.
-   - Revisión cruzada de Antigravity en modo plan, con el diff, los archivos de contrato y los criterios incrustados en el prompt:
-     `agy --mode plan --model gemini-3.8-flash-high --effort high -p="$PROMPT"`
+   - Revisión cruzada de Antigravity por herdr, con el agente `revisor` en modo plan (ver CLAUDE.md): `herdr agent prompt revisor "<archivos, contrato, criterios; sin ejecutar comandos ni leer fuera del repo>" --wait`, y el informe con `herdr agent read revisor --source recent-unwrapped`. Nunca respondas sus diálogos a ciegas; verifica que siga en `plan`.
      Verifica cada hallazgo antes de aplicarlo; Antigravity puede equivocarse.
 5. **Registro:** `docs/progress.md` actualizado (fase, hecho, pendiente); toda decisión nueva en `docs/decisions.md`.
 6. **Fixtures:** todo `testdata/<cli>/*.jsonl` nuevo pasó por `scripts/sanitize-fixture.sh` y no contiene correos, rutas de usuario ni IDs reales.

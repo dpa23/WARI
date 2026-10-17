@@ -66,6 +66,26 @@ Formato: fecha · decisión · motivo · alternativas descartadas.
 - **`is_error` manda**: con un modelo inexistente la CLI responde `subtype: success`, `is_error: true` y sale con código 1.
 - **Fixtures** con `scripts/record-claude-fixtures.sh` en un directorio fijo y neutro (`/tmp/wari-fixture`): el texto llega en deltas y una ruta con el nombre del usuario partida entre dos deltas no se puede sanitizar después (pasó en la primera grabación).
 
+## 2026-10-17 · Charm v2 para el TUI (fase 2)
+- **Decisión:** `charm.land/bubbletea/v2` v2.1.0, `charm.land/bubbles/v2` v2.2.1, `charm.land/lipgloss/v2` v2.0.6: las versiones vigentes de las dependencias aprobadas (la v1 ya no es la línea principal). bubbletea v2.1.0 exige Go 1.26.0.
+- **Transitiva nueva:** `github.com/atotto/clipboard` (la importa `bubbles/v2/textarea`); no es una dependencia directa.
+- **Descartado:** bubbletea v1 (API anterior, sin `tea.View` ni cursor real).
+
+## 2026-10-17 · Cancelar y reanudar en el panel de chat
+- **Decisión:** cancelar (Esc) mata al agente con `Kill`, que es definitivo; el siguiente mensaje crea un agente nuevo con `Task.SessionID` = la sesión anterior. Continuar y reanudar son el mismo camino (`Start` con `SessionID` explícito). Una generación por agente descarta los eventos del agente cancelado.
+- **Verificado con la CLI:** la sesión se puede reanudar tras matar un turno a mitad de respuesta y conserva los mensajes del usuario, pero **la CLI no guarda la respuesta parcial** del turno cancelado: el agente no la recuerda aunque el panel la muestre.
+- **Pendiente (idea):** reinyectar el texto parcial cancelado en el siguiente mensaje si se quiere que el agente lo recuerde.
+- **Descartado:** agregar un `Cancel()` al contrato `Agent`; no hace falta mientras cada turno sea un proceso.
+
+## 2026-10-17 · Salida del TUI sin huérfanos
+- **Registro de agentes en `main`**: todo agente creado se registra y se mata con `defer` al salir, por cualquier vía. No depende del modelo final de `Program.Run`, que es nil tras un pánico.
+- **SIGHUP**: Bubble Tea solo atrapa SIGINT/SIGTERM; al cerrarse la terminal, `wari` mata el programa y el registro mata a los agentes (sus grupos no reciben el SIGHUP de la terminal). Verificado cerrando el pane de herdr a mitad de un turno.
+- **`agent.ErrSessionNotFound`**: el adaptador lo emite cuando reanudar falla sin que llegue `Started` (verificado: claude 2.1.302 responde un `result` con `error_during_execution`, `num_turns: 0` y "No conversation found with session ID" en stderr). El TUI solo revisa el tipo y sugiere ctrl+n.
+
+## 2026-10-17 · Refactor pendiente: ejecutor de turnos genérico y Cancel/Close
+- **Hallazgo de `/simplify`** (altitud): `Kill` sirve a la vez para cancelar un turno y terminar el agente, lo que obliga al TUI a recrear agentes (generaciones, `dying`) y a `main` a llevar un registro. Además, la maquinaria de turnos (serialización, `Done` retenido, síntesis de `Done`, Kill/Pause) es genérica pero vive en el adaptador de claude.
+- **Decisión**: extraer un ejecutor de turnos a `internal/agent` (el adaptador solo aporta `Spec` y `ParseLine`) y separar `Cancel` (turno) de `Close` (agente) **al inicio de la fase 5**, junto con el orquestador. Es requisito antes del adaptador de agy (fase 8).
+
 ## 2026-10-17 · Orquestación del desarrollo
 - **Decisión:** Claude Code (Opus) lidera y es el único que hace commit; subagentes Sonnet implementan y Haiku hace tareas mecánicas; Antigravity (Gemini 3.8 Flash) revisa los diffs con otra familia de modelos y genera los datos del tier 1. Máximo 2 agentes activos a la vez. Commits locales; push solo a pedido del autor. Detalle en `AGENTS.md` y `CLAUDE.md`.
 - **Motivo:** máquina de 2 núcleos y 5,6 GB; la diversidad de modelos encuentra errores distintos, pero todo hallazgo se verifica (Antigravity adivinó mal flags y nombres de eventos de su propia CLI).

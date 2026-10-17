@@ -1,7 +1,7 @@
 # Progreso
 
 ## Fase actual
-Fase 1 — Proceso y streaming: **terminada**, a la espera de que el autor la revise. La fase 2 (TUI mínimo con un agente) no empieza hasta entonces.
+Fase 2 — TUI mínimo con un agente: **terminada**. Siguiente: fase 3 (editor núcleo), que termina en un punto de decisión con el autor (editor propio o embebido).
 
 ## Hecho
 ### Fase 0 — Arranque
@@ -17,7 +17,14 @@ Fase 1 — Proceso y streaming: **terminada**, a la espera de que el autor la re
 - Aceptación con la CLI real: kill a los 10 s tras 251 palabras, SIGINT tras 218 y turno completo; en los tres, `scripts/orphans.sh` sin procesos y ningún descendiente vivo.
 - Revisiones: `/code-review` (10 hallazgos, todos atendidos), Antigravity (8: 2 nuevos aplicados, 1 en parte, 4 ya resueltos, 1 rechazado con motivo), `/security-review` (sin hallazgos; observación de privacidad aplicada).
 
+### Fase 2 — TUI mínimo con un agente
+- `internal/tui`: panel de chat en Bubble Tea v2 (historial, estado, entrada); eventos en lotes; Esc cancela, el siguiente mensaje reanuda con el ID de sesión; ctrl+n sesión nueva; ctrl+c sale.
+- `cmd/wari`: sin flags abre el TUI; registro de agentes y SIGHUP para no dejar huérfanos.
+- Aceptación en herdr con la CLI real: conversar, cancelar a mitad de respuesta, reanudar (`--resume` con la misma sesión; el agente recuerda el pedido, no el texto parcial), ctrl+n, cerrar la terminal a mitad de turno: sin procesos vivos.
+- Revisiones: `/code-review` (9, atendidos), Antigravity por herdr (3: 1 aplicado, 2 rechazados), `/simplify` (aplicados los de eficiencia, simplificación y el error tipado; el refactor de altitud queda para la fase 5).
+
 ## Pendiente
-- Fase 2: panel de chat en bubbletea conectado al adaptador; cancelar con un atajo y reanudar con el ID de sesión.
+- Fase 3: editor núcleo (buffer, undo/redo, búsqueda, guardado atómico).
+- Inicio de la fase 5: ejecutor de turnos genérico y `Cancel`/`Close` (ver `docs/decisions.md`).
 - CI se ejecuta por primera vez con el primer push que apruebe el autor.
 - Límite conocido: un descendiente que escape del grupo con `setsid` no se controla (ver `docs/decisions.md`).
