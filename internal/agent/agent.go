@@ -20,17 +20,24 @@ type Agent interface {
 	// Events entrega los eventos de todos los turnos del agente, sin mezclar
 	// turnos. Cada turno termina con exactamente un Done, que se emite cuando
 	// el proceso del turno ya salió y Status ya no es StatusRunning, así que
-	// se puede llamar a Send en cuanto llega. El canal se cierra cuando el
-	// agente termina definitivamente (Kill); un turno interrumpido por Kill
-	// no emite Done. Hay que leer el canal: si se llena, el turno espera.
+	// se puede llamar a Send en cuanto llega. Un turno cancelado con Cancel
+	// no emite Done, y después de que Cancel vuelve no se entrega ningún
+	// evento suyo. El canal se cierra cuando el agente termina
+	// definitivamente (Close); un turno interrumpido por Close tampoco emite
+	// Done. Hay que leer el canal: si se llena, el turno espera.
 	Events() <-chan Event
 	// Pause congela el turno en curso con todos sus subprocesos.
 	Pause() error
 	// Resume reanuda un turno pausado.
 	Resume() error
-	// Kill termina el turno en curso y todos sus descendientes; el agente
-	// queda en StatusDone y no acepta más turnos.
-	Kill() error
+	// Cancel termina el turno en curso con todos sus descendientes. El agente
+	// sigue usable: queda en StatusIdle y acepta otro turno. Sin turno en
+	// curso no hace nada.
+	Cancel() error
+	// Close termina el agente: mata el turno en curso con todos sus
+	// descendientes, cierra Events y deja el estado en StatusDone. Las
+	// llamadas concurrentes esperan a la primera.
+	Close() error
 	// Status devuelve el estado actual.
 	Status() Status
 }
@@ -166,8 +173,9 @@ type NeedsApproval struct {
 	Denied     bool
 }
 
-// Done cierra un turno. Si la CLI terminó sin reportar un resultado, el
-// adaptador lo sintetiza con IsError, precedido por un Error con la causa.
+// Done cierra un turno, salvo que se cancele con Cancel o se cierre el agente
+// con Close. Si la CLI terminó sin reportar un resultado, el adaptador lo
+// sintetiza con IsError, precedido por un Error con la causa.
 type Done struct {
 	SessionID string
 	// Result es el texto final del turno.

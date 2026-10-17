@@ -13,11 +13,11 @@ type KeyMap struct {
 	Send key.Binding
 	// Newline inserta un salto de línea en la entrada.
 	Newline key.Binding
-	// Cancel cancela el turno en curso.
+	// Cancel cancela el turno en curso; el agente sigue vivo.
 	Cancel key.Binding
-	// NewSession descarta la sesión actual y empieza una nueva.
+	// NewSession descarta la sesión actual (y cancela el turno en curso).
 	NewSession key.Binding
-	// Quit sale del programa matando al agente.
+	// Quit sale del programa cerrando al agente.
 	Quit key.Binding
 	// PageUp y PageDown desplazan el historial.
 	PageUp   key.Binding

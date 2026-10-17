@@ -28,9 +28,10 @@ const (
 
 // Config configura el panel de chat.
 type Config struct {
-	// NewAgent crea un agente nuevo. Se llama al primer envío y después de
-	// cada cancelación (Kill deja al agente terminado para siempre).
-	NewAgent func() agent.Agent
+	// Agent es el agente de la sesión. El panel lo usa durante toda su vida:
+	// cancelar un turno (Cancel) no lo termina; Close solo se llama al salir.
+	// Con nil el panel no envía nada.
+	Agent agent.Agent
 	// Task es la plantilla de los turnos (Dir, Model, Permissions); el panel
 	// rellena Prompt y SessionID.
 	Task agent.Task
@@ -38,24 +39,19 @@ type Config struct {
 	Keymap config.Keymap
 }
 
-// Mensajes internos. Todos los que vienen de un agente llevan la generación
-// con la que se creó, para descartar los de un agente ya cancelado.
+// Mensajes internos.
 type (
-	// eventsMsg lleva un lote de eventos del agente de la generación gen.
-	// closed indica que el canal se cerró tras ellos.
+	// eventsMsg lleva un lote de eventos del agente. closed indica que el
+	// canal se cerró tras ellos.
 	eventsMsg struct {
-		gen    int
 		evs    []agent.Event
 		closed bool
 	}
-	// startMsg es el resultado de Start para la generación gen.
-	startMsg struct {
-		gen int
-		err error
-	}
-	// cancelDoneMsg indica que Kill terminó tras una cancelación.
+	// startMsg es el resultado de Start.
+	startMsg struct{ err error }
+	// cancelDoneMsg indica que Cancel terminó.
 	cancelDoneMsg struct{ err error }
-	// quitMsg indica que Kill terminó tras ctrl+c y hay que salir.
+	// quitMsg indica que Close terminó tras ctrl+c y hay que salir.
 	quitMsg struct{}
 )
 
@@ -82,18 +78,23 @@ type Model struct {
 	asst     *strings.Builder
 	cache    historyCache
 
-	// ag es el agente vivo (nil si no hay); events es su canal; gen, su
-	// generación. dying es un agente cuyo Kill está en curso.
-	ag     agent.Agent
-	events <-chan agent.Event
-	gen    int
-	dying  agent.Agent
+	// ag es el agente de la sesión (nil si no hay). listening indica que hay
+	// un Cmd de escucha en curso sobre su canal; dead, que el canal se cerró.
+	ag        agent.Agent
+	listening bool
+	dead      bool
 
 	// blurred indica que el panel está embebido sin foco: sin cursor real.
 	blurred bool
 
-	busy       bool
-	cancelling bool
+	busy bool
+	// starting indica que el Cmd de Start no ha vuelto; cancelling, que hay
+	// una cancelación en curso (los eventos que lleguen son del turno
+	// cancelado y se descartan); cancelPending, que Esc llegó antes de que
+	// Start volviera y la cancelación espera a que el turno exista.
+	starting      bool
+	cancelling    bool
+	cancelPending bool
 	// refreshes cuenta los volcados del historial al viewport.
 	refreshes int
 	quitting  bool
@@ -130,6 +131,7 @@ func New(cfg Config) Model {
 
 	m := Model{
 		cfg:    cfg,
+		ag:     cfg.Agent,
 		keys:   km,
 		styles: defaultStyles(),
 		vp:     vp,
@@ -138,18 +140,6 @@ func New(cfg Config) Model {
 	}
 	m.layout(80, 24)
 	return m
-}
-
-// toKill devuelve los agentes que aún pueden tener procesos vivos.
-func (m Model) toKill() []agent.Agent {
-	var list []agent.Agent
-	if m.ag != nil {
-		list = append(list, m.ag)
-	}
-	if m.dying != nil {
-		list = append(list, m.dying)
-	}
-	return list
 }
 
 // Init implementa tea.Model.
@@ -179,39 +169,46 @@ func (m Model) update(msg tea.Msg) (Model, tea.Cmd) {
 		return m, cmd
 
 	case eventsMsg:
-		if msg.gen != m.gen || m.ag == nil {
+		if m.ag == nil {
 			return m, nil
 		}
-		for _, ev := range msg.evs {
-			m.applyEvent(ev)
+		// Durante una cancelación, lo que llega es del turno cancelado.
+		if !m.cancelling {
+			for _, ev := range msg.evs {
+				m.applyEvent(ev)
+			}
 		}
 		if msg.closed {
-			if m.busy {
+			if m.busy && !m.quitting {
 				m.add(kindError, "el agente terminó inesperadamente")
 			}
 			m.busy = false
-			m.ag, m.events = nil, nil
+			m.listening = false
+			m.dead = true
 			m.refresh()
 			return m, nil
 		}
 		m.refresh()
-		return m, listen(m.events, m.gen)
+		return m, listen(m.ag.Events())
 
 	case startMsg:
-		if msg.gen != m.gen || m.ag == nil || msg.err == nil {
+		m.starting = false
+		if msg.err == nil {
+			if m.cancelPending {
+				m.cancelPending = false
+				return m, m.cancelCmd()
+			}
 			return m, nil
 		}
 		m.add(kindError, "no se pudo iniciar el turno: "+msg.err.Error())
 		m.busy = false
-		if m.ag.Status() == agent.StatusDone {
-			m.ag, m.events = nil, nil
-		}
+		m.cancelling = false
+		m.cancelPending = false
 		m.refresh()
 		return m, nil
 
 	case cancelDoneMsg:
 		m.cancelling = false
-		m.dying = nil
 		if msg.err != nil {
 			m.add(kindError, "error al cancelar: "+msg.err.Error())
 		}
@@ -257,28 +254,32 @@ func (m Model) handleKey(msg tea.KeyPressMsg) (Model, tea.Cmd) {
 // send lanza un turno con el texto de la entrada.
 func (m Model) send() (Model, tea.Cmd) {
 	text := strings.TrimSpace(m.input.Value())
-	if m.busy || m.cancelling || text == "" || m.cfg.NewAgent == nil {
+	if m.busy || m.cancelling || text == "" || m.ag == nil {
+		return m, nil
+	}
+	if m.dead {
+		m.add(kindError, "el agente terminó; hay que reiniciar WARI")
+		m.refresh()
 		return m, nil
 	}
 	m.add(kindUser, text)
 	m.input.Reset()
 
 	var cmds []tea.Cmd
-	if m.ag == nil || m.ag.Status() == agent.StatusDone {
-		m.gen++
-		m.ag = m.cfg.NewAgent()
-		m.events = m.ag.Events()
-		cmds = append(cmds, listen(m.events, m.gen))
+	if !m.listening {
+		m.listening = true
+		cmds = append(cmds, listen(m.ag.Events()))
 	}
 	m.busy = true
+	m.starting = true
 	m.asstOpen = false
 
 	task := m.cfg.Task
 	task.Prompt = text
 	task.SessionID = m.sessionID
-	ag, gen := m.ag, m.gen
+	ag := m.ag
 	cmds = append(cmds, func() tea.Msg {
-		return startMsg{gen: gen, err: ag.Start(context.Background(), task)}
+		return startMsg{err: ag.Start(context.Background(), task)}
 	})
 	if !m.spinning {
 		m.spinning = true
@@ -288,21 +289,12 @@ func (m Model) send() (Model, tea.Cmd) {
 	return m, tea.Batch(cmds...)
 }
 
-// newSession descarta la sesión guardada y el agente actual. No hace nada con
-// un turno en curso o una cancelación pendiente. Kill corre en un Cmd; si el
-// programa sale antes, de todos modos lo mata el registro de agentes de main.
+// newSession descarta la sesión guardada: el siguiente mensaje empieza una
+// sesión nueva con el mismo agente. Si hay un turno en curso, lo cancela.
 func (m Model) newSession() (Model, tea.Cmd) {
-	if m.busy || m.cancelling {
-		return m, nil
-	}
 	var cmd tea.Cmd
-	if ag := m.ag; ag != nil {
-		m.ag, m.events = nil, nil
-		m.gen++ // los mensajes del agente descartado se ignoran
-		cmd = func() tea.Msg {
-			_ = ag.Kill()
-			return nil
-		}
+	if m.busy {
+		m, cmd = m.cancel()
 	}
 	m.sessionID = ""
 	m.add(kindInfo, "— sesión nueva —")
@@ -310,43 +302,49 @@ func (m Model) newSession() (Model, tea.Cmd) {
 	return m, cmd
 }
 
-// cancel mata al agente del turno en curso sin bloquear Update. El agente se
-// descarta de inmediato: sus eventos pendientes quedan en una generación vieja.
+// cancel cancela el turno en curso sin bloquear Update. El agente sigue vivo
+// y se reutiliza en el siguiente envío.
 func (m Model) cancel() (Model, tea.Cmd) {
 	if !m.busy || m.cancelling || m.ag == nil {
 		return m, nil
 	}
-	ag := m.ag
-	m.dying = ag
-	m.ag, m.events = nil, nil
-	m.gen++ // los mensajes de la generación anterior se ignoran
 	m.busy = false
 	m.cancelling = true
 	m.asstOpen = false
-	return m, func() tea.Msg { return cancelDoneMsg{err: ag.Kill()} }
+	if m.starting {
+		// Cancel no vería ningún turno todavía: espera al resultado de Start.
+		m.cancelPending = true
+		return m, nil
+	}
+	return m, m.cancelCmd()
 }
 
-// quit mata a los agentes dentro de un Cmd y después sale.
+// cancelCmd es el Cmd que cancela el turno del agente.
+func (m Model) cancelCmd() tea.Cmd {
+	ag := m.ag
+	return func() tea.Msg { return cancelDoneMsg{err: ag.Cancel()} }
+}
+
+// quit cierra al agente dentro de un Cmd y después sale. Si el programa muere
+// antes, de todos modos lo cierra el defer de main.
 func (m Model) quit() (Model, tea.Cmd) {
 	if m.quitting {
 		return m, nil
 	}
 	m.quitting = true
-	agents := m.toKill()
-	if len(agents) == 0 {
+	if m.ag == nil {
 		return m, tea.Quit
 	}
-	kill := func() tea.Msg {
-		for _, a := range agents {
-			_ = a.Kill()
-		}
+	ag := m.ag
+	closeAgent := func() tea.Msg {
+		_ = ag.Close()
 		return quitMsg{}
 	}
 	if m.spinning {
-		return m, kill
+		return m, closeAgent
 	}
 	m.spinning = true
-	return m, tea.Batch(kill, m.spin.Tick)
+	return m, tea.Batch(closeAgent, m.spin.Tick)
 }
 
 // maxBatch es el máximo de eventos que listen entrega en un solo mensaje.
@@ -355,13 +353,13 @@ const maxBatch = 256
 // listen espera el siguiente evento del canal y drena sin bloquear los que ya
 // estén disponibles (hasta maxBatch), para entregarlos en un solo mensaje. Se
 // vuelve a emitir tras manejar cada lote.
-func listen(ch <-chan agent.Event, gen int) tea.Cmd {
+func listen(ch <-chan agent.Event) tea.Cmd {
 	return func() tea.Msg {
 		ev, ok := <-ch
 		if !ok {
-			return eventsMsg{gen: gen, closed: true}
+			return eventsMsg{closed: true}
 		}
-		msg := eventsMsg{gen: gen, evs: []agent.Event{ev}}
+		msg := eventsMsg{evs: []agent.Event{ev}}
 		for len(msg.evs) < maxBatch {
 			select {
 			case ev, ok := <-ch:
@@ -579,5 +577,5 @@ func (m Model) Handle(msg tea.Msg) (Model, tea.Cmd) { return m.update(msg) }
 // NewSession descarta la sesión actual, igual que su atajo.
 func (m Model) NewSession() (Model, tea.Cmd) { return m.newSession() }
 
-// Quit mata a los agentes y sale, igual que el atajo de salida.
+// Quit cierra al agente y sale, igual que el atajo de salida.
 func (m Model) Quit() (Model, tea.Cmd) { return m.quit() }

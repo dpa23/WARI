@@ -18,12 +18,14 @@ import (
 	"github.com/dpa23/wari/internal/agent"
 )
 
-// fakeAgent es un agent.Agent de pruebas: registra Start y Kill, y expone su
-// canal de eventos. Kill cierra el canal, como los adaptadores reales.
+// fakeAgent es un agent.Agent de pruebas: registra Start, Cancel y Close, y
+// expone su canal de eventos. Close cierra el canal, como los adaptadores
+// reales.
 type fakeAgent struct {
 	mu       sync.Mutex
 	starts   []agent.Task
-	kills    int
+	cancels  int
+	closes   int
 	status   agent.Status
 	startErr error
 	ch       chan agent.Event
@@ -48,9 +50,16 @@ func (f *fakeAgent) Send(string) error          { return nil }
 func (f *fakeAgent) Pause() error               { return nil }
 func (f *fakeAgent) Resume() error              { return nil }
 func (f *fakeAgent) Events() <-chan agent.Event { return f.ch }
-func (f *fakeAgent) Kill() error {
+func (f *fakeAgent) Cancel() error {
 	f.mu.Lock()
-	f.kills++
+	f.cancels++
+	f.status = agent.StatusIdle
+	f.mu.Unlock()
+	return nil
+}
+func (f *fakeAgent) Close() error {
+	f.mu.Lock()
+	f.closes++
 	f.status = agent.StatusDone
 	f.mu.Unlock()
 	f.once.Do(func() { close(f.ch) })
@@ -66,34 +75,33 @@ func (f *fakeAgent) startsCopy() []agent.Task {
 	defer f.mu.Unlock()
 	return append([]agent.Task(nil), f.starts...)
 }
-func (f *fakeAgent) killCount() int {
+func (f *fakeAgent) cancelCount() int {
 	f.mu.Lock()
 	defer f.mu.Unlock()
-	return f.kills
+	return f.cancels
+}
+func (f *fakeAgent) closeCount() int {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	return f.closes
 }
 
 // harness conduce el modelo como lo haría Bubble Tea.
 type harness struct {
-	t      *testing.T
-	m      Model
-	agents []*fakeAgent
+	t  *testing.T
+	m  Model
+	ag *fakeAgent
 }
 
 func newHarness(t *testing.T) *harness {
-	h := &harness{t: t}
+	h := &harness{t: t, ag: newFakeAgent()}
 	h.m = New(Config{
-		NewAgent: func() agent.Agent {
-			f := newFakeAgent()
-			h.agents = append(h.agents, f)
-			return f
-		},
-		Task: agent.Task{Dir: "/proyecto", Model: "m1"},
+		Agent: h.ag,
+		Task:  agent.Task{Dir: "/proyecto", Model: "m1"},
 	})
 	h.update(tea.WindowSizeMsg{Width: 80, Height: 24})
 	t.Cleanup(func() {
-		for _, a := range h.agents {
-			_ = a.Kill() // libera los Cmd de escucha bloqueados
-		}
+		_ = h.ag.Close() // libera los Cmd de escucha bloqueados
 	})
 	return h
 }
@@ -179,7 +187,7 @@ func (h *harness) submit(text string) {
 }
 
 func (h *harness) event(ev agent.Event) tea.Cmd {
-	return h.update(eventsMsg{gen: h.m.gen, evs: []agent.Event{ev}})
+	return h.update(eventsMsg{evs: []agent.Event{ev}})
 }
 
 var ansiRe = regexp.MustCompile(`\x1b\[[0-9;:?]*[ -/]*[@-~]|\x1b\][^\x07\x1b]*(\x07|\x1b\\)`)
@@ -202,13 +210,10 @@ func (h *harness) wantNoView(sub string) {
 	}
 }
 
-func TestEnviarCreaAgenteYLanzaStart(t *testing.T) {
+func TestEnviarLanzaStart(t *testing.T) {
 	h := newHarness(t)
 	h.submit("hola")
-	if len(h.agents) != 1 {
-		t.Fatalf("agentes creados = %d, quiero 1", len(h.agents))
-	}
-	starts := h.agents[0].startsCopy()
+	starts := h.ag.startsCopy()
 	if len(starts) != 1 {
 		t.Fatalf("Start llamado %d veces, quiero 1", len(starts))
 	}
@@ -250,16 +255,13 @@ func TestTurnoCompletoMuestraRespuestaYVuelveALibre(t *testing.T) {
 	}
 }
 
-func TestSegundoEnvioReutilizaAgenteYSesion(t *testing.T) {
+func TestSegundoEnvioReutilizaSesion(t *testing.T) {
 	h := newHarness(t)
 	h.submit("uno")
 	h.event(agent.Started{SessionID: "S1"})
 	h.event(agent.Done{SessionID: "S1"})
 	h.submit("dos")
-	if len(h.agents) != 1 {
-		t.Fatalf("agentes creados = %d, quiero 1", len(h.agents))
-	}
-	starts := h.agents[0].startsCopy()
+	starts := h.ag.startsCopy()
 	if len(starts) != 2 || starts[1].Prompt != "dos" || starts[1].SessionID != "S1" {
 		t.Errorf("starts = %+v", starts)
 	}
@@ -273,17 +275,17 @@ func TestCancelarYReanudar(t *testing.T) {
 
 	cmd := h.press(keyEsc)
 	if cmd == nil {
-		t.Fatal("esc durante un turno debería devolver un Cmd (Kill)")
+		t.Fatal("esc durante un turno debería devolver un Cmd (Cancel)")
 	}
-	if h.agents[0].killCount() != 0 {
-		t.Fatal("Kill no debe ejecutarse dentro de Update")
+	if h.ag.cancelCount() != 0 {
+		t.Fatal("Cancel no debe ejecutarse dentro de Update")
 	}
 	h.wantView("cancelando…")
 
 	// Mientras se cancela, enter no envía.
 	h.typeText("dos")
 	h.pump(h.press(keyEnter))
-	if len(h.agents) != 1 || len(h.agents[0].startsCopy()) != 1 {
+	if len(h.ag.startsCopy()) != 1 {
 		t.Fatal("no se debe enviar mientras se cancela")
 	}
 
@@ -291,38 +293,69 @@ func TestCancelarYReanudar(t *testing.T) {
 	if len(msgs) != 1 {
 		t.Fatalf("el Cmd de cancelar devolvió %d mensajes", len(msgs))
 	}
-	if h.agents[0].killCount() != 1 {
-		t.Errorf("Kill llamado %d veces, quiero 1", h.agents[0].killCount())
+	if h.ag.cancelCount() != 1 {
+		t.Errorf("Cancel llamado %d veces, quiero 1", h.ag.cancelCount())
+	}
+	if h.ag.closeCount() != 0 {
+		t.Error("cancelar no debe cerrar al agente")
 	}
 	h.wantView("turno cancelado")
 	h.wantView("libre")
 
 	h.pump(h.press(keyEnter)) // la entrada conservaba "dos"
-	if len(h.agents) != 2 {
-		t.Fatalf("agentes creados = %d, quiero 2", len(h.agents))
-	}
-	starts := h.agents[1].startsCopy()
-	if len(starts) != 1 || starts[0].Prompt != "dos" || starts[0].SessionID != "S1" {
-		t.Errorf("el segundo agente debería reanudar S1: %+v", starts)
+	starts := h.ag.startsCopy()
+	if len(starts) != 2 || starts[1].Prompt != "dos" || starts[1].SessionID != "S1" {
+		t.Errorf("el agente se reutiliza y reanuda S1: %+v", starts)
 	}
 }
 
-func TestEventosDeGeneracionVieja(t *testing.T) {
+func TestEventosDuranteCancelacionSeDescartan(t *testing.T) {
 	h := newHarness(t)
 	h.submit("uno")
-	old := h.m.gen
 	h.event(agent.Started{SessionID: "S1"})
-	h.pump(h.press(keyEsc))
+	cancel := h.press(keyEsc)
 
-	if cmd := h.update(eventsMsg{gen: old, evs: []agent.Event{agent.TextDelta{Text: "fantasma"}}}); cmd != nil {
-		t.Error("un evento viejo no debe volver a escuchar")
+	// Lo que llegue antes de que Cancel vuelva es del turno cancelado; el
+	// panel sigue escuchando.
+	if cmd := h.update(eventsMsg{evs: []agent.Event{agent.TextDelta{Text: "fantasma"}}}); cmd == nil {
+		t.Error("tras descartar un lote el panel debe seguir escuchando")
 	}
-	h.update(eventsMsg{gen: old, evs: []agent.Event{agent.Done{SessionID: "OTRA"}}})
-	h.update(eventsMsg{gen: old, closed: true})
+	h.update(eventsMsg{evs: []agent.Event{agent.Done{SessionID: "OTRA"}}})
 	h.wantNoView("fantasma")
 	if h.m.sessionID != "S1" {
-		t.Errorf("sessionID = %q, un evento viejo no debe cambiarlo", h.m.sessionID)
+		t.Errorf("sessionID = %q, un evento descartado no debe cambiarlo", h.m.sessionID)
 	}
+
+	h.pump(cancel)
+	h.submit("dos")
+	h.event(agent.TextDelta{Text: "real"})
+	h.wantView("real")
+}
+
+func TestEscConStartEnVueloCancelaAlVolver(t *testing.T) {
+	h := newHarness(t)
+	h.typeText("uno")
+	start := h.press(keyEnter)
+	msgs := run(start) // incluye startMsg; todavía no se entrega al modelo
+	if cmd := h.press(keyEsc); cmd != nil {
+		t.Fatal("con Start en vuelo, Cancel todavía no tiene turno que cancelar")
+	}
+	h.wantView("cancelando…")
+	var cancel tea.Cmd
+	for _, msg := range msgs {
+		if sm, ok := msg.(startMsg); ok {
+			cancel = h.update(sm)
+		}
+	}
+	if cancel == nil {
+		t.Fatal("al volver Start debería lanzarse la cancelación pendiente")
+	}
+	h.pump(cancel)
+	if h.ag.cancelCount() != 1 {
+		t.Errorf("Cancel llamado %d veces, quiero 1", h.ag.cancelCount())
+	}
+	h.wantView("turno cancelado")
+	h.wantView("libre")
 }
 
 func TestErrorYDoneConErrorSeMuestran(t *testing.T) {
@@ -364,8 +397,8 @@ func TestEntradaVaciaOEnTurnoNoEnvia(t *testing.T) {
 	if cmd := h.press(keyEnter); cmd != nil {
 		t.Error("enter con solo espacios no debe hacer nada")
 	}
-	if len(h.agents) != 0 {
-		t.Fatalf("no debería haberse creado ningún agente, hay %d", len(h.agents))
+	if n := len(h.ag.startsCopy()); n != 0 {
+		t.Fatalf("no debería haberse lanzado ningún turno, hay %d", n)
 	}
 
 	h.m.input.Reset()
@@ -374,7 +407,7 @@ func TestEntradaVaciaOEnTurnoNoEnvia(t *testing.T) {
 	if cmd := h.press(keyEnter); cmd != nil {
 		t.Error("enter durante un turno no debe lanzar otro")
 	}
-	if got := len(h.agents[0].startsCopy()); got != 1 {
+	if got := len(h.ag.startsCopy()); got != 1 {
 		t.Errorf("Start llamado %d veces, quiero 1", got)
 	}
 	if h.m.input.Value() != "dos" {
@@ -382,15 +415,15 @@ func TestEntradaVaciaOEnTurnoNoEnvia(t *testing.T) {
 	}
 }
 
-func TestCtrlCMataAlAgenteYSale(t *testing.T) {
+func TestCtrlCCierraAlAgenteYSale(t *testing.T) {
 	h := newHarness(t)
 	h.submit("uno")
 	cmd := h.press(keyCtrlC)
 	if cmd == nil {
-		t.Fatal("ctrl+c con agente vivo debería devolver un Cmd")
+		t.Fatal("ctrl+c debería devolver un Cmd")
 	}
-	if h.agents[0].killCount() != 0 {
-		t.Fatal("Kill no debe ejecutarse dentro de Update")
+	if h.ag.closeCount() != 0 {
+		t.Fatal("Close no debe ejecutarse dentro de Update")
 	}
 	h.wantView("saliendo…")
 	h.wantNoView("pensando…")
@@ -400,28 +433,28 @@ func TestCtrlCMataAlAgenteYSale(t *testing.T) {
 			quitMsgs = append(quitMsgs, msg)
 		}
 	}
-	if h.agents[0].killCount() != 1 {
-		t.Fatalf("Kill llamado %d veces, quiero 1", h.agents[0].killCount())
+	if h.ag.closeCount() != 1 {
+		t.Fatalf("Close llamado %d veces, quiero 1", h.ag.closeCount())
 	}
 	if len(quitMsgs) != 1 {
 		t.Fatalf("quitMsg recibidos = %d, quiero 1", len(quitMsgs))
 	}
 	quit := h.update(quitMsgs[0])
 	if quit == nil {
-		t.Fatal("tras Kill debería haber un Cmd de salida")
+		t.Fatal("tras Close debería haber un Cmd de salida")
 	}
 	if _, ok := quit().(tea.QuitMsg); !ok {
 		t.Error("el Cmd final debería ser tea.Quit")
 	}
-	// Un segundo ctrl+c mientras sale no vuelve a matar.
+	// Un segundo ctrl+c mientras sale no vuelve a cerrar.
 	if cmd := h.press(keyCtrlC); cmd != nil {
 		t.Error("ctrl+c repetido no debe hacer nada")
 	}
 }
 
 func TestCtrlCSinAgenteSaleDirecto(t *testing.T) {
-	h := newHarness(t)
-	cmd := h.press(keyCtrlC)
+	m := New(Config{})
+	_, cmd := m.Update(keyCtrlC)
 	if cmd == nil {
 		t.Fatal("ctrl+c debería salir")
 	}
@@ -430,14 +463,13 @@ func TestCtrlCSinAgenteSaleDirecto(t *testing.T) {
 	}
 }
 
-func TestCtrlCDuranteCancelacionEsperaAlKill(t *testing.T) {
+func TestCtrlCDuranteCancelacionCierraAlAgente(t *testing.T) {
 	h := newHarness(t)
 	h.submit("uno")
-	h.press(keyEsc) // Kill todavía no corre
-	cmd := h.press(keyCtrlC)
-	run(cmd)
-	if h.agents[0].killCount() != 1 {
-		t.Errorf("ctrl+c durante la cancelación debe esperar al agente moribundo (kills=%d)", h.agents[0].killCount())
+	h.press(keyEsc) // Cancel todavía no corre
+	run(h.press(keyCtrlC))
+	if h.ag.closeCount() != 1 {
+		t.Errorf("Close llamado %d veces, quiero 1", h.ag.closeCount())
 	}
 }
 
@@ -445,7 +477,7 @@ func TestListenReemiteTrasCadaEvento(t *testing.T) {
 	h := newHarness(t)
 	h.typeText("hola")
 	cmd := h.press(keyEnter)
-	h.agents[0].ch <- agent.Started{SessionID: "S9"}
+	h.ag.ch <- agent.Started{SessionID: "S9"}
 	var got []tea.Msg
 	for _, msg := range run(cmd) {
 		if _, ok := msg.(eventsMsg); ok {
@@ -459,12 +491,12 @@ func TestListenReemiteTrasCadaEvento(t *testing.T) {
 	if next == nil {
 		t.Fatal("tras un evento debe volver a escuchar")
 	}
-	h.agents[0].ch <- agent.TextDelta{Text: "x"}
+	h.ag.ch <- agent.TextDelta{Text: "x"}
 	msgs := run(next)
 	if len(msgs) != 1 {
 		t.Fatalf("mensajes = %d", len(msgs))
 	}
-	if e, ok := msgs[0].(eventsMsg); !ok || e.gen != h.m.gen {
+	if _, ok := msgs[0].(eventsMsg); !ok {
 		t.Errorf("mensaje inesperado %#v", msgs[0])
 	}
 }
@@ -472,14 +504,16 @@ func TestListenReemiteTrasCadaEvento(t *testing.T) {
 func TestCanalCerradoInesperado(t *testing.T) {
 	h := newHarness(t)
 	h.submit("uno")
-	h.update(eventsMsg{gen: h.m.gen, closed: true})
+	h.update(eventsMsg{closed: true})
 	h.wantView("terminó inesperadamente")
-	if h.m.busy || h.m.ag != nil {
-		t.Error("debería quedar libre y sin agente")
+	if h.m.busy {
+		t.Error("debería quedar libre")
 	}
-	h.submit("dos")
-	if len(h.agents) != 2 {
-		t.Errorf("tras perder el agente se crea otro, agentes=%d", len(h.agents))
+	h.typeText("dos")
+	h.pump(h.press(keyEnter))
+	h.wantView("hay que reiniciar WARI")
+	if n := len(h.ag.startsCopy()); n != 1 {
+		t.Errorf("con el agente muerto no se lanzan turnos, Start llamado %d veces", n)
 	}
 }
 
@@ -487,7 +521,7 @@ func TestErrorDeStartSeMuestra(t *testing.T) {
 	h := newHarness(t)
 	h.typeText("uno")
 	cmd := h.press(keyEnter)
-	h.agents[0].startErr = errors.New("sin binario")
+	h.ag.startErr = errors.New("sin binario")
 	h.pump(cmd)
 	h.wantView("no se pudo iniciar el turno: sin binario")
 	if h.m.busy {
@@ -645,63 +679,64 @@ func TestCtrlCMuestraSaliendo(t *testing.T) {
 // Arreglo D: ctrl+n descarta la sesión.
 var keyCtrlN = tea.KeyPressMsg{Code: 'n', Mod: tea.ModCtrl}
 
-func TestNuevaSesionDescartaSesionYAgente(t *testing.T) {
+func TestNuevaSesionDescartaSoloLaSesion(t *testing.T) {
 	h := newHarness(t)
 	h.submit("uno")
 	h.event(agent.Started{SessionID: "S1"})
 	h.event(agent.Done{SessionID: "S1"})
 
-	cmd := h.press(keyCtrlN)
-	if h.agents[0].killCount() != 0 {
-		t.Fatal("Kill no debe ejecutarse dentro de Update")
-	}
-	if cmd == nil {
-		t.Fatal("ctrl+n con agente vivo debería devolver un Cmd (Kill)")
+	if cmd := h.press(keyCtrlN); cmd != nil {
+		t.Error("ctrl+n sin turno en curso no tiene nada que ejecutar")
 	}
 	if h.m.sessionID != "" {
 		t.Errorf("sessionID = %q, quiero vacío", h.m.sessionID)
 	}
 	h.wantView("sesión nueva")
 	h.wantNoView("sesión S1")
-	run(cmd)
-	if h.agents[0].killCount() != 1 {
-		t.Errorf("Kill llamado %d veces, quiero 1", h.agents[0].killCount())
+	if h.ag.cancelCount() != 0 || h.ag.closeCount() != 0 {
+		t.Error("ctrl+n sin turno no debe cancelar ni cerrar al agente")
 	}
 
 	h.submit("dos")
-	if len(h.agents) != 2 {
-		t.Fatalf("agentes creados = %d, quiero 2", len(h.agents))
+	starts := h.ag.startsCopy()
+	if len(starts) != 2 || starts[1].SessionID != "" {
+		t.Errorf("el turno nuevo no debe reanudar nada y usa el mismo agente: %+v", starts)
 	}
-	starts := h.agents[1].startsCopy()
-	if len(starts) != 1 || starts[0].SessionID != "" {
-		t.Errorf("el turno nuevo no debe reanudar nada: %+v", starts)
-	}
-	// Un evento tardío del agente descartado se ignora.
-	h.update(eventsMsg{gen: h.m.gen - 1, evs: []agent.Event{agent.TextDelta{Text: "fantasma"}}})
-	h.wantNoView("fantasma")
 }
 
-func TestNuevaSesionConTurnoEnCursoNoHaceNada(t *testing.T) {
+func TestNuevaSesionConTurnoEnCursoLoCancela(t *testing.T) {
 	h := newHarness(t)
 	h.submit("uno")
 	h.event(agent.Started{SessionID: "S1"})
-	if cmd := h.press(keyCtrlN); cmd != nil {
-		t.Error("ctrl+n durante un turno no debe hacer nada")
+	cmd := h.press(keyCtrlN)
+	if cmd == nil {
+		t.Fatal("ctrl+n durante un turno debería cancelarlo")
 	}
-	if h.m.sessionID != "S1" || h.agents[0].killCount() != 0 {
-		t.Error("la sesión y el agente deben seguir intactos")
+	if h.ag.cancelCount() != 0 {
+		t.Fatal("Cancel no debe ejecutarse dentro de Update")
 	}
-	h.wantNoView("sesión nueva")
-	h.press(keyEsc) // cancelando
-	if cmd := h.press(keyCtrlN); cmd != nil || h.m.sessionID != "S1" {
-		t.Error("ctrl+n durante la cancelación no debe hacer nada")
+	if h.m.sessionID != "" {
+		t.Errorf("sessionID = %q, quiero vacío", h.m.sessionID)
+	}
+	h.wantView("sesión nueva")
+	h.wantView("cancelando…")
+	h.pump(cmd)
+	if h.ag.cancelCount() != 1 || h.ag.closeCount() != 0 {
+		t.Errorf("Cancel=%d Close=%d, quiero 1 y 0", h.ag.cancelCount(), h.ag.closeCount())
+	}
+	// Durante la cancelación solo limpia la sesión.
+	h.submit("dos")
+	h.event(agent.Started{SessionID: "S2"})
+	h.press(keyEsc)
+	if cmd := h.press(keyCtrlN); cmd != nil || h.m.sessionID != "" {
+		t.Error("ctrl+n durante la cancelación solo limpia la sesión")
 	}
 }
 
-func TestNuevaSesionSinAgenteSoloLimpia(t *testing.T) {
+func TestNuevaSesionSinTurnoSoloLimpia(t *testing.T) {
 	h := newHarness(t)
 	if cmd := h.press(keyCtrlN); cmd != nil {
-		t.Error("sin agente no hay nada que matar")
+		t.Error("sin turno no hay nada que ejecutar")
 	}
 	h.wantView("sesión nueva")
 }

@@ -84,7 +84,7 @@ Formato: fecha · decisión · motivo · alternativas descartadas.
 
 ## 2026-10-17 · Refactor pendiente: ejecutor de turnos genérico y Cancel/Close
 - **Hallazgo de `/simplify`** (altitud): `Kill` sirve a la vez para cancelar un turno y terminar el agente, lo que obliga al TUI a recrear agentes (generaciones, `dying`) y a `main` a llevar un registro. Además, la maquinaria de turnos (serialización, `Done` retenido, síntesis de `Done`, Kill/Pause) es genérica pero vive en el adaptador de claude.
-- **Decisión**: extraer un ejecutor de turnos a `internal/agent` (el adaptador solo aporta `Spec` y `ParseLine`) y separar `Cancel` (turno) de `Close` (agente) **al inicio de la fase 5**, junto con el orquestador. Es requisito antes del adaptador de agy (fase 8).
+- **Hecho (inicio de la fase 5):** `internal/agent/turn.Runner` implementa `agent.Agent` para CLIs de un proceso por turno; el adaptador solo aporta un `Driver` (`Spec`, `Parse`, `Name`). El contrato tiene `Cancel()` (corta el turno, el agente sigue Idle, sin Done ni eventos posteriores) y `Close()` (definitivo). El TUI usa un único agente: se eliminaron generaciones, recreación de agentes y el registro de `main` (ahora `defer ag.Close()`).
 
 ## 2026-10-17 · Editor núcleo (fase 3)
 - **Buffer `[][]rune`** como pide el PLAN: con el `.java` de 5000 líneas, abrir tarda ~1,4 ms y 100 ediciones ~0,2 ms; no hace falta rope ni gap buffer.

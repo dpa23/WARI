@@ -9,7 +9,6 @@ import (
 	"os"
 	"os/signal"
 	"path/filepath"
-	"sync"
 	"syscall"
 	"time"
 
@@ -95,22 +94,23 @@ func loadKeymap(root string) config.Keymap {
 
 // runTUI abre el layout (árbol, editor y chat) en root, con file abierto si
 // no está vacío. Al salir, por la vía que sea (atajo, señal o pánico en el
-// bucle de eventos), no debe quedar ningún agente vivo.
+// bucle de eventos), no debe quedar ningún agente vivo: el defer cierra al
+// agente, que mata el turno en curso con todos sus descendientes.
 func runTUI(task agent.Task, root, file string) int {
-	var reg registry
-	defer reg.killAll()
+	ag := claude.New("")
+	defer ag.Close()
 
 	task.Dir = root
 	p := tea.NewProgram(layout.New(layout.Config{
 		Root:   root,
 		File:   file,
 		Keymap: loadKeymap(root),
-		Chat:   tui.Config{NewAgent: reg.newClaude, Task: task},
+		Chat:   tui.Config{Agent: ag, Task: task},
 	}))
 
 	// Bubble Tea atrapa SIGINT y SIGTERM, pero no SIGHUP: al cerrarse la
-	// terminal, wari moriría sin matar a los agentes, que viven en sus propios
-	// grupos de procesos y no reciben el SIGHUP de la terminal.
+	// terminal, wari moriría sin cerrar al agente, que vive en su propio
+	// grupo de procesos y no recibe el SIGHUP de la terminal.
 	hup := make(chan os.Signal, 1)
 	signal.Notify(hup, syscall.SIGHUP)
 	defer signal.Stop(hup)
@@ -124,32 +124,6 @@ func runTUI(task agent.Task, root, file string) int {
 		return 1
 	}
 	return 0
-}
-
-// registry recuerda todos los agentes creados para matarlos al salir. No
-// depende del modelo final de Program.Run, que es nil si hubo un pánico.
-type registry struct {
-	mu     sync.Mutex
-	agents []agent.Agent
-}
-
-func (r *registry) newClaude() agent.Agent {
-	a := claude.New("")
-	r.mu.Lock()
-	r.agents = append(r.agents, a)
-	r.mu.Unlock()
-	return a
-}
-
-// killAll mata a todos los agentes; Kill sobre uno ya terminado vuelve en el
-// acto.
-func (r *registry) killAll() {
-	r.mu.Lock()
-	agents := r.agents
-	r.mu.Unlock()
-	for _, a := range agents {
-		a.Kill()
-	}
 }
 
 // runTurn ejecuta un turno: la respuesta va a stdout y el resto de los
@@ -169,8 +143,8 @@ func runTurn(task agent.Task, killAfter time.Duration) int {
 
 	kill := func(reason string) {
 		fmt.Fprintf(os.Stderr, "\n[wari] %s: terminando el grupo %d\n", reason, pgid)
-		if err := c.Kill(); err != nil {
-			fmt.Fprintln(os.Stderr, "[wari] kill:", err)
+		if err := c.Close(); err != nil {
+			fmt.Fprintln(os.Stderr, "[wari] cerrar:", err)
 		}
 	}
 	if killAfter > 0 {
@@ -201,8 +175,8 @@ func runTurn(task agent.Task, killAfter time.Duration) int {
 			fmt.Fprintln(os.Stderr, "[error]", e.Err)
 		case agent.Done:
 			fmt.Fprintf(os.Stderr, "[fin] sesión %s, %d turnos internos\n", e.SessionID, e.Turns)
-			// El proceso ya salió (contrato de Done): Kill solo cierra el agente.
-			c.Kill()
+			// El proceso ya salió (contrato de Done): Close solo cierra el agente.
+			c.Close()
 			if e.IsError {
 				return 1
 			}
