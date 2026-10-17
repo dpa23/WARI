@@ -100,7 +100,6 @@ func runTUI(task agent.Task, root, file string) int {
 	ag := claude.New("")
 	defer ag.Close()
 
-	task.Dir = root
 	p := tea.NewProgram(layout.New(layout.Config{
 		Root:   root,
 		File:   file,

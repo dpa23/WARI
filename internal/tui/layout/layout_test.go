@@ -374,10 +374,17 @@ func TestQuitWithDirtyNeedsConfirmation(t *testing.T) {
 	}
 }
 
+// openPalette abre la paleta con ctrl+p y entrega la lista de archivos que
+// recorre el Cmd en segundo plano.
+func openPalette(m Model) Model {
+	m, cmd := send(m, press('p', tea.ModCtrl))
+	return feed(m, cmd)
+}
+
 func TestPaletteOpensFilesAndRunsActions(t *testing.T) {
 	root := project(t)
 	m := newLayout(t, Config{Root: root}, 120, 30)
-	m, _ = send(m, press('p', tea.ModCtrl))
+	m = openPalette(m)
 	if !m.pal.open {
 		t.Fatal("ctrl+p no abrió la paleta")
 	}
@@ -563,5 +570,216 @@ func TestWindowTitleAndInit(t *testing.T) {
 	m.w, m.h = 0, 0
 	if m.View().Content != "" || m.View().Cursor != nil {
 		t.Error("tamaño 0 debe dar vista vacía")
+	}
+}
+
+func isQuit(cmd tea.Cmd) bool {
+	if cmd == nil {
+		return false
+	}
+	_, ok := cmd().(tea.QuitMsg)
+	return ok
+}
+
+func TestPaletteQuitWithDirtyNeedsConfirmation(t *testing.T) {
+	root := project(t)
+	m := newLayout(t, Config{Root: root, File: filepath.Join(root, "notes.txt")}, 120, 30)
+	m, _ = send(m, text("!"))
+	runQuit := func(m Model) (Model, tea.Cmd) {
+		m, _ = send(m, press('p', tea.ModCtrl))
+		m = typeText(m, "salir")
+		return send(m, press(tea.KeyEnter, 0))
+	}
+	m, cmd := runQuit(m)
+	if isQuit(cmd) || !strings.Contains(m.msg, "cambios sin guardar") {
+		t.Fatalf("'Salir' con cambios debía avisar: msg=%q", m.msg)
+	}
+	// Repetir 'Salir' (abrir la paleta no desarma) confirma.
+	if _, cmd := runQuit(m); !isQuit(cmd) {
+		t.Error("la segunda petición de 'Salir' debía salir")
+	}
+	// La tecla de salir también cuenta como segunda petición.
+	if _, cmd := send(m, press('c', tea.ModCtrl)); !isQuit(cmd) {
+		t.Error("ctrl+c tras el aviso de la paleta debía salir")
+	}
+	// Cancelar la paleta desarma la confirmación.
+	m, _ = send(m, press('p', tea.ModCtrl), press(tea.KeyEscape, 0))
+	if _, cmd := send(m, press('c', tea.ModCtrl)); isQuit(cmd) {
+		t.Error("tras cancelar la paleta debía volver a pedir confirmación")
+	}
+}
+
+func TestNonUTF8FileIsRejected(t *testing.T) {
+	root := project(t)
+	latin1 := "a\xf1o\n" // "año" en Latin-1
+	p := write(t, root, "latin1.txt", latin1)
+	m := newLayout(t, Config{Root: root}, 120, 30)
+	m, _ = send(m, filetree.OpenFileMsg{Path: p})
+	if m.hasEd || !strings.Contains(m.msg, "UTF-8") {
+		t.Errorf("hasEd=%v msg=%q, quería rechazo por UTF-8", m.hasEd, m.msg)
+	}
+	if data, _ := os.ReadFile(p); string(data) != latin1 {
+		t.Error("no debe tocar el archivo")
+	}
+	// Un UTF-8 válido con acentos sí se abre.
+	ok := write(t, root, "utf8.txt", "año\n")
+	m, _ = send(m, filetree.OpenFileMsg{Path: ok})
+	if !m.hasEd || m.ed.Path() != ok {
+		t.Errorf("UTF-8 válido: hasEd=%v msg=%q", m.hasEd, m.msg)
+	}
+}
+
+func TestPaletteAcceptsAltGrText(t *testing.T) {
+	m := newLayout(t, Config{}, 120, 30)
+	m, _ = send(m, press('p', tea.ModCtrl))
+	// En Windows, AltGr llega como Text con ctrl+alt.
+	m, _ = send(m, tea.KeyPressMsg{Code: '@', Text: "@", Mod: tea.ModCtrl | tea.ModAlt})
+	if string(m.pal.query) != "@" {
+		t.Errorf("consulta = %q, quería \"@\"", string(m.pal.query))
+	}
+	// Una combinación sin texto no escribe nada.
+	m, _ = send(m, press('x', tea.ModCtrl))
+	if string(m.pal.query) != "@" {
+		t.Errorf("consulta = %q tras ctrl+x", string(m.pal.query))
+	}
+}
+
+func TestPendingOpenIsDisarmedByOtherKeys(t *testing.T) {
+	root := project(t)
+	notes, readme := filepath.Join(root, "notes.txt"), filepath.Join(root, "README.md")
+	m := newLayout(t, Config{Root: root, File: notes}, 120, 30)
+	m, _ = send(m, text("!"))
+	m, _ = send(m, filetree.OpenFileMsg{Path: readme})
+	if m.pendingOpen != readme {
+		t.Fatalf("pendingOpen = %q, quería armado", m.pendingOpen)
+	}
+	// Seguir editando desarma: abrir README otra vez vuelve a avisar.
+	m, _ = send(m, text("?"))
+	if m.pendingOpen != "" {
+		t.Error("escribir debía desarmar la confirmación")
+	}
+	m, _ = send(m, filetree.OpenFileMsg{Path: readme})
+	if m.ed.Path() != notes || !strings.Contains(m.msg, "sin guardar") {
+		t.Fatalf("debía volver a avisar: path=%q msg=%q", m.ed.Path(), m.msg)
+	}
+	// Un atajo global también desarma.
+	m, _ = send(m, press('b', tea.ModCtrl)) // toggle_tree
+	if m.pendingOpen != "" {
+		t.Error("un atajo global debía desarmar la confirmación")
+	}
+}
+
+func TestOpenFromTreeConfirmsWithSecondEnter(t *testing.T) {
+	root := project(t)
+	notes, readme := filepath.Join(root, "notes.txt"), filepath.Join(root, "README.md")
+	m := newLayout(t, Config{Root: root, File: notes}, 120, 30)
+	m, _ = send(m, text("!"))
+	m, _ = send(m, press(tea.KeyTab, tea.ModShift)) // al árbol
+	if m.focus != focusTree {
+		t.Fatalf("foco = %v", m.focus)
+	}
+	m, _ = send(m, press(tea.KeyEnd, 0)) // README.md
+	m, cmd := send(m, press(tea.KeyEnter, 0))
+	m = feed(m, cmd)
+	if m.ed.Path() != notes || m.pendingOpen != readme {
+		t.Fatalf("primer Enter: path=%q pending=%q", m.ed.Path(), m.pendingOpen)
+	}
+	m, cmd = send(m, press(tea.KeyEnter, 0))
+	m = feed(m, cmd)
+	if m.ed.Path() != readme {
+		t.Errorf("el segundo Enter debía abrir README: path=%q msg=%q", m.ed.Path(), m.msg)
+	}
+}
+
+func TestPaletteFileListIsAsyncAndCached(t *testing.T) {
+	root := project(t)
+	m := newLayout(t, Config{Root: root}, 120, 30)
+	m, cmd := send(m, press('p', tea.ModCtrl))
+	if cmd == nil {
+		t.Fatal("ctrl+p debía devolver un Cmd que recorra el proyecto")
+	}
+	hasFile := func(m Model) bool {
+		for _, it := range m.pal.items {
+			if strings.HasPrefix(it.id, cmdOpenPrefix) {
+				return true
+			}
+		}
+		return false
+	}
+	if hasFile(m) {
+		t.Error("al abrir no debía haber archivos: el recorrido va en el Cmd")
+	}
+	m = feed(m, cmd)
+	if !hasFile(m) {
+		t.Fatal("tras el Cmd debía haber archivos")
+	}
+	for _, it := range m.pal.items {
+		if len(it.folded) != len([]rune(it.title)) {
+			t.Fatalf("el título plegado de %q no se calculó", it.title)
+		}
+	}
+
+	// Cerrar y reabrir: la lista cacheada está al instante, aunque aparezcan
+	// archivos nuevos (llegan con el refresco).
+	m, _ = send(m, press(tea.KeyEscape, 0))
+	write(t, root, "nuevo.txt", "x")
+	m, cmd = send(m, press('p', tea.ModCtrl))
+	if !hasFile(m) {
+		t.Error("al reabrir debía usarse la lista cacheada")
+	}
+	for _, it := range m.pal.items {
+		if it.title == "nuevo.txt" {
+			t.Error("el archivo nuevo no debía estar antes del refresco")
+		}
+	}
+	m = feed(m, cmd)
+	var found bool
+	for _, it := range m.pal.items {
+		found = found || it.title == "nuevo.txt"
+	}
+	if !found {
+		t.Error("el refresco debía traer el archivo nuevo")
+	}
+}
+
+func TestSaveWarnsWhenFileChangedOnDisk(t *testing.T) {
+	root := project(t)
+	notes := filepath.Join(root, "notes.txt")
+	m := newLayout(t, Config{Root: root, File: notes}, 120, 30)
+	m, _ = send(m, text("!"))
+	if err := os.WriteFile(notes, []byte("de otro programa\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	m, cmd := send(m, press('s', tea.ModCtrl))
+	m = feed(m, cmd)
+	if !strings.Contains(m.msg, "el archivo cambió en disco; ctrl+s otra vez para sobrescribir") {
+		t.Errorf("msg = %q", m.msg)
+	}
+	if data, _ := os.ReadFile(notes); string(data) != "de otro programa\n" {
+		t.Errorf("no debía pisar el archivo: %q", data)
+	}
+	m, cmd = send(m, press('s', tea.ModCtrl))
+	m = feed(m, cmd)
+	if data, _ := os.ReadFile(notes); string(data) != "!hola\n" {
+		t.Errorf("el segundo guardado debía sobrescribir: %q", data)
+	}
+	if !strings.Contains(m.msg, "guardado") {
+		t.Errorf("msg = %q", m.msg)
+	}
+}
+
+func TestDisplayRelativeToRoot(t *testing.T) {
+	m := Model{root: filepath.FromSlash("/x/y")}
+	cases := map[string]string{
+		filepath.FromSlash("/x/y/a/b.go"):   "a/b.go",
+		filepath.FromSlash("/x/y/..oculto"): "..oculto", // un nombre que empieza con ".." sigue dentro
+		filepath.FromSlash("/x/..z"):        filepath.FromSlash("/x/..z"),
+		filepath.FromSlash("/x"):            filepath.FromSlash("/x"),
+		filepath.FromSlash("/otro/f.go"):    filepath.FromSlash("/otro/f.go"),
+	}
+	for in, want := range cases {
+		if got := m.display(in); got != want {
+			t.Errorf("display(%q) = %q, quería %q", in, got, want)
+		}
 	}
 }

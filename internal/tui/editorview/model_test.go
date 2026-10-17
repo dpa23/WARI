@@ -1,6 +1,7 @@
 package editorview
 
 import (
+	"errors"
 	"os"
 	"path/filepath"
 	"strings"
@@ -511,4 +512,159 @@ func colorOf(row string) string {
 		return ""
 	}
 	return rest[:j+1]
+}
+
+func TestAltGrTextIsInserted(t *testing.T) {
+	m, _ := newFile(t, "e.txt", "\n", 40, 3)
+	// En Windows, AltGr llega como Text con ctrl+alt.
+	m, _ = send(m, tea.KeyPressMsg{Code: '@', Text: "@", Mod: tea.ModCtrl | tea.ModAlt},
+		tea.KeyPressMsg{Code: '{', Text: "{", Mod: tea.ModCtrl | tea.ModAlt})
+	if got := m.buf.String(); got != "@{" {
+		t.Errorf("buffer = %q, quería \"@{\"", got)
+	}
+	if !m.Dirty() {
+		t.Error("debe quedar sucio")
+	}
+	// Un atajo sin binding y sin texto no inserta nada.
+	m, _ = send(m, press('x', tea.ModCtrl))
+	if got := m.buf.String(); got != "@{" {
+		t.Errorf("ctrl+x modificó el buffer: %q", got)
+	}
+}
+
+func TestSaveWarnsWhenFileChangedOnDisk(t *testing.T) {
+	m, path := newFile(t, "e.txt", "base\n", 40, 3)
+	m, _ = send(m, press(tea.KeyEnd, 0), typ("!"))
+	if err := os.WriteFile(path, []byte("otro programa\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	m, cmd := send(m, press('s', tea.ModCtrl))
+	msg := cmd().(SavedMsg)
+	if !errors.Is(msg.Err, ErrChangedOnDisk) || !strings.Contains(msg.Err.Error(), "ctrl+s otra vez para sobrescribir") {
+		t.Fatalf("Err = %v", msg.Err)
+	}
+	if data, _ := os.ReadFile(path); string(data) != "otro programa\n" {
+		t.Errorf("no debía pisar el archivo: %q", data)
+	}
+	if !m.Dirty() {
+		t.Error("sin guardar debe seguir sucio")
+	}
+	m, cmd = send(m, press('s', tea.ModCtrl))
+	if msg := cmd().(SavedMsg); msg.Err != nil {
+		t.Fatalf("segundo guardado: %v", msg.Err)
+	}
+	if data, _ := os.ReadFile(path); string(data) != "base!\n" {
+		t.Errorf("el segundo guardado debía sobrescribir: %q", data)
+	}
+	if m.Dirty() {
+		t.Error("tras sobrescribir debe estar limpio")
+	}
+	// Después de guardar, el archivo es el que vimos: guardar otra vez no avisa.
+	m, _ = send(m, typ("?"))
+	_, cmd = send(m, press('s', tea.ModCtrl))
+	if msg := cmd().(SavedMsg); msg.Err != nil {
+		t.Errorf("guardado normal: %v", msg.Err)
+	}
+}
+
+func TestChangedOnDiskConfirmationIsDisarmedByOtherKeys(t *testing.T) {
+	m, path := newFile(t, "e.txt", "base\n", 40, 3)
+	m, _ = send(m, typ("!"))
+	if err := os.WriteFile(path, []byte("otro programa, más largo\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	m, cmd := send(m, press('s', tea.ModCtrl))
+	if msg := cmd().(SavedMsg); !errors.Is(msg.Err, ErrChangedOnDisk) {
+		t.Fatalf("Err = %v", msg.Err)
+	}
+	m, _ = send(m, typ("x")) // otra tecla desarma
+	_, cmd = send(m, press('s', tea.ModCtrl))
+	if msg := cmd().(SavedMsg); !errors.Is(msg.Err, ErrChangedOnDisk) {
+		t.Errorf("tras otra tecla debía volver a avisar: %v", msg.Err)
+	}
+}
+
+func TestSaveDetectsMtimeChangeWithSameSize(t *testing.T) {
+	m, path := newFile(t, "e.txt", "base\n", 40, 3)
+	m, _ = send(m, typ("!"))
+	if err := os.WriteFile(path, []byte("BASE\n"), 0o644); err != nil { // mismo tamaño
+		t.Fatal(err)
+	}
+	future := time.Now().Add(time.Hour)
+	if err := os.Chtimes(path, future, future); err != nil {
+		t.Fatal(err)
+	}
+	_, cmd := send(m, press('s', tea.ModCtrl))
+	if msg := cmd().(SavedMsg); !errors.Is(msg.Err, ErrChangedOnDisk) {
+		t.Errorf("Err = %v, quería ErrChangedOnDisk por mtime", msg.Err)
+	}
+}
+
+func TestDirtyTracksSavedStateAcrossUndoRedo(t *testing.T) {
+	m, _ := newFile(t, "u.txt", "base\n", 40, 3)
+	m.buf.SetUndoGroupPause(0) // cada tecla es un grupo
+	undo, redo := press('z', tea.ModCtrl), press('y', tea.ModCtrl)
+	check := func(step string, want bool) {
+		t.Helper()
+		if m.Dirty() != want {
+			t.Errorf("%s: Dirty = %v, quería %v (buffer %q)", step, m.Dirty(), want, m.buf.String())
+		}
+	}
+
+	m, _ = send(m, press(tea.KeyEnd, 0), typ("1"), typ("2"))
+	m, cmd := send(m, press('s', tea.ModCtrl)) // guardado en "base12"
+	if msg := cmd().(SavedMsg); msg.Err != nil {
+		t.Fatal(msg.Err)
+	}
+	check("guardado", false)
+	m, _ = send(m, undo)
+	check("deshacer tras guardar", true)
+	m, _ = send(m, redo)
+	check("rehacer vuelve al guardado", false)
+
+	m, _ = send(m, typ("3"))
+	check("editar", true)
+	m, _ = send(m, undo)
+	check("deshacer la edición vuelve al guardado", false)
+	m, _ = send(m, undo)
+	check("deshacer más allá", true)
+	m, _ = send(m, redo)
+	check("rehacer al guardado", false)
+	m, _ = send(m, redo)
+	if got := m.buf.String(); got != "base123" {
+		t.Fatalf("buffer = %q", got)
+	}
+	check("rehacer la edición", true)
+
+	// Editar desde un estado deshecho descarta el rehacer, pero deshacer sigue
+	// encontrando el estado guardado.
+	m, _ = send(m, undo, undo, typ("x"))
+	check("editar tras deshacer", true)
+	m, _ = send(m, undo)
+	check("deshacer la nueva edición", true) // estaba en "base1" ≠ guardado
+	m, _ = send(m, redo)
+	if m.buf.String() != "base1x" {
+		t.Fatalf("buffer = %q", m.buf.String())
+	}
+}
+
+func TestUndoRedoDoesNotRebuildBufferString(t *testing.T) {
+	// Tras conocer el paso de vuelta al estado guardado, deshacer y rehacer
+	// no deben recorrer el buffer: con 20000 líneas, 200 pulsaciones caben de
+	// sobra en el presupuesto.
+	var sb strings.Builder
+	for range 20000 {
+		sb.WriteString("una linea de texto bastante normal\n")
+	}
+	m, _ := newFile(t, "big.txt", sb.String(), 80, 24)
+	m.buf.SetUndoGroupPause(0)
+	m, _ = send(m, typ("a"), typ("b"))
+	m, _ = send(m, press('z', tea.ModCtrl)) // aprende el paso limpio (hay un hash)
+	start := time.Now()
+	for range 200 {
+		m, _ = send(m, press('z', tea.ModCtrl), press('y', tea.ModCtrl))
+	}
+	if d := time.Since(start); d > 500*time.Millisecond {
+		t.Errorf("400 deshacer/rehacer tardaron %v", d)
+	}
 }

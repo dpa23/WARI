@@ -10,11 +10,15 @@ import (
 // caracteres consecutivos, los que empiezan una palabra y los del nombre de
 // archivo (después de la última "/"), y penaliza los destinos largos.
 func fuzzyScore(query, target string) (int, bool) {
-	q := fold(query)
+	return fuzzyScoreFolded(fold(query), fold(target))
+}
+
+// fuzzyScoreFolded es fuzzyScore con la consulta y el destino ya plegados con
+// fold, para no replegar el destino en cada pulsación.
+func fuzzyScoreFolded(q, t []rune) (int, bool) {
 	if len(q) == 0 {
 		return 0, true
 	}
-	t := fold(target)
 	base := 0
 	for i, r := range t {
 		if r == '/' {

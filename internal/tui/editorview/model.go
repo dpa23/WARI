@@ -5,8 +5,12 @@
 package editorview
 
 import (
+	"errors"
+	"fmt"
+	"os"
 	"strconv"
 	"strings"
+	"time"
 	"unicode/utf8"
 
 	"charm.land/bubbles/v2/key"
@@ -51,10 +55,61 @@ type Model struct {
 
 	focused bool
 	dirty   bool
-	// saved es el contenido en el último guardado (o al abrir); permite que
-	// deshacer hasta ese punto deje el buffer limpio.
-	saved string
+	// saved es la huella del contenido en el último guardado (o al abrir).
+	// off cuenta los deshacer menos los rehacer desde la última edición o
+	// guardado; cleanOff, si cleanKnown, es el valor de off en el que el
+	// buffer coincide con lo guardado. Así dirty se actualiza en O(1) en
+	// cada deshacer/rehacer, y solo se calcula la huella mientras no se sabe
+	// en qué paso se vuelve al estado guardado.
+	saved      fingerprint
+	off        int
+	cleanOff   int
+	cleanKnown bool
+
+	// disk es lo que se vio del archivo al abrirlo o guardarlo (mtime y
+	// tamaño); overwrite indica que ya se avisó de que cambió en disco y el
+	// próximo guardado lo sobrescribe.
+	disk      diskStamp
+	overwrite bool
 }
+
+// fingerprint resume el contenido del buffer: líneas y un hash FNV-1a.
+type fingerprint struct {
+	lines int
+	sum   uint64
+}
+
+func fingerprintOf(b *editor.Buffer) fingerprint {
+	const prime = 1099511628211
+	h := uint64(14695981039346656037)
+	n := b.LineCount()
+	for i := 0; i < n; i++ {
+		for _, r := range b.Line(i) {
+			h = (h ^ uint64(r)) * prime
+		}
+		h = (h ^ '\n') * prime
+	}
+	return fingerprint{lines: n, sum: h}
+}
+
+// diskStamp es el mtime y el tamaño de un archivo en un momento dado.
+type diskStamp struct {
+	mod  time.Time
+	size int64
+	ok   bool // el archivo existía
+}
+
+func statDisk(path string) diskStamp {
+	st, err := os.Stat(path)
+	if err != nil {
+		return diskStamp{}
+	}
+	return diskStamp{mod: st.ModTime(), size: st.Size(), ok: true}
+}
+
+// ErrChangedOnDisk indica que el archivo cambió en disco desde que se abrió o
+// guardó; el siguiente guardado lo sobrescribe.
+var ErrChangedOnDisk = errors.New("el archivo cambió en disco")
 
 // New crea el editor de buf, que se abrió (o se guardará) con fi y path. El
 // resaltado se elige por la extensión de path.
@@ -65,8 +120,11 @@ func New(buf *editor.Buffer, fi editor.FileInfo, path string, keys KeyMap) Model
 		path:  path,
 		keys:  keys,
 		hl:    newHighlighter(path),
-		saved: buf.String(),
+		saved: fingerprintOf(buf),
+		// Un buffer recién abierto está limpio en off == 0.
+		cleanKnown: true,
 	}
+	m.disk = statDisk(m.target())
 	return m
 }
 
@@ -123,10 +181,14 @@ func (m Model) Update(msg tea.Msg) (Model, tea.Cmd) {
 	var cmd tea.Cmd
 	switch msg := msg.(type) {
 	case tea.KeyPressMsg:
+		if !key.Matches(msg, m.keys.Save) {
+			m.overwrite = false
+		}
 		cmd = m.handleKey(msg)
 	case tea.PasteMsg:
+		m.overwrite = false
 		m.buf.Paste(msg.Content)
-		m.dirty = true
+		m.edited()
 	default:
 		return m, nil
 	}
@@ -193,44 +255,74 @@ func (m *Model) handleKey(msg tea.KeyPressMsg) tea.Cmd {
 		return m.save()
 	case key.Matches(msg, k.Undo):
 		if b.Undo() {
-			m.dirty = b.String() != m.saved
+			m.off++
+			m.historyMoved()
 		}
 	case key.Matches(msg, k.Redo):
 		if b.Redo() {
-			m.dirty = b.String() != m.saved
+			m.off--
+			m.historyMoved()
 		}
 
 	case key.Matches(msg, k.Newline):
 		b.InsertRune('\n')
-		m.dirty = true
+		m.edited()
 	case key.Matches(msg, k.Tab):
 		b.InsertText(tabSpaces)
-		m.dirty = true
+		m.edited()
 	case key.Matches(msg, k.Backspace):
 		if c := b.Cursor(); !selEmpty(b) || c.Line > 0 || c.Col > 0 {
 			b.DeleteBackward()
-			m.dirty = true
+			m.edited()
 		}
 	case key.Matches(msg, k.Delete):
 		c := b.Cursor()
 		if !selEmpty(b) || c.Col < len(b.Line(c.Line)) || c.Line < b.LineCount()-1 {
 			b.DeleteForward()
-			m.dirty = true
+			m.edited()
 		}
 
 	default:
-		if msg.Mod&(tea.ModCtrl|tea.ModAlt) != 0 || msg.Text == "" {
-			return nil
-		}
+		// Texto imprimible con cualquier modificador: en Windows, AltGr llega
+		// como Text con ctrl+alt ("@", "{", "["). Los atajos de teclado sin
+		// binding (ctrl+x...) no traen Text y se ignoran.
 		for _, r := range msg.Text {
 			if r < 0x20 || r == 0x7f || r == utf8.RuneError {
 				continue
 			}
 			b.InsertRune(r)
-			m.dirty = true
+			m.edited()
 		}
 	}
 	return nil
+}
+
+// edited marca el buffer como modificado por una edición. Tras una edición
+// ya no se sabe en qué paso de deshacer se vuelve al estado guardado.
+func (m *Model) edited() {
+	m.dirty = true
+	m.off = 0
+	m.cleanKnown = false
+}
+
+// historyMoved actualiza dirty tras un deshacer o rehacer.
+func (m *Model) historyMoved() {
+	if m.cleanKnown {
+		m.dirty = m.off != m.cleanOff
+		return
+	}
+	if fingerprintOf(m.buf) == m.saved {
+		m.cleanKnown, m.cleanOff, m.dirty = true, m.off, false
+		return
+	}
+	m.dirty = true
+}
+
+// markSaved registra el estado actual como el guardado.
+func (m *Model) markSaved() {
+	m.dirty = false
+	m.saved = fingerprintOf(m.buf)
+	m.off, m.cleanOff, m.cleanKnown = 0, 0, true
 }
 
 // selEmpty indica que no hay selección activa.
@@ -263,19 +355,49 @@ func (m *Model) Save() tea.Cmd { return m.save() }
 // Keys devuelve los atajos del editor.
 func (m Model) Keys() KeyMap { return m.keys }
 
-// save guarda el buffer en disco y devuelve el resultado como SavedMsg.
+// target es la ruta donde se guarda el buffer.
+func (m Model) target() string {
+	if m.fi.Path != "" {
+		return m.fi.Path
+	}
+	return m.path
+}
+
+// save guarda el buffer en disco y devuelve el resultado como SavedMsg. Si el
+// archivo cambió en disco (mtime o tamaño) desde que se abrió o guardó, la
+// primera vez no lo pisa: avisa con ErrChangedOnDisk y espera otro guardado.
 func (m *Model) save() tea.Cmd {
 	fi := m.fi
-	if fi.Path == "" {
-		fi.Path = m.path
+	fi.Path = m.target()
+	done := func(err error) tea.Cmd {
+		msg := SavedMsg{Path: fi.Path, Err: err}
+		return func() tea.Msg { return msg }
 	}
+	if !m.overwrite && m.changedOnDisk(fi.Path) {
+		m.overwrite = true
+		k := m.keys.Save.Help().Key
+		if k == "" {
+			k = "guardar"
+		}
+		return done(fmt.Errorf("%w; %s otra vez para sobrescribir", ErrChangedOnDisk, k))
+	}
+	m.overwrite = false
 	err := m.buf.Save(fi)
 	if err == nil {
-		m.dirty = false
-		m.saved = m.buf.String()
+		m.markSaved()
+		m.disk = statDisk(fi.Path)
 	}
-	msg := SavedMsg{Path: fi.Path, Err: err}
-	return func() tea.Msg { return msg }
+	return done(err)
+}
+
+// changedOnDisk indica que el archivo de path no es el que se vio al abrirlo
+// o guardarlo. Si no se puede consultar, no bloquea el guardado.
+func (m Model) changedOnDisk(path string) bool {
+	st, err := os.Stat(path)
+	if err != nil {
+		return false
+	}
+	return !m.disk.ok || !st.ModTime().Equal(m.disk.mod) || st.Size() != m.disk.size
 }
 
 // gutterWidth es el ancho de la columna de números (dígitos + 2 de margen);

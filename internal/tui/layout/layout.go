@@ -17,13 +17,19 @@
 // Todos salen de config.Keymap.
 //
 // Seguridad de datos: abrir otro archivo con el actual sin guardar, o salir
-// en ese caso, pide repetir la acción; guardar (o repetir) lo confirma.
+// en ese caso (con la tecla o desde la paleta), pide repetir la acción; la
+// confirmación se desarma con cualquier otra tecla. Guardar la confirma.
+// Los archivos binarios o que no son UTF-8 válido no se abren: guardarlos
+// corrompería los bytes.
 package layout
 
 import (
+	"errors"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
+	"unicode/utf8"
 
 	"charm.land/bubbles/v2/key"
 	tea "charm.land/bubbletea/v2"
@@ -40,7 +46,7 @@ const (
 	// editorMin es el ancho mínimo del editor; si los demás paneles lo
 	// dejarían más estrecho, se pliegan solos (primero agentes, luego árbol).
 	editorMin = 20
-	// binarySniff es cuántos bytes se miran para detectar un archivo binario.
+	// binarySniff es cuántos bytes iniciales se miran para detectar NUL.
 	binarySniff = 8000
 	sepWidth    = 1
 )
@@ -86,7 +92,13 @@ type Model struct {
 	quitArmed   bool   // la última tecla fue quit con cambios sin guardar
 
 	pal palette
+	// files es la última lista de archivos del proyecto; se refresca en
+	// segundo plano cada vez que se abre la paleta.
+	files []string
 }
+
+// filesMsg lleva la lista de archivos del proyecto para la paleta.
+type filesMsg struct{ files []string }
 
 var _ tea.Model = Model{}
 
@@ -151,12 +163,24 @@ func (m Model) update(msg tea.Msg) (Model, tea.Cmd) {
 			m.pal.addText(msg.Content)
 			return m, nil
 		}
+		m.quitArmed, m.pendingOpen = false, ""
 		return m.routeToFocused(msg)
 	case filetree.OpenFileMsg:
 		m.openFile(msg.Path)
 		return m, nil
+	case filesMsg:
+		if !slices.Equal(msg.files, m.files) {
+			m.files = msg.files
+			if m.pal.open {
+				m.pal.setItems(m.paletteItems())
+			}
+		}
+		return m, nil
 	case editorview.SavedMsg:
-		if msg.Err != nil {
+		if errors.Is(msg.Err, editorview.ErrChangedOnDisk) {
+			// No es un fallo: es el aviso previo a sobrescribir.
+			m.msg = msg.Err.Error()
+		} else if msg.Err != nil {
 			m.msg = "no se pudo guardar: " + msg.Err.Error()
 		} else {
 			m.msg = "guardado " + m.display(msg.Path)
@@ -187,20 +211,19 @@ func (m Model) handleKey(k tea.KeyPressMsg) (Model, tea.Cmd) {
 	if m.pal.open {
 		return m.paletteKey(k)
 	}
-	armed := m.quitArmed
-	m.quitArmed = false
+	// Las confirmaciones pendientes (salir, abrir otro archivo) se desarman
+	// con cualquier otra tecla. Abrir la paleta no desarma la de salir, para
+	// poder confirmarla con "Salir"; las teclas del árbol no desarman la de
+	// abrir, porque Enter sobre el archivo es justo la confirmación.
+	armed, pending := m.quitArmed, m.pendingOpen
+	m.quitArmed, m.pendingOpen = false, ""
 
 	switch {
 	case m.is(k, "quit"):
-		if m.hasEd && m.ed.Dirty() && !armed {
-			m.quitArmed = true
-			m.msg = m.display(m.ed.Path()) + " tiene cambios sin guardar: " + m.firstKey("quit") + " otra vez para salir sin guardar"
-			return m, nil
-		}
-		return m.quit()
+		return m.requestQuit(armed)
 	case m.is(k, "palette"):
-		m.openPalette()
-		return m, nil
+		m.quitArmed = armed
+		return m, m.openPalette()
 	case m.is(k, "toggle_tree"):
 		m.treeOn = !m.treeOn
 		m.relayout()
@@ -219,7 +242,22 @@ func (m Model) handleKey(k tea.KeyPressMsg) (Model, tea.Cmd) {
 			return m.moveFocus(1), nil
 		}
 	}
+	if m.focus == focusTree {
+		m.pendingOpen = pending
+	}
 	return m.routeToFocused(k)
+}
+
+// requestQuit sale, salvo que haya cambios sin guardar y no sea la segunda
+// petición seguida: entonces solo avisa. Es el único camino a quit, para la
+// tecla y para la paleta.
+func (m Model) requestQuit(armed bool) (Model, tea.Cmd) {
+	if m.hasEd && m.ed.Dirty() && !armed {
+		m.quitArmed = true
+		m.msg = m.display(m.ed.Path()) + " tiene cambios sin guardar: " + m.firstKey("quit") + " otra vez para salir sin guardar"
+		return m, nil
+	}
+	return m.quit()
 }
 
 // routeToFocused entrega una tecla o un pegado al panel con foco.
@@ -395,7 +433,7 @@ func (m Model) moveFocus(dir int) Model {
 
 // display devuelve p relativa a la raíz si está dentro de ella.
 func (m Model) display(p string) string {
-	if rel, err := filepath.Rel(m.root, p); err == nil && !strings.HasPrefix(rel, "..") {
+	if rel, err := filepath.Rel(m.root, p); err == nil && rel != ".." && !strings.HasPrefix(rel, ".."+string(filepath.Separator)) {
 		return filepath.ToSlash(rel)
 	}
 	return p
@@ -420,8 +458,8 @@ func (m *Model) openFile(path string) {
 	}
 	m.pendingOpen = ""
 
-	if isBinary(path) {
-		m.msg = "no se abre " + m.display(path) + ": parece binario"
+	if why := notText(path); why != "" {
+		m.msg = "no se abre " + m.display(path) + ": " + why
 		return
 	}
 	buf, fi, err := editor.Open(path)
@@ -436,21 +474,22 @@ func (m *Model) openFile(path string) {
 	m.relayout()
 }
 
-// isBinary indica si el inicio del archivo contiene bytes NUL.
-func isBinary(path string) bool {
-	f, err := os.Open(path)
+// notText devuelve por qué path no se puede editar como texto ("" si se
+// puede): contiene NUL al inicio (binario) o no es UTF-8 válido, en cuyo caso
+// guardarlo reemplazaría los bytes inválidos por U+FFFD. Si no se puede leer
+// devuelve "" y deja el error a editor.Open.
+func notText(path string) string {
+	data, err := os.ReadFile(path)
 	if err != nil {
-		return false
+		return ""
 	}
-	defer f.Close()
-	buf := make([]byte, binarySniff)
-	n, _ := f.Read(buf)
-	for _, b := range buf[:n] {
-		if b == 0 {
-			return true
-		}
+	if slices.Contains(data[:min(len(data), binarySniff)], 0) {
+		return "parece binario"
 	}
-	return false
+	if !utf8.Valid(data) {
+		return "no es UTF-8 válido"
+	}
+	return ""
 }
 
 // --- Vista ------------------------------------------------------------------

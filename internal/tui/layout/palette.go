@@ -35,9 +35,14 @@ const (
 
 // item es una entrada de la paleta.
 type item struct {
-	id    string
-	title string
-	hint  string // atajo o etiqueta, a la derecha
+	id     string
+	title  string
+	hint   string // atajo o etiqueta, a la derecha
+	folded []rune // title plegado con fold, calculado una vez
+}
+
+func newItem(id, title, hint string) item {
+	return item{id: id, title: title, hint: hint, folded: fold(title)}
 }
 
 // palette es el estado de la paleta de comandos.
@@ -58,37 +63,55 @@ var palKeys = struct{ up, down, back key.Binding }{
 	back: key.NewBinding(key.WithKeys("backspace")),
 }
 
-// openPalette abre la paleta con las acciones y los archivos del proyecto.
-func (m *Model) openPalette() {
+// paletteItems arma las entradas de la paleta: las acciones y los archivos
+// de la última lista conocida.
+func (m Model) paletteItems() []item {
 	hint := func(action string) string { return m.firstKey(action) }
 	items := []item{
-		{cmdSave, "Guardar archivo", hint("save")},
-		{cmdToggleTree, "Alternar árbol de archivos", hint("toggle_tree")},
-		{cmdToggleAgents, "Alternar panel de agentes", hint("toggle_agents")},
-		{cmdNewSession, "Nueva sesión de agente", hint("new_session")},
-		{cmdFocusTree, "Ir al árbol de archivos", ""},
-		{cmdFocusEditor, "Ir al editor", ""},
-		{cmdFocusChat, "Ir al panel de agentes", ""},
-		{cmdQuit, "Salir", hint("quit")},
+		newItem(cmdSave, "Guardar archivo", hint("save")),
+		newItem(cmdToggleTree, "Alternar árbol de archivos", hint("toggle_tree")),
+		newItem(cmdToggleAgents, "Alternar panel de agentes", hint("toggle_agents")),
+		newItem(cmdNewSession, "Nueva sesión de agente", hint("new_session")),
+		newItem(cmdFocusTree, "Ir al árbol de archivos", ""),
+		newItem(cmdFocusEditor, "Ir al editor", ""),
+		newItem(cmdFocusChat, "Ir al panel de agentes", ""),
+		newItem(cmdQuit, "Salir", hint("quit")),
 	}
-	for _, f := range filetree.ListFiles(m.root, maxFiles) {
-		items = append(items, item{id: cmdOpenPrefix + f, title: f, hint: "archivo"})
+	for _, f := range m.files {
+		items = append(items, newItem(cmdOpenPrefix+f, f, "archivo"))
 	}
-	m.pal = palette{open: true, items: items}
-	m.pal.refilter()
+	return items
+}
+
+// openPalette abre la paleta al instante con las acciones y los archivos que
+// ya se conocen, y devuelve un Cmd que recorre el proyecto en segundo plano;
+// su resultado (filesMsg) actualiza la lista sin bloquear Update.
+func (m *Model) openPalette() tea.Cmd {
+	m.pal = palette{open: true}
+	m.pal.setItems(m.paletteItems())
+	root := m.root
+	return func() tea.Msg {
+		return filesMsg{files: filetree.ListFiles(root, maxFiles)}
+	}
+}
+
+// setItems reemplaza las entradas y vuelve a filtrar con la consulta actual.
+func (p *palette) setItems(items []item) {
+	p.items = items
+	p.refilter()
 }
 
 // refilter recalcula los resultados para la consulta actual.
 func (p *palette) refilter() {
-	q := string(p.query)
+	q := fold(string(p.query))
 	type scored struct{ idx, score int }
 	var res []scored
 	for i, it := range p.items {
-		if s, ok := fuzzyScore(q, it.title); ok {
+		if s, ok := fuzzyScoreFolded(q, it.folded); ok {
 			res = append(res, scored{i, s})
 		}
 	}
-	if q != "" {
+	if len(q) > 0 {
 		sort.SliceStable(res, func(a, b int) bool { return res[a].score > res[b].score })
 	}
 	p.results = p.results[:0]
@@ -118,6 +141,7 @@ func (m Model) paletteKey(k tea.KeyPressMsg) (Model, tea.Cmd) {
 	switch {
 	case m.is(k, "cancel"), m.is(k, "palette"):
 		p.open = false
+		m.quitArmed = false
 	case m.is(k, "send"):
 		if len(p.results) == 0 {
 			return m, nil
@@ -139,7 +163,9 @@ func (m Model) paletteKey(k tea.KeyPressMsg) (Model, tea.Cmd) {
 			p.refilter()
 		}
 	default:
-		if k.Mod&(tea.ModCtrl|tea.ModAlt) == 0 && k.Text != "" {
+		// Texto imprimible con cualquier modificador: en Windows, AltGr
+		// llega como Text con ctrl+alt ("@", "{", "[").
+		if k.Text != "" {
 			p.addText(k.Text)
 		}
 	}
@@ -166,6 +192,8 @@ func (p *palette) addText(s string) {
 
 // runCommand ejecuta una acción de la paleta.
 func (m Model) runCommand(id string) (Model, tea.Cmd) {
+	armed := m.quitArmed
+	m.quitArmed = false
 	switch {
 	case id == cmdSave:
 		return m.save()
@@ -180,7 +208,7 @@ func (m Model) runCommand(id string) (Model, tea.Cmd) {
 		m.chat, cmd = m.chat.NewSession()
 		return m, cmd
 	case id == cmdQuit:
-		return m.quit()
+		return m.requestQuit(armed)
 	case id == cmdFocusTree:
 		return m.focusPanel(focusTree), nil
 	case id == cmdFocusEditor:
