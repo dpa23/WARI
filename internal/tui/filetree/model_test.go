@@ -250,6 +250,7 @@ func TestIgnorePatterns(t *testing.T) {
 		{"a/b/gen", true, true, "**/ inicial"},
 		{"src", true, false, "normal"},
 		{"build", true, true, "fija: build carpeta"},
+		{"x/build", true, false, "build en subcarpeta no se oculta"},
 		{"build", false, false, "build archivo no se oculta"},
 		{".git", true, true, "fija: .git"},
 	}
@@ -258,5 +259,78 @@ func TestIgnorePatterns(t *testing.T) {
 		if got := ig.ignored(c.rel, name, c.dir); got != c.want {
 			t.Errorf("%s (%s): got %v", c.label, c.rel, got)
 		}
+	}
+}
+
+func TestIgnoredDirOnlyAtRoot(t *testing.T) {
+	root := t.TempDir()
+	for _, f := range []string{
+		"bin/app",
+		"build/out.o",
+		"target/classes/A.class",
+		"obj/debug.o",
+		"src/main/java/com/acme/build/Builder.java",
+		"src/main/bin/run.sh",
+		"src/main/target/config.xml",
+		"src/main/obj/data.txt",
+	} {
+		write(t, root, f, "content")
+	}
+
+	files := ListFiles(root, 0)
+	want := []string{
+		"src/main/bin/run.sh",
+		"src/main/java/com/acme/build/Builder.java",
+		"src/main/obj/data.txt",
+		"src/main/target/config.xml",
+	}
+	if !reflect.DeepEqual(files, want) {
+		t.Fatalf("ListFiles:\n got %q\nwant %q", files, want)
+	}
+
+	m := newTree(t, root)
+	target := filepath.Join(root, "src", "main", "java", "com", "acme", "build", "Builder.java")
+	m.Reveal(target)
+	if m.Selected() != target {
+		t.Fatalf("Reveal no encontró %s, cursor en %s", target, m.Selected())
+	}
+	if m.rows[m.cursor].name != "Builder.java" {
+		t.Fatalf("se esperaba cursor en Builder.java, got %q", m.rows[m.cursor].name)
+	}
+}
+
+func TestReveal_DotDotPrefix(t *testing.T) {
+	root := t.TempDir()
+	write(t, root, "..env", "SECRET=1")
+	write(t, root, "sub/..env", "NESTED=1")
+
+	m := newTree(t, root)
+
+	// Revelar archivo con prefijo .. en la raíz
+	targetRoot := filepath.Join(root, "..env")
+	m.Reveal(targetRoot)
+	if m.Selected() != targetRoot {
+		t.Fatalf("Reveal no encontró %s, cursor en %s", targetRoot, m.Selected())
+	}
+	if m.rows[m.cursor].name != "..env" {
+		t.Fatalf("se esperaba cursor en ..env, got %q", m.rows[m.cursor].name)
+	}
+
+	// Revelar archivo con prefijo .. en subcarpeta
+	targetSub := filepath.Join(root, "sub", "..env")
+	m.Reveal(targetSub)
+	if m.Selected() != targetSub {
+		t.Fatalf("Reveal no encontró %s, cursor en %s", targetSub, m.Selected())
+	}
+	if m.rows[m.cursor].name != "..env" {
+		t.Fatalf("se esperaba cursor en ..env de subcarpeta, got %q", m.rows[m.cursor].name)
+	}
+
+	// Un archivo fuera de la raíz no debe mover el cursor
+	outside := filepath.Join(root, "..", "outside.txt")
+	curBefore := m.cursor
+	m.Reveal(outside)
+	if m.cursor != curBefore {
+		t.Fatalf("Reveal no debe actuar sobre archivo fuera de la raíz")
 	}
 }

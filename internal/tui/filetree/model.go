@@ -179,7 +179,7 @@ func (m Model) Selected() string {
 // se ignora) y mueve el cursor a él.
 func (m *Model) Reveal(path string) {
 	rel, err := filepath.Rel(m.root.path, path)
-	if err != nil || rel == "." || strings.HasPrefix(rel, "..") {
+	if err != nil || rel == "." || rel == ".." || strings.HasPrefix(rel, ".."+string(filepath.Separator)) {
 		return
 	}
 	n := m.root

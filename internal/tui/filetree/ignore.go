@@ -10,7 +10,8 @@ import (
 )
 
 // alwaysIgnored se ignora en cualquier nivel: .git y .wari (archivos o
-// carpetas) y las carpetas de salida de compilación.
+// carpetas). alwaysIgnoredDir se ignora solo en la raíz: carpetas de salida
+// de compilación.
 var (
 	alwaysIgnored    = map[string]bool{".git": true, ".wari": true}
 	alwaysIgnoredDir = map[string]bool{"bin": true, "target": true, "obj": true, "build": true}
@@ -71,7 +72,7 @@ func newIgnorer(root string) *ignorer {
 // ignored indica si la entrada de nombre name y ruta relativa rel (con "/")
 // debe ocultarse.
 func (ig *ignorer) ignored(rel, name string, isDir bool) bool {
-	if alwaysIgnored[name] || (isDir && alwaysIgnoredDir[name]) {
+	if alwaysIgnored[name] || (isDir && alwaysIgnoredDir[name] && !strings.Contains(rel, "/")) {
 		return true
 	}
 	for _, r := range ig.rules {
