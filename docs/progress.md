@@ -1,7 +1,7 @@
 # Progreso
 
 ## Fase actual
-Fase 3 — Editor núcleo: **terminada y verificada**. Fase 4 — Layout editor + chat: **terminada**. Siguiente: fase 5 (multiagente), que empieza con el refactor del ejecutor de turnos y Cancel/Close.
+Fase 3 — Editor núcleo: **terminada y verificada**. Fase 5 — Multiagente, cola y presupuestos: **terminada** (hito: el problema original queda resuelto). Siguiente: fase 6 (seguridad de cambios: checkpoints, watcher, propiedad de archivos).
 
 ## Hecho
 ### Fase 0 — Arranque
@@ -37,6 +37,13 @@ Fase 3 — Editor núcleo: **terminada y verificada**. Fase 4 — Layout editor 
 - `internal/tui/editorview`: editor con resaltado chroma (Java, Kotlin, C#), selección y scroll; ~3,6 ms por render con 5000 líneas.
 - `internal/tui/filetree` y `internal/tui/layout`: árbol, editor y agentes; foco con tab/shift+tab; paleta ctrl+p con búsqueda difusa; plegado automático al achicar; todo desde `config.Keymap`.
 - E2e en herdr: abrir por paleta, editar y guardar, redimensionar sin desbordes (paneles plegados a 35 columnas y restaurados), chatear con el agente desde el panel derecho, salir sin huérfanos.
+
+### Fase 5 — Multiagente, cola y presupuestos
+- Refactor: `internal/agent/turn.Runner` genérico; contrato con `Cancel` (turno) y `Close` (agente).
+- `internal/orch`: cola FIFO con límite de activos (2), presupuestos de turnos, tokens y tiempo; pausa, parada por agente y global; carreras halladas por Gemini corregidas con tests.
+- Panel multiagente: lista con estado, turnos, tokens y costo; chat por agente; ctrl+t, alt+↑/↓, ctrl+o, ctrl+x, ctrl+k; barra con activos y cola siempre visible.
+- E2e en herdr con agentes reales: 3 agentes con límite 2 (uno en cola), pausa que conserva cupo, stop que arranca la cola, parada global y salida con un agente pausado sin huérfanos.
+- Revisiones: /code-review de la fase 4 (10, atendidos), Gemini sobre orch (5: 4 reproducidos y corregidos, 1 ya correcto), /security-review (sin hallazgos).
 
 ## Pendiente
 
