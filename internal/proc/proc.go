@@ -141,9 +141,6 @@ func Start(ctx context.Context, spec Spec) (*Process, error) {
 	return p, nil
 }
 
-// PID devuelve el PID del líder.
-func (p *Process) PID() int { return p.cmd.Process.Pid }
-
 // PGID devuelve el identificador del grupo. En Unix es el PID del líder.
 func (p *Process) PGID() int { return p.cmd.Process.Pid }
 

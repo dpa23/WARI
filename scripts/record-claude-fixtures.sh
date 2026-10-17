@@ -39,6 +39,8 @@ session=$(grep -o '"session_id":"[^"]*"' "$out/simple.jsonl" | head -1 | cut -d'
 record resume "${stream[@]}" --model haiku "${ask[@]}" --resume "$session" -- \
 	"¿Qué palabra respondiste antes? Responde solo esa palabra."
 record error_model "${stream[@]}" --model modelo-inexistente "${ask[@]}" -- "hola"
+record resume_missing "${stream[@]}" --model haiku "${ask[@]}" \
+	--resume 00000000-0000-4000-8000-000000000099 -- "hola"
 
 "$repo/scripts/sanitize-fixture.sh" "$out"/*.jsonl
 

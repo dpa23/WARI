@@ -119,7 +119,7 @@ func (c *Claude) Start(ctx context.Context, task agent.Task) error {
 	c.turnDone = make(chan struct{})
 	c.task = task
 	c.status = agent.StatusRunning
-	go c.runTurn(p, c.turnDone)
+	go c.runTurn(p, c.turnDone, task.SessionID)
 	return nil
 }
 
@@ -155,13 +155,6 @@ func (c *Claude) Status() agent.Status {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	return c.status
-}
-
-// SessionID devuelve la última sesión anunciada por la CLI.
-func (c *Claude) SessionID() string {
-	c.mu.Lock()
-	defer c.mu.Unlock()
-	return c.sessionID
 }
 
 // PGID devuelve el grupo de procesos del turno en curso, o 0 si no hay.
@@ -251,10 +244,11 @@ func (c *Claude) emit(ev agent.Event) {
 // runTurn lee la salida de un turno hasta EOF y la traduce a eventos. El
 // Done se retiene hasta que el proceso salió y el estado quedó actualizado,
 // para que quien lo reciba pueda lanzar el turno siguiente en el acto.
-func (c *Claude) runTurn(p *proc.Process, turnDone chan struct{}) {
+func (c *Claude) runTurn(p *proc.Process, turnDone chan struct{}, resumeID string) {
 	defer close(turnDone)
 
 	var done *agent.Done
+	started := false
 	r := bufio.NewReader(p.Stdout())
 	for {
 		line, readErr := r.ReadBytes('\n')
@@ -263,6 +257,7 @@ func (c *Claude) runTurn(p *proc.Process, turnDone chan struct{}) {
 			for _, ev := range events {
 				switch e := ev.(type) {
 				case agent.Started:
+					started = true
 					c.mu.Lock()
 					c.sessionID = e.SessionID
 					c.mu.Unlock()
@@ -304,6 +299,11 @@ func (c *Claude) runTurn(p *proc.Process, turnDone chan struct{}) {
 		return
 	}
 
+	// La CLI falla antes de anunciar la sesión cuando no puede reanudarla
+	// ("No conversation found with session ID"): verificado con 2.1.302.
+	if resumeID != "" && !started && (done == nil || done.IsError) {
+		c.emit(agent.Error{Err: fmt.Errorf("%w: %s", agent.ErrSessionNotFound, resumeID)})
+	}
 	if done == nil {
 		err := fmt.Errorf("claude terminó sin resultado (%v)", waitErr)
 		if tail := strings.TrimSpace(p.Stderr()); tail != "" {

@@ -107,6 +107,10 @@ var (
 	ErrDone = errors.New("agent: el agente ya terminó")
 	// ErrNoSession indica que Send no tiene una sesión que continuar.
 	ErrNoSession = errors.New("agent: no hay sesión que continuar")
+	// ErrSessionNotFound llega envuelto en un evento Error cuando la CLI no
+	// pudo reanudar Task.SessionID (sesión inexistente o borrada). Cada
+	// adaptador decide cómo reconocerlo en su CLI.
+	ErrSessionNotFound = errors.New("agent: no se pudo reanudar la sesión")
 )
 
 // Event es un evento normalizado. Los tipos concretos son los de este

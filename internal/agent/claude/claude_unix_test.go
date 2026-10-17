@@ -159,8 +159,8 @@ func TestTurnAndSend(t *testing.T) {
 	if s := c.Status(); s != agent.StatusIdle {
 		t.Errorf("Status al recibir Done = %s, quiero idle", s)
 	}
-	if got := c.SessionID(); got != fixtureSession {
-		t.Errorf("SessionID = %q, quiero %q", got, fixtureSession)
+	if s, ok := events[0].(agent.Started); !ok || s.SessionID != fixtureSession {
+		t.Errorf("Started = %v, quiero la sesión %q", events[0], fixtureSession)
 	}
 
 	if err := c.Send("otra pregunta"); err != nil {
@@ -286,6 +286,24 @@ func TestLeftoverProcessDoesNotBlockTurn(t *testing.T) {
 			t.Fatalf("quedan procesos en el grupo %d", pgid)
 		}
 		time.Sleep(20 * time.Millisecond)
+	}
+}
+
+func TestResumeMissingSessionReportsErrSessionNotFound(t *testing.T) {
+	c, _ := startAgent(t, `cat "$FIXTURES/resume_missing.jsonl"; echo "No conversation found" >&2; exit 1`,
+		agent.Task{Prompt: "hola", SessionID: "perdida"})
+	events := collectUntil(t, c, isDone)
+	var found bool
+	for _, ev := range events {
+		if e, ok := ev.(agent.Error); ok && errors.Is(e.Err, agent.ErrSessionNotFound) {
+			found = true
+		}
+	}
+	if !found {
+		t.Errorf("eventos = %v, quiero un Error con ErrSessionNotFound", events)
+	}
+	if d := events[len(events)-1].(agent.Done); !d.IsError {
+		t.Errorf("Done = %+v, quiero IsError", d)
 	}
 }
 

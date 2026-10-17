@@ -178,17 +178,21 @@ func parseAssistant(line []byte) ([]agent.Event, error) {
 	return events, errors.Join(errs...)
 }
 
-// stringField lee un campo de texto de un objeto JSON.
+// stringField lee la ruta (file_path o notebook_path) del input de una
+// herramienta. Decodifica solo esos campos: el input de un Write puede traer
+// el archivo entero.
 func stringField(raw json.RawMessage, key string) (string, error) {
-	var m map[string]json.RawMessage
-	if err := json.Unmarshal(raw, &m); err != nil {
+	var in struct {
+		FilePath     string `json:"file_path"`
+		NotebookPath string `json:"notebook_path"`
+	}
+	if err := json.Unmarshal(raw, &in); err != nil {
 		return "", err
 	}
-	var s string
-	if err := json.Unmarshal(m[key], &s); err != nil {
-		return "", err
+	if key == "notebook_path" {
+		return in.NotebookPath, nil
 	}
-	return s, nil
+	return in.FilePath, nil
 }
 
 func parseResult(line []byte) ([]agent.Event, error) {
