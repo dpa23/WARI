@@ -1,0 +1,461 @@
+// Package editorview es el componente Bubble Tea v2 que muestra y edita un
+// [editor.Buffer]: números de línea, resaltado de sintaxis con chroma, scroll
+// que sigue al cursor y selección. No usa AltScreen ni conoce el layout: el
+// llamador lo coloca y le pasa el tamaño con SetSize.
+package editorview
+
+import (
+	"strconv"
+	"strings"
+	"unicode/utf8"
+
+	"charm.land/bubbles/v2/key"
+	tea "charm.land/bubbletea/v2"
+	"charm.land/lipgloss/v2"
+
+	"github.com/dpa23/wari/internal/editor"
+)
+
+const (
+	// tabWidth es el ancho de una tabulación ya presente en el archivo; la
+	// tecla Tab inserta tabSpaces espacios.
+	tabWidth  = 4
+	tabSpaces = "    "
+
+	sgrReset    = "\x1b[0m"
+	sgrGutter   = "\x1b[38;2;110;118;129m"
+	sgrGutterOn = "\x1b[38;2;201;209;217m"
+	sgrSelect   = "\x1b[48;2;38;79;120m"
+)
+
+// SavedMsg informa del resultado de guardar (ctrl+s). El layout puede
+// mostrarlo en la línea de estado.
+type SavedMsg struct {
+	Path string
+	Err  error
+}
+
+// Model es el editor de un buffer. Se usa con receptor de valor; el buffer
+// es compartido (puntero), así que copias del modelo editan el mismo buffer.
+type Model struct {
+	buf  *editor.Buffer
+	fi   editor.FileInfo
+	path string
+	keys KeyMap
+	hl   *highlighter
+
+	w, h int
+	// top es la primera línea visible; xoff, la primera columna visible (en
+	// celdas de pantalla).
+	top, xoff int
+
+	focused bool
+	dirty   bool
+	// saved es el contenido en el último guardado (o al abrir); permite que
+	// deshacer hasta ese punto deje el buffer limpio.
+	saved string
+}
+
+// New crea el editor de buf, que se abrió (o se guardará) con fi y path. El
+// resaltado se elige por la extensión de path.
+func New(buf *editor.Buffer, fi editor.FileInfo, path string, keys KeyMap) Model {
+	m := Model{
+		buf:   buf,
+		fi:    fi,
+		path:  path,
+		keys:  keys,
+		hl:    newHighlighter(path),
+		saved: buf.String(),
+	}
+	return m
+}
+
+// SetSize fija el tamaño del componente en celdas y recoloca el scroll.
+func (m *Model) SetSize(w, h int) {
+	m.w, m.h = max(w, 0), max(h, 0)
+	m.top, m.xoff = m.scroll()
+}
+
+// Focus da el foco al editor; Blur se lo quita. Sin foco, Update no actúa y
+// Cursor devuelve nil.
+func (m *Model) Focus() { m.focused = true }
+
+// Blur quita el foco.
+func (m *Model) Blur() { m.focused = false }
+
+// Focused indica si el editor tiene el foco.
+func (m Model) Focused() bool { return m.focused }
+
+// Dirty indica si el buffer tiene cambios sin guardar. Solo ve las ediciones
+// hechas a través de Update: si otro código modifica el buffer directamente,
+// debe volver a abrir o guardar por su cuenta.
+func (m Model) Dirty() bool { return m.dirty }
+
+// Buffer devuelve el buffer editado.
+func (m Model) Buffer() *editor.Buffer { return m.buf }
+
+// Path devuelve la ruta del archivo.
+func (m Model) Path() string { return m.path }
+
+// Cursor devuelve la posición del cursor relativa a la esquina superior
+// izquierda del componente, o nil si no tiene foco o no cabe.
+func (m Model) Cursor() *tea.Cursor {
+	if !m.focused || m.w <= 0 || m.h <= 0 {
+		return nil
+	}
+	top, xoff := m.scroll()
+	p := m.buf.Cursor()
+	x := m.gutterWidth() + displayCol(m.buf.Line(p.Line), p.Col) - xoff
+	y := p.Line - top
+	if x < 0 || y < 0 || y >= m.h || x >= m.w {
+		return nil
+	}
+	c := tea.NewCursor(x, y)
+	c.Shape = tea.CursorBar
+	return c
+}
+
+// Update procesa teclas y pegado cuando el editor tiene el foco.
+func (m Model) Update(msg tea.Msg) (Model, tea.Cmd) {
+	if !m.focused {
+		return m, nil
+	}
+	var cmd tea.Cmd
+	switch msg := msg.(type) {
+	case tea.KeyPressMsg:
+		cmd = m.handleKey(msg)
+	case tea.PasteMsg:
+		m.buf.Paste(msg.Content)
+		m.dirty = true
+	default:
+		return m, nil
+	}
+	m.top, m.xoff = m.scroll()
+	return m, cmd
+}
+
+// handleKey aplica una tecla al buffer.
+func (m *Model) handleKey(msg tea.KeyPressMsg) tea.Cmd {
+	b, k := m.buf, m.keys
+	switch {
+	case key.Matches(msg, k.Left):
+		b.MoveLeft(false)
+	case key.Matches(msg, k.SelLeft):
+		b.MoveLeft(true)
+	case key.Matches(msg, k.Right):
+		b.MoveRight(false)
+	case key.Matches(msg, k.SelRight):
+		b.MoveRight(true)
+	case key.Matches(msg, k.Up):
+		b.MoveUp(false)
+	case key.Matches(msg, k.SelUp):
+		b.MoveUp(true)
+	case key.Matches(msg, k.Down):
+		b.MoveDown(false)
+	case key.Matches(msg, k.SelDown):
+		b.MoveDown(true)
+	case key.Matches(msg, k.WordLeft):
+		b.MoveWordLeft(false)
+	case key.Matches(msg, k.SelWordLeft):
+		b.MoveWordLeft(true)
+	case key.Matches(msg, k.WordRight):
+		b.MoveWordRight(false)
+	case key.Matches(msg, k.SelWordRight):
+		b.MoveWordRight(true)
+	case key.Matches(msg, k.LineStart):
+		b.MoveLineStart(false)
+	case key.Matches(msg, k.SelLineStart):
+		b.MoveLineStart(true)
+	case key.Matches(msg, k.LineEnd):
+		b.MoveLineEnd(false)
+	case key.Matches(msg, k.SelLineEnd):
+		b.MoveLineEnd(true)
+	case key.Matches(msg, k.DocStart):
+		b.MoveDocStart(false)
+	case key.Matches(msg, k.SelDocStart):
+		b.MoveDocStart(true)
+	case key.Matches(msg, k.DocEnd):
+		b.MoveDocEnd(false)
+	case key.Matches(msg, k.SelDocEnd):
+		b.MoveDocEnd(true)
+	case key.Matches(msg, k.PageUp):
+		m.page(-1, false)
+	case key.Matches(msg, k.SelPageUp):
+		m.page(-1, true)
+	case key.Matches(msg, k.PageDown):
+		m.page(1, false)
+	case key.Matches(msg, k.SelPageDown):
+		m.page(1, true)
+	case key.Matches(msg, k.SelectAll):
+		b.SelectAll()
+
+	case key.Matches(msg, k.Save):
+		return m.save()
+	case key.Matches(msg, k.Undo):
+		if b.Undo() {
+			m.dirty = b.String() != m.saved
+		}
+	case key.Matches(msg, k.Redo):
+		if b.Redo() {
+			m.dirty = b.String() != m.saved
+		}
+
+	case key.Matches(msg, k.Newline):
+		b.InsertRune('\n')
+		m.dirty = true
+	case key.Matches(msg, k.Tab):
+		b.InsertText(tabSpaces)
+		m.dirty = true
+	case key.Matches(msg, k.Backspace):
+		if c := b.Cursor(); !selEmpty(b) || c.Line > 0 || c.Col > 0 {
+			b.DeleteBackward()
+			m.dirty = true
+		}
+	case key.Matches(msg, k.Delete):
+		c := b.Cursor()
+		if !selEmpty(b) || c.Col < len(b.Line(c.Line)) || c.Line < b.LineCount()-1 {
+			b.DeleteForward()
+			m.dirty = true
+		}
+
+	default:
+		if msg.Mod&(tea.ModCtrl|tea.ModAlt) != 0 || msg.Text == "" {
+			return nil
+		}
+		for _, r := range msg.Text {
+			if r < 0x20 || r == 0x7f || r == utf8.RuneError {
+				continue
+			}
+			b.InsertRune(r)
+			m.dirty = true
+		}
+	}
+	return nil
+}
+
+// selEmpty indica que no hay selección activa.
+func selEmpty(b *editor.Buffer) bool {
+	s := b.Selection()
+	return s.Anchor == s.Active
+}
+
+// page mueve el cursor una pantalla hacia arriba (dir < 0) o abajo.
+func (m *Model) page(dir int, sel bool) {
+	n := max(m.h-1, 1)
+	for range n {
+		switch {
+		case dir < 0 && sel:
+			m.buf.MoveUp(true)
+		case dir < 0:
+			m.buf.MoveUp(false)
+		case sel:
+			m.buf.MoveDown(true)
+		default:
+			m.buf.MoveDown(false)
+		}
+	}
+}
+
+// save guarda el buffer en disco y devuelve el resultado como SavedMsg.
+func (m *Model) save() tea.Cmd {
+	fi := m.fi
+	if fi.Path == "" {
+		fi.Path = m.path
+	}
+	err := m.buf.Save(fi)
+	if err == nil {
+		m.dirty = false
+		m.saved = m.buf.String()
+	}
+	msg := SavedMsg{Path: fi.Path, Err: err}
+	return func() tea.Msg { return msg }
+}
+
+// gutterWidth es el ancho de la columna de números (dígitos + 2 de margen);
+// 0 si el componente es demasiado estrecho para mostrarla.
+func (m Model) gutterWidth() int {
+	gw := len(strconv.Itoa(m.buf.LineCount())) + 2
+	if m.w <= gw {
+		return 0
+	}
+	return gw
+}
+
+// scroll devuelve top y xoff ajustados para que el cursor sea visible. Es una
+// función pura: Update guarda el resultado y View/Cursor lo recalculan, así
+// un cambio externo del buffer no deja el cursor fuera de la vista.
+func (m Model) scroll() (top, xoff int) {
+	top, xoff = m.top, m.xoff
+	if m.h <= 0 || m.w <= 0 {
+		return 0, 0
+	}
+	p := m.buf.Cursor()
+	if p.Line < top {
+		top = p.Line
+	}
+	if p.Line >= top+m.h {
+		top = p.Line - m.h + 1
+	}
+	top = max(0, min(top, m.buf.LineCount()-m.h))
+
+	tw := max(m.w-m.gutterWidth(), 1)
+	cx := displayCol(m.buf.Line(p.Line), p.Col)
+	if cx < xoff {
+		xoff = cx
+	}
+	if cx >= xoff+tw {
+		xoff = cx - tw + 1
+	}
+	return top, max(xoff, 0)
+}
+
+// View dibuja el componente: exactamente h líneas de w celdas.
+func (m Model) View() string {
+	if m.w <= 0 || m.h <= 0 {
+		return ""
+	}
+	top, xoff := m.scroll()
+	gw := m.gutterWidth()
+	tw := m.w - gw
+	n := max(0, min(m.h, m.buf.LineCount()-top))
+	marks := m.hl.lines(m.buf, top, n)
+
+	sel := m.buf.Selection()
+	selStart, selEnd := sel.Anchor, sel.Active
+	if selEnd.Line < selStart.Line || (selEnd.Line == selStart.Line && selEnd.Col < selStart.Col) {
+		selStart, selEnd = selEnd, selStart
+	}
+	hasSel := sel.Anchor != sel.Active
+	cursorLine := m.buf.Cursor().Line
+
+	var sb strings.Builder
+	sb.Grow(m.h * (m.w + 24))
+	for row := 0; row < m.h; row++ {
+		if row > 0 {
+			sb.WriteByte('\n')
+		}
+		li := top + row
+		if li >= m.buf.LineCount() {
+			sb.WriteString(strings.Repeat(" ", m.w))
+			continue
+		}
+		if gw > 0 {
+			if li == cursorLine && m.focused {
+				sb.WriteString(sgrGutterOn)
+			} else {
+				sb.WriteString(sgrGutter)
+			}
+			num := strconv.Itoa(li + 1)
+			sb.WriteString(strings.Repeat(" ", gw-2-len(num)))
+			sb.WriteString(num)
+			sb.WriteString("  ")
+			sb.WriteString(sgrReset)
+		}
+		var mk []uint16
+		if row < len(marks) {
+			mk = marks[row]
+		}
+		// Rango seleccionado en esta línea: columnas [sc, ec) y, si la
+		// selección continúa en la línea siguiente, la celda del salto.
+		sc, ec, nlSel := -1, -1, false
+		if hasSel && li >= selStart.Line && li <= selEnd.Line {
+			line := m.buf.Line(li)
+			sc, ec = 0, len(line)
+			if li == selStart.Line {
+				sc = selStart.Col
+			}
+			if li == selEnd.Line {
+				ec = selEnd.Col
+			}
+			nlSel = li < selEnd.Line
+		}
+		m.writeLine(&sb, m.buf.Line(li), mk, sc, ec, nlSel, xoff, tw)
+	}
+	return sb.String()
+}
+
+// writeLine escribe la parte visible de una línea, rellena hasta tw celdas.
+func (m Model) writeLine(sb *strings.Builder, line []rune, mk []uint16, sc, ec int, nlSel bool, xoff, tw int) {
+	var curStyle uint16
+	curSel := false
+	styled := false
+	set := func(style uint16, sel bool) {
+		if styled && style == curStyle && sel == curSel {
+			return
+		}
+		sb.WriteString(sgrReset)
+		sb.WriteString(m.hl.sgrOf(style))
+		if sel {
+			sb.WriteString(sgrSelect)
+		}
+		curStyle, curSel, styled = style, sel, true
+	}
+
+	x, out := 0, 0 // columna de la línea y celdas ya escritas
+	for i, r := range line {
+		if x >= xoff+tw {
+			break
+		}
+		rw := runeWidth(r, x)
+		var text string
+		vis := rw
+		switch {
+		case x+rw <= xoff:
+			x += rw
+			continue
+		case x < xoff, x+rw > xoff+tw:
+			// Celda cortada por el borde: se rellena con espacios.
+			vis = min(x+rw, xoff+tw) - max(x, xoff)
+			text = strings.Repeat(" ", vis)
+		case r == '\t':
+			text = strings.Repeat(" ", rw)
+		case r < 0x20 || r == 0x7f:
+			text = "·"
+		default:
+			text = string(r)
+		}
+		var st uint16
+		if i < len(mk) {
+			st = mk[i]
+		}
+		set(st, i >= sc && i < ec)
+		sb.WriteString(text)
+		out += vis
+		x += rw
+	}
+	// Celda del salto de línea seleccionado.
+	if nlSel && x >= xoff && x < xoff+tw {
+		set(0, true)
+		sb.WriteByte(' ')
+		out++
+	}
+	if styled {
+		sb.WriteString(sgrReset)
+	}
+	if out < tw {
+		sb.WriteString(strings.Repeat(" ", tw-out))
+	}
+}
+
+// runeWidth es el ancho en celdas de r si empieza en la columna x.
+func runeWidth(r rune, x int) int {
+	switch {
+	case r == '\t':
+		return tabWidth - x%tabWidth
+	case r < 0x80:
+		return 1
+	}
+	return lipgloss.Width(string(r))
+}
+
+// displayCol es la columna de pantalla del índice col de line.
+func displayCol(line []rune, col int) int {
+	x := 0
+	for i, r := range line {
+		if i >= col {
+			break
+		}
+		x += runeWidth(r, x)
+	}
+	return x
+}
