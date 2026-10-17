@@ -1,7 +1,7 @@
 # Progreso
 
 ## Fase actual
-Fase 3 — Editor núcleo: **terminada y verificada**. Decisión tomada: editor propio. Siguiente: fase 4 (layout editor + chat).
+Fase 3 — Editor núcleo: **terminada y verificada**. Fase 4 — Layout editor + chat: **terminada**. Siguiente: fase 5 (multiagente), que empieza con el refactor del ejecutor de turnos y Cancel/Close.
 
 ## Hecho
 ### Fase 0 — Arranque
@@ -32,8 +32,13 @@ Fase 3 — Editor núcleo: **terminada y verificada**. Decisión tomada: editor 
 - Aceptación: `TestAcceptanceLargeJavaFile` (5000 líneas: abrir ~1,4 ms, 100 ediciones ~0,2 ms, 100 undos y guardado idéntico byte a byte).
 - Revisiones: staticcheck (bug de undo en DeleteForward), test de aceptación (undo partido por lecturas de reloj), Gemini 3.8 (5 hallazgos de redo, saltos y permisos, los 5 reproducidos con tests y corregidos).
 
+### Fase 4 — Layout editor + chat
+- `internal/config`: atajos desde JSON (usuario y proyecto). Implementado por Gemini 3.8 vía herdr.
+- `internal/tui/editorview`: editor con resaltado chroma (Java, Kotlin, C#), selección y scroll; ~3,6 ms por render con 5000 líneas.
+- `internal/tui/filetree` y `internal/tui/layout`: árbol, editor y agentes; foco con tab/shift+tab; paleta ctrl+p con búsqueda difusa; plegado automático al achicar; todo desde `config.Keymap`.
+- E2e en herdr: abrir por paleta, editar y guardar, redimensionar sin desbordes (paneles plegados a 35 columnas y restaurados), chatear con el agente desde el panel derecho, salir sin huérfanos.
+
 ## Pendiente
-- Fase 4: layout editor+chat (árbol de archivos, panel de agentes, resaltado con chroma, atajos en config).
 
 - CI se ejecuta por primera vez con el primer push que apruebe el autor.
 - Límite conocido: un descendiente que escape del grupo con `setsid` no se controla (ver `docs/decisions.md`).

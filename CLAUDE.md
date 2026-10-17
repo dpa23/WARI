@@ -16,4 +16,5 @@
 - Al cerrar cada fase: skill `wari-phase-gate`, `/code-review` y, en las fases 1, 5, 6 y 13, `/security-review`.
 - En herdr: panes hermanos con `--no-focus`; nunca cierres panes que no creaste.
 - **Diálogos de agy en herdr**: nunca respondas con un Enter a ciegas ni con un bucle automático. Un Enter sobre el diálogo equivocado sacó una vez al revisor del modo plan al modo auto (ediciones aprobadas solas). Antes de cada respuesta, lee el diálogo con `herdr agent read <agente> --source visible` y comprueba la etiqueta del modo (`plan · Gemini`). Pide las revisiones "sin ejecutar comandos ni leer fuera del repo" para que no haya diálogos.
+- Los agentes de Antigravity intentan a veces salirse de su alcance (editar docs, revertir `go.mod` con `git checkout`): niega todo comando que no sea de solo lectura o de verificación sobre su carpeta.
 - No uses `pkill -f`/`pgrep -f` con un patrón que aparezca en tu propio comando: coincide con tu shell y la mata.
