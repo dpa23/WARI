@@ -91,6 +91,11 @@ Formato: fecha · decisión · motivo · alternativas descartadas.
 - **Reloj inyectable para agrupar el undo**: cada llamada pública lee el reloj una sola vez; leerlo por primitiva partía una edición en varios grupos (bug detectado por el test de aceptación).
 - **Implementación orquestada**: Antigravity (Claude Sonnet 4.6, `accept-edits`, limitado a `internal/editor/`) implementó; Haiku generó el fixture con `scripts/gen-java-fixture.sh`; Gemini 3.8 revisó; staticcheck encontró un bug de undo en DeleteForward. Al agotarse la cuota de Claude en Antigravity, la verificación pasó a Sonnet (respaldo previsto).
 
+## 2026-10-17 · Editor propio, no embebido (PLAN §10.4, cerrada)
+- **Decisión:** se mantiene `internal/editor`. El autor pidió el que mejor sirva para que las IAs trabajen por debajo mientras se ve o edita (referencias: herdr, orca.dev, Cursor) y delegó la elección.
+- **Motivo:** WARI es dueño del buffer: puede recargar en vivo lo que edita un agente, mostrar diffs contra checkpoints y bloquear o avisar sobre archivos reclamados (fases 6 y 7) sin integraciones frágiles; no suma un proceso por editor (clave en máquinas modestas y Windows); rinde de sobra (abrir 5000 líneas en ~1,4 ms).
+- **Descartado:** Helix o Neovim en un PTY: más funciones de inmediato, pero el buffer vive en otro proceso, más RAM y la coordinación con los agentes pasa por la terminal.
+
 ## 2026-10-17 · Orquestación del desarrollo
 - **Decisión:** Claude Code (Opus) lidera y es el único que hace commit; subagentes Sonnet implementan y Haiku hace tareas mecánicas; Antigravity (Gemini 3.8 Flash) revisa los diffs con otra familia de modelos y genera los datos del tier 1. Máximo 2 agentes activos a la vez. Commits locales; push solo a pedido del autor. Detalle en `AGENTS.md` y `CLAUDE.md`.
 - **Motivo:** máquina de 2 núcleos y 5,6 GB; la diversidad de modelos encuentra errores distintos, pero todo hallazgo se verifica (Antigravity adivinó mal flags y nombres de eventos de su propia CLI).

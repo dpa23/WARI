@@ -1,7 +1,7 @@
 # Progreso
 
 ## Fase actual
-Fase 3 — Editor núcleo: **terminada y verificada**. Punto de decisión con el autor pendiente (editor propio vs. embebido) antes de la fase 4.
+Fase 3 — Editor núcleo: **terminada y verificada**. Decisión tomada: editor propio. Siguiente: fase 4 (layout editor + chat).
 
 ## Hecho
 ### Fase 0 — Arranque
@@ -33,7 +33,6 @@ Fase 3 — Editor núcleo: **terminada y verificada**. Punto de decisión con el
 - Revisiones: staticcheck (bug de undo en DeleteForward), test de aceptación (undo partido por lecturas de reloj), Gemini 3.8 (5 hallazgos de redo, saltos y permisos, los 5 reproducidos con tests y corregidos).
 
 ## Pendiente
-- Punto de decisión (PLAN §10.4): editor propio vs. embebido — esperar valoración del autor.
 - Fase 4: layout editor+chat (árbol de archivos, panel de agentes, resaltado con chroma, atajos en config).
 
 - CI se ejecuta por primera vez con el primer push que apruebe el autor.

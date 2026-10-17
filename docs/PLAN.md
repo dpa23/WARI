@@ -206,7 +206,7 @@ Como los agentes editan el árbol real, compensa así:
 1. ~~Sistema operativo objetivo~~ — **resuelto**: Linux y macOS ahora, Windows después (ver `docs/decisions.md`).
 2. ~~Nombre final~~ — **resuelto**: WARI.
 3. ~~CLI del primer adaptador~~ — **resuelto**: `claude`; el segundo es `agy`.
-4. **Editor propio o embebido** (Helix/Neovim como panel): se decide al cerrar la fase 3 con datos reales.
+4. ~~Editor propio o embebido~~ — **resuelto**: editor propio (ver `docs/decisions.md`).
 5. **Aislamiento del sandbox** (Docker, bubblewrap, otro): se decide antes de la fase 13.
 
 ## 11. Fuera de alcance
