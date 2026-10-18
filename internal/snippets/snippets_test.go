@@ -278,3 +278,110 @@ func TestSessionEdit(t *testing.T) {
 		t.Fatalf("$0: %+v", last)
 	}
 }
+
+func TestSessionEditGrowsAtActiveStopBorder(t *testing.T) {
+	exp, err := Expand(Snippet{Name: "x", Body: []string{"a ${1:i} b ${2:n} c $0"}}, Vars{}, "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	// "a i b n c "
+	s := NewSession(exp)
+	cur := s.Current()
+	s.Edit(cur.Start, cur.End, 1) // se sustituye "i" por una runa: $1 = [2,3)
+	s.Edit(3, 3, 1)               // se teclea al final de $1
+	s.Edit(4, 4, 1)               // y otra vez
+	if c := s.Current(); c.Start != 2 || c.End != 5 {
+		t.Fatalf("$1 debía cubrir lo tecleado: %+v", c)
+	}
+	st, _ := s.Next()
+	if st.Start != 8 || st.End != 9 {
+		t.Fatalf("$2 desplazado: %+v", st)
+	}
+	// Teclear en el borde inicial también es "dentro" de la parada actual.
+	s.Edit(8, 8, 2)
+	if c := s.Current(); c.Start != 8 || c.End != 11 {
+		t.Fatalf("borde inicial: %+v", c)
+	}
+	// Una edición fuera de la parada actual no la hace crecer.
+	s.Prev()
+	s.Edit(6, 6, 3) // texto entre $1 y $2
+	if c := s.Current(); c.Start != 2 || c.End != 5 {
+		t.Fatalf("$1 no debía cambiar: %+v", c)
+	}
+	if n := s.stops[1]; n.Start != 11 || n.End != 14 {
+		t.Fatalf("$2 tras insertar antes: %+v", n)
+	}
+}
+
+func TestSessionEditEmptyStopGrows(t *testing.T) {
+	exp, err := Expand(Snippet{Name: "x", Body: []string{"f($1)$2$0"}}, Vars{}, "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	s := NewSession(exp) // $1 = [2,2), $2 = [3,3)
+	s.Edit(2, 2, 1)
+	if c := s.Current(); c.Start != 2 || c.End != 3 {
+		t.Fatalf("$1: %+v", c)
+	}
+	if n := s.stops[1]; n.Start != 4 || n.End != 4 {
+		t.Fatalf("$2 vacío debía desplazarse entero: %+v", n)
+	}
+	for _, st := range s.stops {
+		if st.End < st.Start {
+			t.Errorf("rango invertido: %+v", st)
+		}
+	}
+}
+
+func TestSessionEditMirrorEmptyMirrorNotInverted(t *testing.T) {
+	exp, err := Expand(Snippet{Name: "x", Body: []string{"${1:ab}-$1-$0"}}, Vars{}, "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	// "ab-ab-": $1 = [0,2), espejo = [3,5)
+	s := NewSession(exp)
+	cur := s.Current()
+	s.Edit(cur.Start, cur.End, 0) // se borra el texto: $1 = [0,0)
+	if c := s.Current(); c.Start != 0 || c.End != 0 {
+		t.Fatalf("$1 vacío: %+v", c)
+	}
+	s.EditMirror(0, 0) // el editor vació también el espejo
+	if m := s.Current().Mirrors[0]; m != (Range{1, 1}) {
+		t.Fatalf("espejo vacío: %+v", m)
+	}
+	// Se teclean 3 runas en $1 y el editor las copia al espejo vacío.
+	s.Edit(0, 0, 3)
+	s.EditMirror(0, 3)
+	c, m := s.Current(), s.Current().Mirrors[0]
+	if c.Start != 0 || c.End != 3 {
+		t.Fatalf("$1: %+v", c)
+	}
+	if m != (Range{4, 7}) {
+		t.Fatalf("espejo: %+v, quiero {4 7}", m)
+	}
+	if last, _ := s.Next(); last.Start != 8 {
+		t.Fatalf("$0: %+v", last)
+	}
+}
+
+func TestSessionEditMirrorShiftsOthers(t *testing.T) {
+	exp, err := Expand(Snippet{Name: "x", Body: []string{"${1:i} ${2:n} $1 ${3:z} $0"}}, Vars{}, "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	// "i n i z ": $1 [0,1), $2 [2,3), espejo [4,5), $3 [6,7)
+	s := NewSession(exp)
+	s.Edit(0, 1, 3)
+	s.EditMirror(0, 3) // tras Edit el espejo estaba en [6,7)
+	if m := s.Current().Mirrors[0]; m != (Range{6, 9}) {
+		t.Fatalf("espejo: %+v", m)
+	}
+	s.Next()
+	if c := s.Current(); c.Start != 4 || c.End != 5 {
+		t.Fatalf("$2: %+v", c)
+	}
+	s.Next()
+	if c := s.Current(); c.Start != 10 || c.End != 11 {
+		t.Fatalf("$3: %+v", c)
+	}
+}

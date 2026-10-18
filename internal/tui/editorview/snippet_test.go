@@ -264,3 +264,39 @@ func TestSnippetDollarInTextIsLiteral(t *testing.T) {
 		t.Errorf("%q", got)
 	}
 }
+
+func TestSnippetTypingWithMirrorsIsOneUndoStep(t *testing.T) {
+	m := withSnippets(t, "Foo.java", "fori", 0)
+	m, _ = m.Update(tabKey)
+	m = typeAll(m, "j")
+	if got := string(m.Buffer().Line(0)); got != "for (int j = 0; j < n; j++) {" {
+		t.Fatalf("%q", got)
+	}
+	m, _ = m.Update(press('z', tea.ModCtrl))
+	if got := string(m.Buffer().Line(0)); got != "for (int i = 0; i < n; i++) {" {
+		t.Errorf("un solo deshacer debía revertir la tecla y sus espejos: %q", got)
+	}
+}
+
+func TestSnippetEmptiedStopKeepsSessionAndMirrors(t *testing.T) {
+	m := withSnippets(t, "Foo.java", "fori", 0)
+	m, _ = m.Update(tabKey)
+	m, _ = m.Update(press(tea.KeyBackspace, 0)) // vacía $1 y sus espejos
+	if got := string(m.Buffer().Line(0)); got != "for (int  = 0;  < n; ++) {" {
+		t.Fatalf("%q", got)
+	}
+	if !m.SnippetActive() {
+		t.Fatal("la sesión debía seguir")
+	}
+	m = typeAll(m, "kk")
+	if got := string(m.Buffer().Line(0)); got != "for (int kk = 0; kk < n; kk++) {" {
+		t.Fatalf("%q", got)
+	}
+	if !m.SnippetActive() {
+		t.Fatal("la sesión debía seguir tras rellenar espejos vacíos")
+	}
+	m, _ = m.Update(tabKey)
+	if got := m.Buffer().SelectedText(); got != "n" {
+		t.Errorf("$2 = %q", got)
+	}
+}

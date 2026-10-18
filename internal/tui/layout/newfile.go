@@ -12,7 +12,6 @@ import (
 	tea "charm.land/bubbletea/v2"
 
 	"github.com/dpa23/wari/internal/templates"
-	"github.com/dpa23/wari/internal/tui/filetree"
 )
 
 // Nuevo archivo desde plantilla. Reutiliza la franja de la paleta como
@@ -28,7 +27,8 @@ type palMode int
 const (
 	palCommands  palMode = iota // acciones y archivos
 	palTemplates                // elegir plantilla
-	palPath                     // ruta destino
+	palImports                  // elegir entre varios imports (ver imports.go)
+	palPath                     // ruta destino (desde aquí, modos de texto)
 	palVar                      // valor de una variable de la plantilla
 )
 
@@ -235,7 +235,7 @@ func (m Model) createFromTemplate() (Model, tea.Cmd) {
 	}
 
 	m.pal = palette{}
-	m.tree = filetree.New(m.root)
+	m.tree.Refresh()
 	m.relayout()
 	m.openFile(nf.abs)
 	m.tree.Reveal(nf.abs)

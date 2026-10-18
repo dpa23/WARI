@@ -61,6 +61,9 @@ type Buffer struct {
 	undoGroupPause int64
 	clock          func() int64 // returns now in nanoseconds
 	lastEditNs     int64
+	// grouping > 0 entre BeginGroup y EndGroup: todo lo que se edite va al
+	// mismo grupo de deshacer.
+	grouping int
 
 	// file metadata (filled by Open, used by Save)
 	fileLineEnding string // "\n" or "\r\n"
@@ -774,7 +777,7 @@ func (b *Buffer) insertTextRaw(text string) {
 func (b *Buffer) recordOp(o op, now int64) {
 	b.redo = b.redo[:0] // any edit discards the redo stack
 
-	if len(b.pending) > 0 {
+	if len(b.pending) > 0 && b.grouping == 0 {
 		// Flush to undo if: different kind, or pause exceeded.
 		lastIsInsert := b.pending[len(b.pending)-1].isInsert()
 		pause := now - b.lastEditNs
@@ -1003,6 +1006,51 @@ func (b *Buffer) replaceRangeLow(start, end Pos, oldText, newText string) {
 		ins: opInsertAt{at: start, text: newText, end: newEnd},
 	})
 	b.lastEditNs = now
+}
+
+// ReplaceRange replaces the text between start and end (in either order; both
+// are clamped to the buffer) with text. Unlike typing, it does not auto-indent:
+// text is inserted literally. The cursor ends after the inserted text with no
+// selection. It is a single undoable step (inside a group, one more op of it).
+func (b *Buffer) ReplaceRange(start, end Pos, text string) {
+	start, end = b.clampPos(start), b.clampPos(end)
+	if end.less(start) {
+		start, end = end, start
+	}
+	oldText := b.textBetween(start, end)
+	if oldText == "" && text == "" {
+		b.setCursor(start)
+		return
+	}
+	if b.grouping == 0 {
+		b.flushPending()
+	}
+	b.redo = b.redo[:0]
+	b.replaceRangeLow(start, end, oldText, text)
+	if b.grouping == 0 {
+		b.flushPending()
+	}
+}
+
+// BeginGroup starts a group: until the matching EndGroup, every edit joins
+// one undo step. Groups nest; the step closes with the outermost EndGroup.
+func (b *Buffer) BeginGroup() {
+	if b.grouping == 0 {
+		b.flushPending()
+	}
+	b.grouping++
+}
+
+// EndGroup closes the group opened by the last BeginGroup. Without an open
+// group it does nothing.
+func (b *Buffer) EndGroup() {
+	if b.grouping == 0 {
+		return
+	}
+	b.grouping--
+	if b.grouping == 0 {
+		b.flushPending()
+	}
 }
 
 // buildText returns the buffer as a single string with '\n' separators and a

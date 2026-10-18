@@ -18,6 +18,7 @@ import (
 	"charm.land/lipgloss/v2"
 
 	"github.com/dpa23/wari/internal/editor"
+	"github.com/dpa23/wari/internal/imports"
 	"github.com/dpa23/wari/internal/snippets"
 )
 
@@ -79,6 +80,11 @@ type Model struct {
 	sets    map[string]snippets.Set
 	snip    *snippetState
 	touched bool
+
+	// imps son los mapas tipo→import por lenguaje; suggest, el tipo bajo el
+	// cursor al que le falta el import ("" si no hay).
+	imps    map[string]imports.Map
+	suggest string
 }
 
 // fingerprint resume el contenido del buffer: líneas y un hash FNV-1a.
@@ -195,14 +201,22 @@ func (m Model) Update(msg tea.Msg) (Model, tea.Cmd) {
 		cmd = m.handleKeyTracked(msg)
 	case tea.PasteMsg:
 		m.overwrite = false
+		if m.snip == nil {
+			m.buf.Paste(msg.Content)
+			m.edited()
+			break
+		}
 		pre := m.snapshot()
 		m.touched = false
+		m.buf.BeginGroup()
 		m.buf.Paste(msg.Content)
 		m.edited()
 		m.snippetAfter(pre)
+		m.buf.EndGroup()
 	default:
 		return m, nil
 	}
+	m.suggest = m.computeSuggestion()
 	m.top, m.xoff = m.scroll()
 	return m, cmd
 }
@@ -216,10 +230,15 @@ func (m *Model) handleKeyTracked(msg tea.KeyPressMsg) tea.Cmd {
 	if m.snippetKey(msg) {
 		return nil
 	}
+	if m.snip == nil { // la tecla terminó la sesión (deshacer, rehacer)
+		return m.handleKey(msg)
+	}
 	pre := m.snapshot()
 	m.touched = false
+	m.buf.BeginGroup()
 	cmd := m.handleKey(msg)
 	m.snippetAfter(pre)
+	m.buf.EndGroup()
 	return cmd
 }
 

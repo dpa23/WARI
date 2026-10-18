@@ -82,3 +82,28 @@ func TestLoadTemplatesEmbedded(t *testing.T) {
 		t.Fatalf("plantillas: %d, err=%v", len(tpls), err)
 	}
 }
+
+func TestLoadImportsMergesAndValidatesEmbedded(t *testing.T) {
+	user, project := t.TempDir(), t.TempDir()
+	writeFile(t, filepath.Join(user, "imports", "java.json"), `{"Mio": ["x.Mio"], "Logger": ["u.Logger"]}`)
+	writeFile(t, filepath.Join(project, "imports", "java.json"), `{"Logger": ["p.Logger"]}`)
+	writeFile(t, filepath.Join(project, "imports", "csharp.json"), `{ roto`)
+
+	maps, warns := loadImports(user, project)
+	if len(warns) != 1 || !strings.Contains(warns[0], "csharp.json") {
+		t.Fatalf("avisos = %v", warns)
+	}
+	java := maps["java"]
+	if got := java.Candidates("Logger"); len(got) != 1 || got[0] != "p.Logger" {
+		t.Errorf("el proyecto debía ganar: %v", got)
+	}
+	if java.Candidates("Mio") == nil || java.Candidates("List") == nil {
+		t.Error("los de usuario se suman a los embebidos")
+	}
+	if got := java.Candidates("List"); len(got) < 2 {
+		t.Errorf("List debía tener varios candidatos: %v", got)
+	}
+	if maps["csharp"].Candidates("List") == nil || maps["kotlin"] == nil {
+		t.Error("faltan los embebidos de csharp o kotlin")
+	}
+}

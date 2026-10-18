@@ -54,6 +54,7 @@ func helpGroups() []helpGroup {
 				{"redo", "Rehacer cambios"},
 				{"find", "Buscar en archivo"},
 				{"new_file", "Nuevo archivo desde plantilla"},
+				{"import_type", "Importar el tipo bajo el cursor"},
 			},
 		},
 		{

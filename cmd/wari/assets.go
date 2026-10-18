@@ -9,6 +9,7 @@ import (
 
 	"github.com/dpa23/wari/assets"
 	"github.com/dpa23/wari/internal/config"
+	"github.com/dpa23/wari/internal/imports"
 	"github.com/dpa23/wari/internal/snippets"
 	"github.com/dpa23/wari/internal/templates"
 )
@@ -78,25 +79,78 @@ func mergeSnippets(base, over snippets.Set) snippets.Set {
 	return out
 }
 
+// loadImports devuelve los mapas tipo→import por lenguaje: los embebidos más
+// los de <userDir>/imports/<lang>.json y <projectDir>/imports/<lang>.json. Si
+// dos definen el mismo tipo, gana el del proyecto y luego el del usuario (sus
+// candidatos sustituyen a los anteriores). Los archivos inválidos se saltan y
+// se describen en warns.
+func loadImports(userDir, projectDir string) (maps map[string]imports.Map, warns []string) {
+	maps, err := imports.LoadDir(assets.FS, "imports")
+	if err != nil {
+		return map[string]imports.Map{}, []string{"imports embebidos: " + err.Error()}
+	}
+	for _, dir := range []string{userDir, projectDir} {
+		if dir == "" {
+			continue
+		}
+		dir = filepath.Join(dir, "imports")
+		entries, err := os.ReadDir(dir)
+		if err != nil {
+			if !os.IsNotExist(err) {
+				warns = append(warns, err.Error())
+			}
+			continue
+		}
+		for _, e := range entries {
+			if e.IsDir() || filepath.Ext(e.Name()) != ".json" {
+				continue
+			}
+			path := filepath.Join(dir, e.Name())
+			over, err := readImports(path)
+			if err != nil {
+				warns = append(warns, fmt.Sprintf("%s: %v", path, err))
+				continue
+			}
+			lang := strings.TrimSuffix(e.Name(), ".json")
+			maps[lang] = maps[lang].Merge(over)
+		}
+	}
+	return maps, warns
+}
+
+func readImports(path string) (imports.Map, error) {
+	f, err := os.Open(path)
+	if err != nil {
+		return nil, err
+	}
+	defer f.Close()
+	return imports.Load(f)
+}
+
 // loadTemplates devuelve las plantillas embebidas de nuevo archivo.
 func loadTemplates() ([]templates.Template, error) {
 	return templates.Load(assets.FS, "templates")
 }
 
-// loadAssets reúne snippets y plantillas para el layout; los problemas se
-// informan por stderr sin abortar.
-func loadAssets(root string) (map[string]snippets.Set, []templates.Template) {
+// loadAssets reúne snippets, imports y plantillas para el layout; los
+// problemas se informan por stderr sin abortar.
+func loadAssets(root string) (map[string]snippets.Set, map[string]imports.Map, []templates.Template) {
 	userDir, err := config.UserDir()
 	if err != nil {
 		userDir = ""
 	}
-	sets, warns := loadSnippets(userDir, filepath.Join(root, ".wari"))
+	projectDir := filepath.Join(root, ".wari")
+	sets, warns := loadSnippets(userDir, projectDir)
 	for _, w := range warns {
 		fmt.Fprintln(os.Stderr, "wari: aviso: snippets:", w)
+	}
+	maps, warns := loadImports(userDir, projectDir)
+	for _, w := range warns {
+		fmt.Fprintln(os.Stderr, "wari: aviso: imports:", w)
 	}
 	tpls, err := loadTemplates()
 	if err != nil {
 		fmt.Fprintln(os.Stderr, "wari: aviso: plantillas:", err)
 	}
-	return sets, tpls
+	return sets, maps, tpls
 }

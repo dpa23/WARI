@@ -38,6 +38,7 @@ const (
 	cmdFocusChat    = "focus_chat"
 	cmdHelp         = "help"
 	cmdNewFile      = "new_file"
+	cmdImportType   = "import_type"
 	cmdQuit         = "quit"
 	cmdOpenPrefix   = "open:"
 )
@@ -88,7 +89,6 @@ func (m Model) paletteItems() []item {
 		newItem(cmdFocusTree, "Ir al árbol de archivos", hint("focus_prev")),
 		newItem(cmdFocusEditor, "Ir al editor", hint("focus_next")),
 		newItem(cmdFocusChat, "Ir al panel de agentes", hint("focus_next")),
-		newItem(cmdNewFile, "Nuevo archivo desde plantilla", hint("new_file")),
 		newItem(cmdQuit, "Salir", hint("quit")),
 		newItem(cmdAgentPause, "Pausar o reanudar agente", hint("agent_pause")),
 		newItem(cmdAgentStop, "Detener agente", hint("agent_stop")),
@@ -96,6 +96,8 @@ func (m Model) paletteItems() []item {
 		newItem(cmdRevertFile, "Revertir archivo", hint("revert_file")),
 		newItem(cmdRevertTurn, "Revertir turno", hint("revert_turn")),
 		newItem(cmdRevertAgent, "Revertir agente", hint("revert_agent")),
+		newItem(cmdNewFile, "Nuevo archivo desde plantilla", hint("new_file")),
+		newItem(cmdImportType, "Importar el tipo bajo el cursor", hint("import_type")),
 	}
 	for _, f := range m.files {
 		items = append(items, newItem(cmdOpenPrefix+f, f, "archivo"))
@@ -170,6 +172,8 @@ func (m Model) paletteKey(k tea.KeyPressMsg) (Model, tea.Cmd) {
 			return m.submitPath()
 		case palVar:
 			return m.submitVar()
+		case palImports:
+			return m.pickImport()
 		}
 		if len(p.results) == 0 {
 			return m, nil
@@ -288,6 +292,8 @@ func (m Model) runCommand(id string) (Model, tea.Cmd) {
 	case id == cmdNewFile:
 		m.openTemplatePicker()
 		return m, nil
+	case id == cmdImportType:
+		return m.importType()
 	case id == cmdQuit:
 		return m.requestQuit(armed)
 	case id == cmdFocusTree:

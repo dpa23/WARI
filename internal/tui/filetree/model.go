@@ -175,6 +175,47 @@ func (m Model) Selected() string {
 	return ""
 }
 
+// Refresh vuelve a leer el disco (y las reglas de ignorados) conservando las
+// carpetas desplegadas y la selección. Si la fila seleccionada ya no existe,
+// el cursor queda en su sitio, dentro de los límites.
+func (m *Model) Refresh() {
+	sel := m.Selected()
+	open := map[string]bool{}
+	var collect func(n *node)
+	collect = func(n *node) {
+		if !n.dir || !n.expanded {
+			return
+		}
+		open[n.path] = true
+		for _, c := range n.children {
+			collect(c)
+		}
+	}
+	collect(m.root)
+
+	m.ig = newIgnorer(m.root.path)
+	var rebuild func(n *node)
+	rebuild = func(n *node) {
+		m.load(n)
+		for _, c := range n.children {
+			if c.dir && open[c.path] {
+				c.expanded = true
+				rebuild(c)
+			}
+		}
+	}
+	m.root.expanded = true
+	rebuild(m.root)
+	m.flatten()
+	for i, r := range m.rows {
+		if r.path == sel {
+			m.cursor = i
+			break
+		}
+	}
+	m.follow()
+}
+
 // Reveal despliega las carpetas que contienen path (si está bajo la raíz y no
 // se ignora) y mueve el cursor a él.
 func (m *Model) Reveal(path string) {

@@ -44,6 +44,7 @@ func Default() Keymap {
 		"redo":          []string{"ctrl+y"},
 		"find":          []string{"ctrl+f"},
 		"new_file":      []string{"alt+f"},
+		"import_type":   []string{"alt+i"},
 		"toggle_tree":   []string{"ctrl+b"},
 		"toggle_agents": []string{"ctrl+g"},
 		"agent_new":     []string{"ctrl+t"},

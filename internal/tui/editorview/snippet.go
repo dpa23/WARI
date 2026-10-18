@@ -2,7 +2,6 @@ package editorview
 
 import (
 	"path/filepath"
-	"regexp"
 	"strings"
 	"unicode"
 	"unicode/utf8"
@@ -21,7 +20,8 @@ import (
 // llegar a $0 la terminan, igual que mover el cursor fuera del texto
 // expandido, deshacer o rehacer. Mientras dura, cada edición se informa a la
 // snippets.Session para que reajuste las demás paradas, y lo escrito en una
-// parada se copia a sus espejos.
+// parada se copia a sus espejos. Cada tecla de la sesión, con la copia a los
+// espejos incluida, es un único paso de deshacer.
 
 // snippetLangs asocia la extensión del archivo con el lenguaje de sus snippets.
 var snippetLangs = map[string]string{
@@ -57,19 +57,11 @@ func (m Model) SnippetActive() bool { return m.snip != nil }
 
 func isWordRune(r rune) bool { return r == '_' || unicode.IsLetter(r) || unicode.IsDigit(r) }
 
-// escapeRepl protege el texto de la sintaxis de expansión de Regexp.
-func escapeRepl(s string) string { return strings.ReplaceAll(s, "$", "$$") }
-
-// replaceAt cambia old, que empieza en p, por text como un único paso de
-// deshacer. Deja el cursor al final del texto nuevo.
-func (m *Model) replaceAt(p editor.Pos, old, text string) bool {
-	m.buf.SetCursorPos(p)
-	re := regexp.MustCompile(`\A` + regexp.QuoteMeta(old))
-	if !m.buf.ReplaceNext(re, escapeRepl(text)) {
-		return false
-	}
+// replaceAt cambia [start, end) por text como un único paso de deshacer
+// (o parte del grupo en curso). Deja el cursor al final del texto nuevo.
+func (m *Model) replaceAt(start, end editor.Pos, text string) {
+	m.buf.ReplaceRange(start, end, text)
 	m.edited()
-	return true
 }
 
 // exactSnippet busca el snippet cuyo prefijo es exactamente word.
@@ -109,7 +101,7 @@ func (m *Model) expandSnippet() bool {
 			continue
 		}
 		if sn, ok := exactSnippet(set, word); ok {
-			return m.insertSnippet(sn, c, start, word)
+			return m.insertSnippet(sn, c, start)
 		}
 	}
 	return false
@@ -117,7 +109,7 @@ func (m *Model) expandSnippet() bool {
 
 // insertSnippet reemplaza la palabra [start, c.Col) de la línea de c por el
 // snippet expandido y abre la sesión.
-func (m *Model) insertSnippet(sn snippets.Snippet, c editor.Pos, start int, word string) bool {
+func (m *Model) insertSnippet(sn snippets.Snippet, c editor.Pos, start int) bool {
 	line := m.buf.Line(c.Line)
 	n := 0
 	for n < len(line) && (line[n] == ' ' || line[n] == '\t') {
@@ -128,10 +120,7 @@ func (m *Model) insertSnippet(sn snippets.Snippet, c editor.Pos, start int, word
 		return false
 	}
 	base := editor.Pos{Line: c.Line, Col: start}
-	if !m.replaceAt(base, word, exp.Text) {
-		m.buf.SetCursorPos(c)
-		return false
-	}
+	m.replaceAt(base, c, exp.Text)
 	m.snip = &snippetState{sess: snippets.NewSession(exp), base: base, span: utf8.RuneCountInString(exp.Text)}
 	m.goTo(m.snip.sess.Current())
 	if m.snip.sess.Finished() {
@@ -285,13 +274,10 @@ func (m *Model) snippetAfter(pre editSnap) {
 		}
 		s.span += delta
 		cur := s.sess.Current()
-		if start >= cur.Start && start+oldLen <= cur.End {
-			// Dentro de la parada actual: se informa como reemplazo de toda
-			// ella, para que crezca también al escribir en su borde.
-			s.sess.Edit(cur.Start, cur.End, cur.End-cur.Start+delta)
+		inCur := start >= cur.Start && start+oldLen <= cur.End
+		s.sess.Edit(start, start+oldLen, newLen)
+		if inCur {
 			m.syncMirrors()
-		} else {
-			s.sess.Edit(start, start+oldLen, newLen)
 		}
 	}
 	if m.snip != nil {
@@ -301,10 +287,7 @@ func (m *Model) snippetAfter(pre editSnap) {
 	}
 }
 
-// syncMirrors copia el texto de la parada actual a sus espejos. Cada espejo
-// es un paso de deshacer propio. Un espejo vacío no se puede reajustar de
-// forma fiable (Session.Edit no distingue un punto de inserción de sí mismo),
-// así que tras rellenarlo la sesión termina.
+// syncMirrors copia el texto de la parada actual a sus espejos.
 func (m *Model) syncMirrors() {
 	s := m.snip
 	cur := s.sess.Current()
@@ -314,33 +297,24 @@ func (m *Model) syncMirrors() {
 	text := m.textRange(cur.Start, cur.End)
 	newLen := utf8.RuneCountInString(text)
 	curOff := m.snipOff(m.buf.Cursor())
-	stop := false
 	for i := 0; i < len(s.sess.Current().Mirrors); i++ {
 		r := s.sess.Current().Mirrors[i]
 		if r.Start < 0 || r.End < r.Start || r.End > s.span {
-			stop = true
+			m.snip = nil
 			break
 		}
-		old := m.textRange(r.Start, r.End)
-		if old == text {
+		if m.textRange(r.Start, r.End) == text {
 			continue
 		}
-		if !m.replaceAt(m.posAt(r.Start), old, text) {
-			stop = true
-			break
-		}
+		m.replaceAt(m.posAt(r.Start), m.posAt(r.End), text)
 		delta := newLen - (r.End - r.Start)
 		if r.End <= curOff {
 			curOff += delta
 		}
 		s.span += delta
-		s.sess.Edit(r.Start, r.End, newLen)
-		if r.End == r.Start {
-			stop = true
-		}
+		s.sess.EditMirror(i, newLen)
 	}
-	m.buf.SetCursorPos(m.posAt(curOff))
-	if stop {
-		m.snip = nil
+	if m.snip != nil {
+		m.buf.SetCursorPos(m.posAt(curOff))
 	}
 }

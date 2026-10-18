@@ -364,3 +364,48 @@ func TestIgnoreFunc(t *testing.T) {
 		}
 	}
 }
+
+func TestRefreshKeepsExpandedFoldersAndSelection(t *testing.T) {
+	root := project(t)
+	m := newTree(t, root)
+	m.Reveal(filepath.Join(root, "src", "main", "util", "Helper.java"))
+	before := names(m)
+
+	write(t, root, "src/main/util/Nuevo.java", "x")
+	write(t, root, "src/Otro.java", "x")
+	m.Refresh()
+
+	got := names(m)
+	for _, want := range []string{"    Nuevo.java", "  Otro.java"} {
+		if !contains(got, want) {
+			t.Errorf("falta %q en %v", want, got)
+		}
+	}
+	for _, b := range before {
+		if !contains(got, b) {
+			t.Errorf("Refresh perdió %q (carpetas desplegadas)", b)
+		}
+	}
+	if sel := filepath.Base(m.Selected()); sel != "Helper.java" {
+		t.Errorf("la selección debía conservarse: %q", sel)
+	}
+}
+
+func TestRefreshDropsDeletedAndClampsCursor(t *testing.T) {
+	root := project(t)
+	m := newTree(t, root)
+	m.Reveal(filepath.Join(root, "Zeta.java"))
+	if err := os.Remove(filepath.Join(root, "Zeta.java")); err != nil {
+		t.Fatal(err)
+	}
+	m.Refresh()
+	if contains(names(m), " Zeta.java") {
+		t.Error("el archivo borrado debía desaparecer")
+	}
+	if m.cursor < 0 || m.cursor >= len(m.rows) {
+		t.Errorf("cursor fuera de límites: %d de %d", m.cursor, len(m.rows))
+	}
+	if m.Selected() == "" {
+		t.Error("debía quedar algo seleccionado")
+	}
+}

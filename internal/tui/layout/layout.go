@@ -30,6 +30,11 @@
 // Tab y Shift+Tab no mueven el foco. Nuevo archivo desde plantilla: acción
 // new_file (o la paleta); ver newfile.go.
 //
+// Imports. Con un tipo conocido bajo el cursor al que le falta el import, la
+// línea de estado lo sugiere; import_type (o la paleta) lo inserta, y si hay
+// varios candidatos (List: java.util o java.awt) abre un selector. Ver
+// imports.go.
+//
 // Seguridad de datos: abrir otro archivo con el actual sin guardar, o salir
 // en ese caso (con la tecla o desde la paleta), pide repetir la acción; la
 // confirmación se desarma con cualquier otra tecla. Guardar la confirma.
@@ -52,6 +57,7 @@ import (
 
 	"github.com/dpa23/wari/internal/config"
 	"github.com/dpa23/wari/internal/editor"
+	"github.com/dpa23/wari/internal/imports"
 	"github.com/dpa23/wari/internal/snippets"
 	"github.com/dpa23/wari/internal/templates"
 	"github.com/dpa23/wari/internal/tui"
@@ -87,6 +93,9 @@ type Config struct {
 	// Snippets son los snippets por lenguaje ("java", "kotlin", "csharp") que
 	// expande Tab en el editor; nil los desactiva.
 	Snippets map[string]snippets.Set
+	// Imports son los mapas tipo→import por lenguaje de import_type y de la
+	// sugerencia de la línea de estado; nil los desactiva.
+	Imports map[string]imports.Map
 	// Templates son las plantillas de "Nuevo archivo desde plantilla"; sin
 	// ellas la acción solo avisa.
 	Templates []templates.Template
@@ -115,6 +124,8 @@ type Model struct {
 	quitArmed   bool   // la última tecla fue quit con cambios sin guardar
 
 	snips map[string]snippets.Set
+	imps  map[string]imports.Map
+	imp   importState
 	tpls  []templates.Template
 	nf    newFileState
 
@@ -159,7 +170,7 @@ func New(cfg Config) Model {
 
 	m := Model{
 		km: km, binds: binds, root: root,
-		snips: cfg.Snippets, tpls: cfg.Templates,
+		snips: cfg.Snippets, imps: cfg.Imports, tpls: cfg.Templates,
 		tree:   filetree.New(root),
 		chat:   tui.NewPanel(chatCfg),
 		w:      80,
@@ -288,6 +299,8 @@ func (m Model) handleKey(k tea.KeyPressMsg) (Model, tea.Cmd) {
 	case m.is(k, "new_file"):
 		m.openTemplatePicker()
 		return m, nil
+	case m.is(k, "import_type"):
+		return m.importType()
 	case m.is(k, "stop_all"):
 		return m.stopAll()
 	case m.chat.HasPipeline() && (m.is(k, "pipeline_run") || m.is(k, "gate_approve") ||
@@ -558,6 +571,7 @@ func (m *Model) openFile(path string) {
 	}
 	m.ed = editorview.New(buf, fi, path, editorview.KeyMapFrom(m.km))
 	m.ed.SetSnippets(m.snips)
+	m.ed.SetImports(m.imps)
 	m.hasEd = true
 	m.focus = focusEditor
 	m.tree.Reveal(path)
@@ -762,6 +776,14 @@ func (m Model) statusBar() string {
 		// debe verse aunque el panel de agentes esté plegado.
 		left += " │ ⚠ " + a
 		st = alertStyle
+	}
+	if m.hasEd && m.focus == focusEditor {
+		if typ := m.ed.ImportSuggestion(); typ != "" {
+			left += " │ importar " + typ
+			if k := m.firstKey("import_type"); k != "" {
+				left += " (" + k + ")"
+			}
+		}
 	}
 	if m.msg != "" {
 		left += " │ " + m.msg
