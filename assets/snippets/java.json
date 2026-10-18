@@ -1,0 +1,192 @@
+{
+	"main": {
+		"prefix": "main",
+		"body": [
+			"public static void main(String[] args) {",
+			"\t$0",
+			"}"
+		],
+		"description": "Método main"
+	},
+	"sout": {
+		"prefix": "sout",
+		"body": [
+			"System.out.println($1);$0"
+		],
+		"description": "Imprimir en System.out"
+	},
+	"for": {
+		"prefix": [
+			"for",
+			"fori"
+		],
+		"body": [
+			"for (int ${1:i} = 0; ${1:i} < ${2:n}; ${1:i}++) {",
+			"\t$0",
+			"}"
+		],
+		"description": "Bucle for con contador"
+	},
+	"foreach": {
+		"prefix": [
+			"foreach",
+			"iter"
+		],
+		"body": [
+			"for (${1:Object} ${2:item} : ${3:collection}) {",
+			"\t$0",
+			"}"
+		],
+		"description": "Bucle for-each"
+	},
+	"ctor": {
+		"prefix": "ctor",
+		"body": [
+			"public ${1:${CLASS_NAME}}($2) {",
+			"\t$0",
+			"}"
+		],
+		"description": "Constructor de clase"
+	},
+	"getset": {
+		"prefix": "getset",
+		"body": [
+			"public ${1:String} get${2:Property}() {",
+			"\treturn ${3:property};",
+			"}",
+			"",
+			"public void set${2:Property}(${1:String} ${3:property}) {",
+			"\tthis.${3:property} = ${3:property};",
+			"}$0"
+		],
+		"description": "Getter y Setter"
+	},
+	"try": {
+		"prefix": "try",
+		"body": [
+			"try {",
+			"\t$1",
+			"} catch (${2:Exception} ${3:e}) {",
+			"\t$0",
+			"}"
+		],
+		"description": "Bloque try-catch"
+	},
+	"if": {
+		"prefix": "if",
+		"body": [
+			"if (${1:condition}) {",
+			"\t$0",
+			"}"
+		],
+		"description": "Sentencia condicional if"
+	},
+	"switch": {
+		"prefix": "switch",
+		"body": [
+			"switch (${1:key}) {",
+			"\tcase ${2:value} -> $3;",
+			"\tdefault -> $0;",
+			"}"
+		],
+		"description": "Sentencia switch con flechas"
+	},
+	"restcontroller": {
+		"prefix": "restcontroller",
+		"body": [
+			"@RestController",
+			"@RequestMapping(\"${1:/api}\")",
+			"public class ${2:${TM_FILENAME_BASE}} {",
+			"\t$0",
+			"}"
+		],
+		"description": "Spring RestController"
+	},
+	"service": {
+		"prefix": "service",
+		"body": [
+			"@Service",
+			"public class ${1:${TM_FILENAME_BASE}} {",
+			"\t$0",
+			"}"
+		],
+		"description": "Spring Service"
+	},
+	"repository": {
+		"prefix": "repository",
+		"body": [
+			"@Repository",
+			"public interface ${1:${TM_FILENAME_BASE}} extends ${2:JpaRepository}<${3:Entity}, ${4:Long}> {",
+			"\t$0",
+			"}"
+		],
+		"description": "Spring Data Repository"
+	},
+	"entity": {
+		"prefix": "entity",
+		"body": [
+			"@Entity",
+			"@Table(name = \"${1:table_name}\")",
+			"public class ${2:${TM_FILENAME_BASE}} {",
+			"",
+			"\t@Id",
+			"\t@GeneratedValue(strategy = GenerationType.IDENTITY)",
+			"\tprivate ${3:Long} id;",
+			"",
+			"\t$0",
+			"}"
+		],
+		"description": "JPA Entity"
+	},
+	"getmapping": {
+		"prefix": "getmapping",
+		"body": [
+			"@GetMapping(\"${1}\")",
+			"public ${2:ResponseEntity<?>} ${3:get}($4) {",
+			"\t$0",
+			"\treturn ResponseEntity.ok($5);",
+			"}"
+		],
+		"description": "Spring GetMapping endpoint"
+	},
+	"postmapping": {
+		"prefix": "postmapping",
+		"body": [
+			"@PostMapping(\"${1}\")",
+			"public ${2:ResponseEntity<?>} ${3:create}(@RequestBody ${4:Object} ${5:request}) {",
+			"\t$0",
+			"\treturn ResponseEntity.ok($6);",
+			"}"
+		],
+		"description": "Spring PostMapping endpoint"
+	},
+	"configuration": {
+		"prefix": "configuration",
+		"body": [
+			"@Configuration",
+			"public class ${1:${TM_FILENAME_BASE}} {",
+			"\t$0",
+			"}"
+		],
+		"description": "Spring Configuration"
+	},
+	"bean": {
+		"prefix": "bean",
+		"body": [
+			"@Bean",
+			"public ${1:Object} ${2:beanName}() {",
+			"\treturn new ${1:Object}($0);",
+			"}"
+		],
+		"description": "Spring Bean"
+	},
+	"autowired-ctor": {
+		"prefix": "autowired-ctor",
+		"body": [
+			"public ${1:${CLASS_NAME}}(${2:Service} ${3:service}) {",
+			"\tthis.${3:service} = ${3:service};$0",
+			"}"
+		],
+		"description": "Constructor con inyección de dependencias para Spring"
+	}
+}

@@ -1,0 +1,82 @@
+{
+	"prop": {
+		"prefix": "prop",
+		"body": [
+			"public ${1:int} ${2:Property} { get; set; }$0"
+		],
+		"description": "Propiedad autoimplementada"
+	},
+	"ctor": {
+		"prefix": "ctor",
+		"body": [
+			"public ${1:${CLASS_NAME}}($2)",
+			"{",
+			"\t$0",
+			"}"
+		],
+		"description": "Constructor"
+	},
+	"cw": {
+		"prefix": "cw",
+		"body": [
+			"Console.WriteLine($1);$0"
+		],
+		"description": "Console.WriteLine"
+	},
+	"foreach": {
+		"prefix": "foreach",
+		"body": [
+			"foreach (var ${1:item} in ${2:collection})",
+			"{",
+			"\t$0",
+			"}"
+		],
+		"description": "Bucle foreach"
+	},
+	"class": {
+		"prefix": "class",
+		"body": [
+			"public class ${1:${TM_FILENAME_BASE}}",
+			"{",
+			"\t$0",
+			"}"
+		],
+		"description": "Declaración de clase"
+	},
+	"interface": {
+		"prefix": "interface",
+		"body": [
+			"public interface ${1:I${TM_FILENAME_BASE}}",
+			"{",
+			"\t$0",
+			"}"
+		],
+		"description": "Declaración de interfaz"
+	},
+	"try": {
+		"prefix": "try",
+		"body": [
+			"try",
+			"{",
+			"\t$0",
+			"}",
+			"catch (${1:Exception} ${2:ex})",
+			"{",
+			"\t${3:throw;}",
+			"}"
+		],
+		"description": "Bloque try-catch"
+	},
+	"apicontroller": {
+		"prefix": "apicontroller",
+		"body": [
+			"[ApiController]",
+			"[Route(\"[controller]\")]",
+			"public class ${1:${TM_FILENAME_BASE}} : ControllerBase",
+			"{",
+			"\t$0",
+			"}"
+		],
+		"description": "ASP.NET Core ApiController"
+	}
+}

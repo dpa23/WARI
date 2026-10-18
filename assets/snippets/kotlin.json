@@ -1,0 +1,76 @@
+{
+	"fun": {
+		"prefix": "fun",
+		"body": [
+			"fun ${1:name}(${2:params}): ${3:Unit} {",
+			"\t$0",
+			"}"
+		],
+		"description": "Declaración de función"
+	},
+	"dataclass": {
+		"prefix": "dataclass",
+		"body": [
+			"data class ${1:${TM_FILENAME_BASE}}(",
+			"\tval ${2:id}: ${3:Long}$0",
+			")"
+		],
+		"description": "Data class de Kotlin"
+	},
+	"when": {
+		"prefix": "when",
+		"body": [
+			"when (${1:target}) {",
+			"\t${2:condition} -> $3",
+			"\telse -> $0",
+			"}"
+		],
+		"description": "Expresión when"
+	},
+	"main": {
+		"prefix": "main",
+		"body": [
+			"fun main(args: Array<String>) {",
+			"\t$0",
+			"}"
+		],
+		"description": "Función main"
+	},
+	"ifnull": {
+		"prefix": "ifnull",
+		"body": [
+			"${1:variable} ?: ${2:default}$0"
+		],
+		"description": "Expresión con operador Elvis (if null)"
+	},
+	"forin": {
+		"prefix": "forin",
+		"body": [
+			"for (${1:item} in ${2:collection}) {",
+			"\t$0",
+			"}"
+		],
+		"description": "Bucle for in"
+	},
+	"restcontroller": {
+		"prefix": "restcontroller",
+		"body": [
+			"@RestController",
+			"@RequestMapping(\"${1:/api}\")",
+			"class ${2:${TM_FILENAME_BASE}} {",
+			"\t$0",
+			"}"
+		],
+		"description": "Spring Boot RestController en Kotlin"
+	},
+	"service": {
+		"prefix": "service",
+		"body": [
+			"@Service",
+			"class ${1:${TM_FILENAME_BASE}} {",
+			"\t$0",
+			"}"
+		],
+		"description": "Spring Boot Service en Kotlin"
+	}
+}
