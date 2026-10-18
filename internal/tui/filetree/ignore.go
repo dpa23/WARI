@@ -90,6 +90,21 @@ func (ig *ignorer) ignored(rel, name string, isDir bool) bool {
 	return false
 }
 
+// IgnoreFunc devuelve el criterio de ignorado del árbol (siempre .git y .wari,
+// carpetas de salida en la raíz y el .gitignore de la raíz) como función de
+// ruta relativa (con "/") y si es carpeta. Lo usa el watcher del espacio de
+// trabajo para no ver lo que el árbol oculta.
+func IgnoreFunc(root string) func(rel string, isDir bool) bool {
+	ig := newIgnorer(root)
+	return func(rel string, isDir bool) bool {
+		name := rel
+		if i := strings.LastIndex(rel, "/"); i >= 0 {
+			name = rel[i+1:]
+		}
+		return ig.ignored(rel, name, isDir)
+	}
+}
+
 // ListFiles devuelve las rutas relativas (con "/", ordenadas) de los archivos
 // bajo root que no se ignoran, hasta limit (0: sin límite). Sirve para la
 // búsqueda de archivos por nombre.

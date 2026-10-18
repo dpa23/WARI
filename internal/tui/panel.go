@@ -39,6 +39,40 @@ type (
 		what string
 		err  error
 	}
+	// diffMsg lleva el contenido de un checkpoint y el actual de un archivo.
+	diffMsg struct {
+		id       orch.ID
+		edit     orch.Edit
+		old, cur []byte
+		err      error
+	}
+	// revertMsg es el resultado de revertir (archivo, turno o agente).
+	revertMsg struct {
+		id   orch.ID
+		what string
+		err  error
+	}
+)
+
+// diffView es el diff abierto en lugar del historial del agente v.
+type diffView struct {
+	v    *agentView
+	edit orch.Edit
+	// text es el diff unificado; vacío mientras se calcula.
+	text string
+}
+
+// alertInfo es el último choque sin resolver, para el panel y la barra.
+type alertInfo struct {
+	id   orch.ID
+	text string
+}
+
+// revertible es lo que se pidió revertir.
+const (
+	revertFile  = "file"
+	revertTurn  = "turn"
+	revertAgent = "agent"
 )
 
 // agentView es un agente del panel: su historial, su último estado conocido y
@@ -57,6 +91,9 @@ type agentView struct {
 	draft  string
 	yoff   int
 	follow bool
+
+	// nEdits cuenta las ediciones propuestas (para mostrar el atajo del diff).
+	nEdits int
 }
 
 func (v *agentView) state() (orch.State, bool) { return v.snap.State, v.hasSnap }
@@ -99,6 +136,13 @@ type Panel struct {
 	created                       int
 	listening, spinning, quitting bool
 	blurred                       bool
+
+	// dv es el diff abierto (nil: se muestra el historial); armed, la
+	// reversión que espera confirmación; alert, el último choque.
+	dv        *diffView
+	armed     string
+	armedText string
+	alert     alertInfo
 }
 
 var _ tea.Model = Panel{}
@@ -184,6 +228,33 @@ func (m Panel) dispatch(msg tea.Msg) (Panel, tea.Cmd) {
 		}
 		return m, nil
 
+	case diffMsg:
+		if m.dv != nil && m.dv.v.id == msg.id && m.dv.edit == msg.edit {
+			if msg.err != nil {
+				m.dv.text = "no se pudo obtener el diff: " + msg.err.Error()
+			} else {
+				m.dv.text = diffText(msg.edit.Path, msg.edit.Turn, msg.old, msg.cur)
+			}
+			m.refreshTo(false)
+		}
+		return m, nil
+
+	case revertMsg:
+		v := m.byID[msg.id]
+		if v == nil {
+			return m, nil
+		}
+		if msg.err != nil {
+			v.add(kindError, fmt.Sprintf("no se pudo %s: %v", msg.what, msg.err))
+		} else {
+			v.add(kindInfo, "— "+msg.what+": listo —")
+			if m.dv != nil && m.dv.v == v {
+				m.dv = nil
+			}
+		}
+		m.refreshTo(v != m.cur() || m.vp.AtBottom())
+		return m, nil
+
 	case quitMsg:
 		return m, tea.Quit
 	}
@@ -199,11 +270,25 @@ func (m Panel) cur() *agentView { return m.views[m.sel] }
 
 // handleKey procesa las teclas con los bindings de KeyMap.
 func (m Panel) handleKey(msg tea.KeyPressMsg) (Panel, tea.Cmd) {
+	// La confirmación de una reversión se desarma con cualquier otra tecla.
+	armed := m.armed
+	m.armed, m.armedText = "", ""
 	switch {
 	case key.Matches(msg, m.keys.Quit):
 		return m.quit()
 	case m.quitting:
 		return m, nil
+	case key.Matches(msg, m.keys.Cancel) && m.dv != nil:
+		m.closeDiff()
+		return m, nil
+	case key.Matches(msg, m.keys.DiffFile):
+		return m.diff()
+	case key.Matches(msg, m.keys.RevertFile):
+		return m.revert(revertFile, armed)
+	case key.Matches(msg, m.keys.RevertTurn):
+		return m.revert(revertTurn, armed)
+	case key.Matches(msg, m.keys.RevertAgent):
+		return m.revert(revertAgent, armed)
 	case key.Matches(msg, m.keys.Cancel), key.Matches(msg, m.keys.AgentStop):
 		return m, m.stopCmd(m.cur())
 	case key.Matches(msg, m.keys.AgentNew), key.Matches(msg, m.keys.NewSession):
@@ -239,7 +324,7 @@ func (m *Panel) addView() *agentView {
 	v := &agentView{
 		name:       fmt.Sprintf("agente %d", m.created),
 		follow:     true,
-		transcript: transcript{newSessionKey: m.keys.AgentNew.Help().Key},
+		transcript: transcript{newSessionKey: m.keys.AgentNew.Help().Key, root: m.cfg.Task.Dir},
 	}
 	if m.cfg.NewAgent != nil {
 		v.ag = m.cfg.NewAgent()
@@ -265,6 +350,7 @@ func (m *Panel) selectView(i int) {
 	if i == m.sel {
 		return
 	}
+	m.dv = nil
 	cur := m.cur()
 	cur.draft = m.input.Value()
 	cur.follow = m.vp.AtBottom()
@@ -311,6 +397,7 @@ func (m Panel) send() (Panel, tea.Cmd) {
 	}
 	v.add(kindUser, text)
 	m.input.Reset()
+	m.dv = nil
 	m.refreshTo(true)
 	return m, nil
 }
@@ -392,14 +479,26 @@ func (m Panel) quit() (Panel, tea.Cmd) {
 func (m *Panel) applyUpdates(ups []orch.Update) {
 	touched := false
 	for _, u := range ups {
+		if u.Notice != nil {
+			if m.applyNotice(u) {
+				touched = true
+			}
+			continue
+		}
 		v := m.byID[u.ID]
 		if v == nil {
 			continue
 		}
 		if u.Event != nil {
 			v.applyEvent(u.Event)
+			if _, ok := u.Event.(agent.FileEditProposed); ok {
+				v.nEdits++
+			}
 		} else {
 			m.noteState(v, u.Snapshot)
+			if m.alert.id == u.ID && u.Snapshot.State != orch.Paused {
+				m.alert = alertInfo{}
+			}
 		}
 		v.snap, v.hasSnap = u.Snapshot, true
 		if v == m.cur() {
@@ -408,6 +507,66 @@ func (m *Panel) applyUpdates(ups []orch.Update) {
 	}
 	if touched {
 		m.refresh()
+	}
+}
+
+// applyNotice aplica un aviso del espacio de trabajo y dice si cambió el
+// historial que se está viendo.
+func (m *Panel) applyNotice(u orch.Update) bool {
+	n := u.Notice
+	v := m.byID[u.ID]
+	cur := m.cur()
+	changed := false
+	add := func(to *agentView, k entryKind, text string) {
+		if to == nil {
+			return
+		}
+		to.add(k, text)
+		changed = changed || to == cur
+	}
+	switch n.Kind {
+	case orch.NoticeConflict:
+		m.alert = alertInfo{id: n.Agent, text: n.Text}
+		add(v, kindWarn, "⚠ "+n.Text)
+		if !n.Late {
+			add(v, kindInfo, fmt.Sprintf("%s reanuda y le da el archivo; %s lo detiene y descarta su turno",
+				m.keys.AgentPause.Help().Key, m.keys.AgentStop.Help().Key))
+			if h := m.byID[n.Holder]; h != nil && v != nil {
+				add(h, kindWarn, fmt.Sprintf("⚠ %s quiso editar %s, que tienes reclamado", v.name, n.Path))
+			}
+		}
+	case orch.NoticeTakeover:
+		if m.alert.id == n.Agent {
+			m.alert = alertInfo{}
+		}
+		add(v, kindInfo, "— "+n.Text+" —")
+	case orch.NoticeCheckpointFailed:
+		add(v, kindError, n.Text)
+	case orch.NoticeChanged:
+		switch n.Attr {
+		case orch.AttrSoleActive:
+			add(v, kindEdit, n.Text)
+		case orch.AttrUnknown:
+			// Sin agente al que atribuirlo: se deja en el historial visible,
+			// sin repetir la misma línea.
+			if k := len(cur.entries); k == 0 || cur.entries[k-1].text != n.Text {
+				add(cur, kindEdit, n.Text)
+			}
+		}
+		// AttrProposal ya tiene su línea "✎ ruta" del evento de edición.
+	}
+	return changed
+}
+
+// Alert devuelve el choque de archivos sin resolver ("" si no hay), para la
+// barra de estado.
+func (m Panel) Alert() string { return m.alert.text }
+
+// NoteUserWrite avisa al supervisor de que WARI mismo escribirá path (guardar
+// desde el editor): el watcher no lo atribuirá a ningún agente.
+func (m Panel) NoteUserWrite(path string) {
+	if m.sup != nil {
+		m.sup.NoteUserWrite(path)
 	}
 }
 
@@ -448,6 +607,10 @@ func (m *Panel) refresh() { m.refreshTo(m.vp.AtBottom()) }
 
 func (m *Panel) refreshTo(follow bool) {
 	v := m.cur()
+	if m.dv != nil && m.dv.v == v {
+		m.vp.SetContent(m.dv.render(m.styles, m.vp.Width()))
+		return
+	}
 	m.vp.SetContent(v.cache.render(v.entries, v.asstOpen, m.styles, m.vp.Width()))
 	if follow {
 		m.vp.GotoBottom()
@@ -533,6 +696,10 @@ func (m Panel) listLine(i int) string {
 	line := fmt.Sprintf("%s%-10s %-15s %s · %s tok · US$%.4f",
 		marker, truncate(v.name, 10), v.stateLabel(), turns, tokens, v.snap.CostUSD)
 
+	if m.alert.id != 0 && v.id == m.alert.id {
+		line += " ⚠ choque"
+	}
+
 	st := lipgloss.NewStyle()
 	if v.hasSnap {
 		switch v.snap.State {
@@ -605,13 +772,30 @@ func (m Panel) statusLine() string {
 		lead = m.spin.View() + " "
 	}
 	parts := []string{m.stateText()}
+	if m.armedText != "" {
+		parts = []string{m.armedText}
+	}
+	if m.dv != nil && m.dv.v == v {
+		parts = append(parts, fmt.Sprintf("diff %s (turno %d)", m.dv.edit.Path, m.dv.edit.Turn))
+	}
+	if m.cfg.Task.Permissions == agent.PermissionAcceptEdits {
+		parts = append(parts, "edita sin preguntar")
+	}
 	if v.model != "" {
 		parts = append(parts, v.model)
 	}
 	if v.sessionID != "" {
 		parts = append(parts, "sesión "+shortSession(v.sessionID))
 	}
-	parts = append(parts, formatUsage(v.tokensIn, v.tokensOut, v.costUSD), m.keys.panelHelpLine())
+	parts = append(parts, formatUsage(v.tokensIn, v.tokensOut, v.costUSD))
+	if m.dv != nil && m.dv.v == v {
+		parts = append(parts, joinHelp(m.keys.DiffFile, m.keys.RevertFile, m.keys.RevertTurn, m.keys.Cancel))
+	} else {
+		if v.nEdits > 0 && m.keys.DiffFile.Enabled() {
+			parts = append(parts, joinHelp(m.keys.DiffFile))
+		}
+		parts = append(parts, m.keys.panelHelpLine())
+	}
 	return m.styles.status.MaxWidth(max(m.width, 1)).Render(lead + strings.Join(parts, " · "))
 }
 
@@ -693,5 +877,117 @@ func listenUpdates(ch <-chan orch.Update) tea.Cmd {
 			}
 		}
 		return msg
+	}
+}
+
+// render compone el diff abierto con su título.
+func (d *diffView) render(st styles, width int) string {
+	title := st.info.Render(fmt.Sprintf("%s · turno %d", d.edit.Path, d.edit.Turn))
+	if d.text == "" {
+		return title + "\n" + st.info.Render("calculando el diff…")
+	}
+	return title + "\n" + renderDiff(d.text, st, width)
+}
+
+// closeDiff vuelve al historial del agente.
+func (m *Panel) closeDiff() {
+	m.dv = nil
+	m.refreshTo(m.vp.AtBottom())
+}
+
+// savedEdits son las ediciones del agente con checkpoint (las que se pueden
+// ver y revertir).
+func (m Panel) savedEdits(v *agentView) []orch.Edit {
+	if m.sup == nil || v.id == 0 {
+		return nil
+	}
+	var out []orch.Edit
+	for _, e := range m.sup.Edits(v.id) {
+		if e.Saved {
+			out = append(out, e)
+		}
+	}
+	return out
+}
+
+// diff abre el diff de la última edición del agente seleccionado contra su
+// checkpoint; con uno ya abierto, pasa a la edición siguiente.
+func (m Panel) diff() (Panel, tea.Cmd) {
+	v := m.cur()
+	eds := m.savedEdits(v)
+	if len(eds) == 0 {
+		v.add(kindInfo, "no hay ediciones con checkpoint que mostrar")
+		m.refresh()
+		return m, nil
+	}
+	idx := len(eds) - 1
+	if m.dv != nil && m.dv.v == v {
+		for i, e := range eds {
+			if e == m.dv.edit {
+				idx = (i + 1) % len(eds)
+				break
+			}
+		}
+	}
+	ed := eds[idx]
+	m.dv = &diffView{v: v, edit: ed}
+	m.refreshTo(false)
+	m.vp.GotoTop()
+	sup, id := m.sup, v.id
+	return m, func() tea.Msg {
+		old, cur, err := sup.Diff(id, ed.Turn, ed.Path)
+		return diffMsg{id: id, edit: ed, old: old, cur: cur, err: err}
+	}
+}
+
+// revert revierte el archivo que se está viendo (o el de la última edición),
+// su turno o todo el agente. Pide confirmación: la primera pulsación solo
+// avisa y repetirla ejecuta.
+func (m Panel) revert(kind, armed string) (Panel, tea.Cmd) {
+	v := m.cur()
+	eds := m.savedEdits(v)
+	if len(eds) == 0 {
+		v.add(kindInfo, "no hay ediciones con checkpoint que revertir")
+		m.refresh()
+		return m, nil
+	}
+	ed := eds[len(eds)-1]
+	if m.dv != nil && m.dv.v == v {
+		ed = m.dv.edit
+	}
+	var what, token, keyName string
+	switch kind {
+	case revertFile:
+		what = fmt.Sprintf("revertir %s al checkpoint del turno %d", ed.Path, ed.Turn)
+		token = fmt.Sprintf("%s:%d:%s", kind, ed.Turn, ed.Path)
+		keyName = m.keys.RevertFile.Help().Key
+	case revertTurn:
+		what = fmt.Sprintf("revertir los archivos que editó %s en el turno %d", v.name, ed.Turn)
+		token = fmt.Sprintf("%s:%d", kind, ed.Turn)
+		keyName = m.keys.RevertTurn.Help().Key
+	default:
+		what = fmt.Sprintf("revertir todo lo que editó %s", v.name)
+		token = kind
+		keyName = m.keys.RevertAgent.Help().Key
+	}
+	if armed != token {
+		m.armed = token
+		m.armedText = fmt.Sprintf("¿%s? repite %s para confirmar", what, keyName)
+		v.add(kindWarn, m.armedText+" (cualquier otra tecla cancela)")
+		m.refresh()
+		return m, nil
+	}
+	sup, id := m.sup, v.id
+	return m, func() tea.Msg {
+		var err error
+		switch kind {
+		case revertFile:
+			err = sup.RevertFile(id, ed.Turn, ed.Path)
+		case revertTurn:
+			err = sup.RevertTurn(id, ed.Turn)
+		default:
+			err = sup.RevertAgent(id)
+		}
+		return revertMsg{id: id, what: what, err: err}
 	}
 }

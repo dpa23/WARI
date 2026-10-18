@@ -31,6 +31,13 @@ type KeyMap struct {
 	AgentPause key.Binding
 	AgentStop  key.Binding
 	StopAll    key.Binding
+
+	// Seguridad de cambios (fase 6): ver el diff de un archivo editado contra
+	// su checkpoint y revertirlo (archivo, turno o agente completo).
+	DiffFile    key.Binding
+	RevertFile  key.Binding
+	RevertTurn  key.Binding
+	RevertAgent key.Binding
 }
 
 // DefaultKeyMap devuelve los atajos predeterminados (los de config.Default).
@@ -64,6 +71,11 @@ func NewKeyMap(km config.Keymap) KeyMap {
 		AgentPause: b("agent_pause", "pausar"),
 		AgentStop:  b("agent_stop", "detener"),
 		StopAll:    b("stop_all", "parar todo"),
+
+		DiffFile:    b("diff_file", "ver diff"),
+		RevertFile:  b("revert_file", "revertir archivo"),
+		RevertTurn:  b("revert_turn", "revertir turno"),
+		RevertAgent: b("revert_agent", "revertir agente"),
 	}
 }
 

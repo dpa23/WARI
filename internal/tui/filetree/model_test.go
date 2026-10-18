@@ -334,3 +334,33 @@ func TestReveal_DotDotPrefix(t *testing.T) {
 		t.Fatalf("Reveal no debe actuar sobre archivo fuera de la raíz")
 	}
 }
+
+func TestIgnoreFunc(t *testing.T) {
+	root := t.TempDir()
+	if err := os.WriteFile(filepath.Join(root, ".gitignore"), []byte("*.log\nout/\n/secret.txt\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	ign := IgnoreFunc(root)
+	for _, c := range []struct {
+		rel   string
+		isDir bool
+		want  bool
+	}{
+		{".git", true, true},
+		{".wari", true, true},
+		{"sub/.git", true, true},
+		{"a.log", false, true},
+		{"deep/b.log", false, true},
+		{"out", true, true},
+		{"out", false, false}, // "out/" solo ignora carpetas
+		{"secret.txt", false, true},
+		{"x/secret.txt", false, false}, // anclado a la raíz
+		{"bin", true, true},
+		{"x/bin", true, false}, // las carpetas de salida solo en la raíz
+		{"main.go", false, false},
+	} {
+		if got := ign(c.rel, c.isDir); got != c.want {
+			t.Errorf("IgnoreFunc(%q, dir=%v) = %v, se esperaba %v", c.rel, c.isDir, got, c.want)
+		}
+	}
+}

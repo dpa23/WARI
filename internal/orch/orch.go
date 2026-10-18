@@ -19,6 +19,8 @@ import (
 	"time"
 
 	"github.com/dpa23/wari/internal/agent"
+	"github.com/dpa23/wari/internal/workspace/owner"
+	"github.com/dpa23/wari/internal/workspace/watch"
 )
 
 // updateBuffer es la capacidad del canal de Updates.
@@ -118,8 +120,12 @@ type Snapshot struct {
 // Update es una novedad de un agente: un evento suyo o un cambio de estado.
 type Update struct {
 	ID ID
-	// Event es nil si la novedad es solo un cambio de estado.
+	// Event es nil si la novedad es solo un cambio de estado o un aviso.
 	Event agent.Event
+	// Notice, si no es nil, es un aviso del espacio de trabajo (choque de
+	// archivos, cambio detectado). ID es el agente afectado; 0 si el aviso
+	// no es de ningún agente (cambio de origen desconocido).
+	Notice *Notice
 	// Snapshot es el estado del agente justo después de la novedad.
 	Snapshot Snapshot
 }
@@ -150,6 +156,13 @@ type entry struct {
 	runSince time.Time     // inicio del tramo actual; cero si no corre
 	timer    *time.Timer
 	timerSeq int
+
+	// proposals: por archivo, cuándo propuso editarlo este agente; edits:
+	// las ediciones propuestas (sin repetir turno y archivo); conflicts: las
+	// reclamaciones que le negó un choque y que se resuelven al reanudar.
+	proposals map[string]proposal
+	edits     []Edit
+	conflicts []string
 
 	// launching está abierto mientras un turno reservado todavía no terminó
 	// su llamada a Start/Send; cancelAndRelease lo espera para que Cancel vea
@@ -185,6 +198,14 @@ type Supervisor struct {
 	// lanzar un turno reservado, fuera del mutex.
 	hookBeforeLaunch func(launch)
 
+	// Espacio de trabajo (workspace.go): propiedad de archivos, checkpoints
+	// y watcher. owners existe siempre; el resto lo fija AttachWorkspace.
+	owners    *owner.Table
+	ws        Workspace
+	watcher   *watch.Watcher
+	propSeq   uint64
+	ownWrites map[string]time.Time
+
 	mu      sync.Mutex
 	entries []*entry // en orden de ID
 	queue   []*entry
@@ -209,6 +230,8 @@ func New(maxActive int) *Supervisor {
 		agentsClosed: make(chan struct{}),
 		closeDone:    make(chan struct{}),
 		updates:      make(chan Update, updateBuffer),
+		owners:       owner.New(),
+		ownWrites:    make(map[string]time.Time),
 	}
 }
 
@@ -364,6 +387,7 @@ func (s *Supervisor) Resume(id ID) error {
 	defer s.mu.Unlock()
 	if e.state == Paused && !s.closing {
 		s.startClockLocked(e)
+		s.takeoverLocked(e)
 		s.setStateLocked(e, Running, "")
 	}
 	return nil
@@ -421,6 +445,8 @@ func (s *Supervisor) Close() {
 	}
 	s.closing = true
 	s.queue = nil
+	w := s.watcher
+	s.watcher = nil
 	agents := make([]agent.Agent, 0, len(s.entries))
 	for _, e := range s.entries {
 		agents = append(agents, e.a)
@@ -433,6 +459,9 @@ func (s *Supervisor) Close() {
 	}
 	s.mu.Unlock()
 
+	if w != nil {
+		_ = w.Close() // cierra Changes: termina watchLoop
+	}
 	var wg sync.WaitGroup
 	for _, a := range agents {
 		wg.Add(1)
@@ -510,10 +539,14 @@ func (s *Supervisor) elapsedLocked(e *entry) time.Duration {
 
 // emitLocked publica una novedad sin bloquear nunca.
 func (s *Supervisor) emitLocked(e *entry, ev agent.Event) {
+	s.pushLocked(Update{ID: e.id, Event: ev, Snapshot: s.snapshotLocked(e)})
+}
+
+// pushLocked encola u sin bloquear nunca.
+func (s *Supervisor) pushLocked(u Update) {
 	if s.closed {
 		return
 	}
-	u := Update{ID: e.id, Event: ev, Snapshot: s.snapshotLocked(e)}
 	select {
 	case s.updates <- u:
 		return
@@ -684,6 +717,7 @@ func (s *Supervisor) afterReleaseLocked() {
 // stopLocked aplica Stop a un agente y dice si hay que cancelar su turno (con
 // el mutex suelto, después).
 func (s *Supervisor) stopLocked(e *entry) bool {
+	defer s.releaseLocked(e)
 	switch e.state {
 	case Queued:
 		for i, q := range s.queue {
@@ -739,6 +773,7 @@ func (s *Supervisor) exceedLocked(e *entry, reason string) bool {
 		return false
 	}
 	s.stopClockLocked(e)
+	s.releaseLocked(e)
 	s.setStateLocked(e, BudgetExceeded, reason)
 	return true
 }
@@ -801,6 +836,10 @@ func (s *Supervisor) eventsClosed(e *entry) {
 }
 
 func (s *Supervisor) handle(e *entry, ev agent.Event) {
+	if fe, ok := ev.(agent.FileEditProposed); ok {
+		s.onEditProposed(e, fe)
+		return
+	}
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	if s.closing {

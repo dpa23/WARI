@@ -51,6 +51,10 @@ func Default() Keymap {
 		"agent_pause":   []string{"ctrl+o"},
 		"agent_stop":    []string{"ctrl+x"},
 		"stop_all":      []string{"ctrl+k"},
+		"diff_file":     []string{"ctrl+r"},
+		"revert_file":   []string{"alt+r"},
+		"revert_turn":   []string{"alt+t"},
+		"revert_agent":  []string{"alt+a"},
 	}
 }
 

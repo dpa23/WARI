@@ -32,6 +32,10 @@ func TestDefault(t *testing.T) {
 		"agent_pause":   {"ctrl+o"},
 		"agent_stop":    {"ctrl+x"},
 		"stop_all":      {"ctrl+k"},
+		"diff_file":     {"ctrl+r"},
+		"revert_file":   {"alt+r"},
+		"revert_turn":   {"alt+t"},
+		"revert_agent":  {"alt+a"},
 	}
 
 	got := Default()

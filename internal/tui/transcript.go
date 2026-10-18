@@ -5,6 +5,7 @@ import (
 	"strings"
 
 	"github.com/dpa23/wari/internal/agent"
+	"github.com/dpa23/wari/internal/workspace/owner"
 )
 
 // transcript es el historial de un agente y su consumo acumulado. Lo comparten
@@ -27,6 +28,9 @@ type transcript struct {
 	// newSessionKey es la tecla que empieza una sesión nueva, para el aviso
 	// de sesión no encontrada.
 	newSessionKey string
+	// root es la raíz del proyecto: las rutas editadas dentro de ella se
+	// muestran relativas.
+	root string
 }
 
 // applyEvent aplica un evento del agente al historial y al estado. No vuelca
@@ -51,7 +55,7 @@ func (m *transcript) applyEvent(ev agent.Event) {
 	case agent.ToolCall:
 		m.add(kindTool, "⚙ "+toolSummary(ev.Name, ev.Input))
 	case agent.FileEditProposed:
-		m.add(kindEdit, "✎ "+ev.Path)
+		m.add(kindEdit, "✎ "+m.display(ev.Path))
 	case agent.NeedsApproval:
 		if ev.Denied {
 			m.add(kindDenied, "⛔ denegado: "+toolSummary(ev.Tool, ev.Input))
@@ -83,6 +87,17 @@ func (m *transcript) applyEvent(ev agent.Event) {
 			m.add(kindError, text)
 		}
 	}
+}
+
+// display muestra p relativa a la raíz si está dentro de ella.
+func (m *transcript) display(p string) string {
+	if m.root == "" {
+		return p
+	}
+	if rel, inside := owner.Rel(m.root, p); inside {
+		return rel
+	}
+	return p
 }
 
 // add agrega una entrada y cierra el mensaje del asistente en curso.

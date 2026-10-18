@@ -293,6 +293,9 @@ func (m Model) save() (Model, tea.Cmd) {
 		m.msg = "no hay archivo abierto"
 		return m, nil
 	}
+	// El guardado también lo ve el watcher: se avisa antes para que no se lo
+	// atribuya a un agente que esté corriendo.
+	m.chat.NoteUserWrite(m.ed.Path())
 	cmd := m.ed.Save()
 	m.pendingOpen = ""
 	return m, cmd
@@ -521,6 +524,9 @@ var (
 			Foreground(lipgloss.Color("245")).Background(lipgloss.Color("236"))
 	statusStyle = lipgloss.NewStyle().
 			Foreground(lipgloss.Color("252")).Background(lipgloss.Color("238"))
+	// alertStyle pinta la barra mientras hay un choque de archivos sin resolver.
+	alertStyle = lipgloss.NewStyle().Bold(true).
+			Foreground(lipgloss.Color("0")).Background(lipgloss.Color("11"))
 	sepStyle = lipgloss.NewStyle().Faint(true)
 )
 
@@ -669,6 +675,13 @@ func (m Model) statusBar() string {
 			left += " ● sin guardar"
 		}
 	}
+	st := statusStyle
+	if a := m.chat.Alert(); a != "" {
+		// El choque va primero y la barra cambia de color: es lo único que
+		// debe verse aunque el panel de agentes esté plegado.
+		left += " │ ⚠ " + a
+		st = alertStyle
+	}
 	if m.msg != "" {
 		left += " │ " + m.msg
 	}
@@ -689,14 +702,14 @@ func (m Model) statusBar() string {
 			r = strings.Join(hints[:n], " · ") + " · " + right
 		}
 		if gap := m.w - lipgloss.Width(left) - lipgloss.Width(r) - 1; gap >= 2 {
-			return statusStyle.Render(fit(left+strings.Repeat(" ", gap)+r, m.w))
+			return st.Render(fit(left+strings.Repeat(" ", gap)+r, m.w))
 		}
 	}
 	rw := lipgloss.Width(right) + 1
 	if rw >= m.w {
-		return statusStyle.Render(fit(" "+right, m.w))
+		return st.Render(fit(" "+right, m.w))
 	}
-	return statusStyle.Render(fit(fit(left, m.w-rw-1)+" "+right, m.w))
+	return st.Render(fit(fit(left, m.w-rw-1)+" "+right, m.w))
 }
 
 // cursor devuelve el cursor del componente con foco en coordenadas absolutas.

@@ -21,6 +21,7 @@ const (
 	kindDenied
 	kindError
 	kindInfo
+	kindWarn
 )
 
 // entry es un bloque del historial.
@@ -44,7 +45,11 @@ type styles struct {
 	denied    lipgloss.Style
 	err       lipgloss.Style
 	info      lipgloss.Style
+	warn      lipgloss.Style
 	status    lipgloss.Style
+
+	// Vista de diff.
+	diffHead, diffHunk, diffAdd, diffDel, diffCtx lipgloss.Style
 }
 
 func defaultStyles() styles {
@@ -61,7 +66,14 @@ func defaultStyles() styles {
 		denied:    lipgloss.NewStyle().Foreground(lipgloss.Color("3")),
 		err:       lipgloss.NewStyle().Foreground(lipgloss.Color("9")),
 		info:      lipgloss.NewStyle().Faint(true).Italic(true),
+		warn:      lipgloss.NewStyle().Foreground(lipgloss.Color("11")).Bold(true),
 		status:    lipgloss.NewStyle().Faint(true),
+
+		diffHead: lipgloss.NewStyle().Bold(true),
+		diffHunk: lipgloss.NewStyle().Foreground(lipgloss.Color("6")),
+		diffAdd:  lipgloss.NewStyle().Foreground(lipgloss.Color("2")),
+		diffDel:  lipgloss.NewStyle().Foreground(lipgloss.Color("1")),
+		diffCtx:  lipgloss.NewStyle().Faint(true),
 	}
 }
 
@@ -79,6 +91,8 @@ func (s styles) forKind(k entryKind) lipgloss.Style {
 		return s.err
 	case kindInfo:
 		return s.info
+	case kindWarn:
+		return s.warn
 	}
 	return s.assistant
 }

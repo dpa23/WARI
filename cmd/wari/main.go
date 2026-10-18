@@ -19,7 +19,9 @@ import (
 	"github.com/dpa23/wari/internal/config"
 	"github.com/dpa23/wari/internal/orch"
 	"github.com/dpa23/wari/internal/tui"
+	"github.com/dpa23/wari/internal/tui/filetree"
 	"github.com/dpa23/wari/internal/tui/layout"
+	"github.com/dpa23/wari/internal/workspace/checkpoint"
 )
 
 // version se fija en el build con -ldflags "-X main.version=...".
@@ -33,14 +35,22 @@ func main() {
 	maxTurns := flag.Int("max-turns", 0, "presupuesto de turnos por agente (0: sin límite)")
 	maxTokens := flag.Int64("max-tokens", 0, "presupuesto de tokens de entrada y salida por agente (0: sin límite)")
 	maxTime := flag.Duration("max-time", 0, "presupuesto de tiempo con un turno corriendo, por agente (0: sin límite)")
+	acceptEdits := flag.Bool("accept-edits", false,
+		"los agentes editan archivos sin preguntar (PermissionAcceptEdits); sin esta opción la CLI deniega las ediciones. "+
+			"Cada edición queda con checkpoint en .wari/checkpoints y se puede ver y revertir")
 	showVersion := flag.Bool("version", false, "muestra la versión y sale")
 	flag.Parse()
+
+	perms := agent.PermissionAsk
+	if *acceptEdits {
+		perms = agent.PermissionAcceptEdits
+	}
 
 	switch {
 	case *showVersion:
 		fmt.Printf("wari %s\n", version)
 	case *prompt != "":
-		os.Exit(runTurn(agent.Task{Prompt: *prompt, Model: *model}, *killAfter))
+		os.Exit(runTurn(agent.Task{Prompt: *prompt, Model: *model, Permissions: perms}, *killAfter))
 	case *killAfter > 0:
 		fmt.Fprintln(os.Stderr, "wari: -kill-after solo se usa junto con -prompt")
 		os.Exit(2)
@@ -58,7 +68,7 @@ func main() {
 			os.Exit(2)
 		}
 		budget := orch.Budget{MaxTurns: *maxTurns, MaxDuration: *maxTime, MaxTokens: *maxTokens}
-		os.Exit(runTUI(agent.Task{Model: *model}, root, file, *maxActive, budget))
+		os.Exit(runTUI(agent.Task{Model: *model, Permissions: perms}, root, file, *maxActive, budget))
 	}
 }
 
@@ -110,6 +120,7 @@ func loadKeymap(root string) config.Keymap {
 func runTUI(task agent.Task, root, file string, maxActive int, budget orch.Budget) int {
 	sup := orch.New(maxActive)
 	defer sup.Close()
+	attachWorkspace(sup, root)
 
 	p := tea.NewProgram(layout.New(layout.Config{
 		Root:   root,
@@ -139,6 +150,28 @@ func runTUI(task agent.Task, root, file string, maxActive int, budget orch.Budge
 		return 1
 	}
 	return 0
+}
+
+// attachWorkspace activa la seguridad de cambios: checkpoints en
+// root/.wari/checkpoints, propiedad de archivos y watcher del árbol. Si algo
+// falla, avisa y sigue sin eso: los agentes siguen funcionando.
+func attachWorkspace(sup *orch.Supervisor, root string) {
+	ws := orch.Workspace{
+		Root: root,
+		// Los IDs de agente vuelven a empezar en 1 en cada ejecución: la
+		// marca de tiempo evita mezclar checkpoints de ejecuciones distintas.
+		RunID:  time.Now().Format("20060102-150405-"),
+		Watch:  true,
+		Ignore: filetree.IgnoreFunc(root),
+	}
+	if store, err := checkpoint.Open(root); err != nil {
+		fmt.Fprintln(os.Stderr, "wari: aviso: sin checkpoints:", err)
+	} else {
+		ws.Store = store
+	}
+	if err := sup.AttachWorkspace(ws); err != nil {
+		fmt.Fprintln(os.Stderr, "wari: aviso: sin watcher del árbol:", err)
+	}
 }
 
 // runTurn ejecuta un turno: la respuesta va a stdout y el resto de los

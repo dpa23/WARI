@@ -243,6 +243,11 @@ func TestDoneFreesSlotAndStartsQueueFIFO(t *testing.T) {
 	waitState(t, s, c, Running)
 	f3.emit(agent.Done{})
 	waitState(t, s, a, Running)
+	// El estado pasa a Running al reservar el cupo; el Send al agente se
+	// hace justo después, con el mutex suelto.
+	for deadline := time.Now().Add(3 * time.Second); f1.nSends() == 0 && time.Now().Before(deadline); {
+		time.Sleep(time.Millisecond)
+	}
 	if f1.nSends() != 1 {
 		t.Fatalf("sends de a = %d", f1.nSends())
 	}
