@@ -34,6 +34,17 @@ type Driver interface {
 	Name() string
 }
 
+// Finisher es opcional. Lo implementan los drivers de CLIs que no emiten un
+// evento de resultado: el turno termina cuando el proceso sale. Si el flujo
+// acabó sin Done, el ejecutor llama a Finish con el error de salida del
+// proceso (nil si salió con código 0) y el final de su stderr; devolver un
+// Done lo da por el cierre del turno, y nil deja el comportamiento
+// habitual (Error y Done con IsError). Finish se llama una vez por turno,
+// después de Parse de la última línea.
+type Finisher interface {
+	Finish(exitErr error, stderr string) *agent.Done
+}
+
 // turnState es el estado de un turno. cancel lo cierra Cancel; done lo cierra
 // el propio turno cuando dejó de emitir eventos.
 type turnState struct {
@@ -353,6 +364,12 @@ func (r *Runner) runTurn(t *turnState, resumeID string) {
 	}
 	waitErr := p.Wait()
 	p.Close()
+
+	if done == nil {
+		if f, ok := r.d.(Finisher); ok {
+			done = f.Finish(waitErr, strings.TrimSpace(p.Stderr()))
+		}
+	}
 
 	r.mu.Lock()
 	closing := r.status == agent.StatusDone

@@ -567,3 +567,37 @@ func TestCloseDuringCancel(t *testing.T) {
 		t.Errorf("Status = %s, quiero done", s)
 	}
 }
+
+// finisherDriver emite texto pero ningún Done: el turno termina con la
+// salida del proceso, como opencode.
+type finisherDriver struct {
+	testDriver
+}
+
+func (d finisherDriver) Finish(exitErr error, stderr string) *agent.Done {
+	if exitErr != nil {
+		return nil
+	}
+	return &agent.Done{SessionID: "S1", Result: "terminó"}
+}
+
+func TestFinisherCompletesTurnWithoutResultEvent(t *testing.T) {
+	d := finisherDriver{testDriver{script: `echo "text hola"; exit 0`, argsFile: filepath.Join(t.TempDir(), "args")}}
+	r := New(d)
+	t.Cleanup(func() { r.Close() })
+	if err := r.Start(context.Background(), agent.Task{Prompt: "x"}); err != nil {
+		t.Fatal(err)
+	}
+	for ev := range r.Events() {
+		if done, ok := ev.(agent.Done); ok {
+			if done.IsError || done.Result != "terminó" {
+				t.Errorf("Done = %+v, quiero el que devuelve Finish", done)
+			}
+			if r.Status() != agent.StatusIdle {
+				t.Errorf("Status = %s, quiero idle", r.Status())
+			}
+			return
+		}
+	}
+	t.Fatal("no llegó Done")
+}
