@@ -22,42 +22,43 @@ const maxShown = 10
 // Identificadores de las acciones de la paleta; los archivos usan
 // "open:<ruta relativa>".
 const (
-	cmdSave         = "save"
-	cmdToggleTree   = "toggle_tree"
-	cmdToggleAgents = "toggle_agents"
-	cmdNewSession   = "new_session"
-	cmdAgentPause   = "agent_pause"
-	cmdAgentStop    = "agent_stop"
-	cmdStopAll      = "stop_all"
-	cmdDiffFile     = "diff_file"
-	cmdRevertFile   = "revert_file"
-	cmdRevertTurn   = "revert_turn"
-	cmdRevertAgent  = "revert_agent"
-	cmdFocusTree    = "focus_tree"
-	cmdFocusEditor  = "focus_editor"
-	cmdFocusChat    = "focus_chat"
-	cmdFocusDock    = "focus_dock"
-	cmdHelp         = "help"
-	cmdNewFile      = "new_file"
-	cmdImportType   = "import_type"
-	cmdOutline      = "outline"
-	cmdGotoDef      = "goto_definition"
-	cmdComplete     = "complete"
-	cmdToggleLSP    = "toggle_lsp"
-	cmdDiagnostics  = "diagnostics"
-	cmdRunProject   = "run_project"
-	cmdRunStop      = "run_stop"
-	cmdPromote      = "promote_artifact"
-	cmdToggleBP     = "toggle_breakpoint"
-	cmdDebugStart   = "debug_start"
-	cmdDebugCont    = "debug_continue"
-	cmdDebugNext    = "debug_next"
-	cmdDebugIn      = "debug_step_in"
-	cmdDebugOut     = "debug_step_out"
-	cmdDebugStop    = "debug_stop"
-	cmdCloseDock    = "close_dock"
-	cmdQuit         = "quit"
-	cmdOpenPrefix   = "open:"
+	cmdSave            = "save"
+	cmdToggleTree      = "toggle_tree"
+	cmdToggleAgents    = "toggle_agents"
+	cmdNewSession      = "new_session"
+	cmdAgentPause      = "agent_pause"
+	cmdAgentStop       = "agent_stop"
+	cmdStopAll         = "stop_all"
+	cmdDiffFile        = "diff_file"
+	cmdRevertFile      = "revert_file"
+	cmdRevertTurn      = "revert_turn"
+	cmdRevertAgent     = "revert_agent"
+	cmdFocusTree       = "focus_tree"
+	cmdFocusEditor     = "focus_editor"
+	cmdFocusChat       = "focus_chat"
+	cmdFocusDock       = "focus_dock"
+	cmdHelp            = "help"
+	cmdNewFile         = "new_file"
+	cmdImportType      = "import_type"
+	cmdOutline         = "outline"
+	cmdGotoDef         = "goto_definition"
+	cmdComplete        = "complete"
+	cmdToggleLSP       = "toggle_lsp"
+	cmdDiagnostics     = "diagnostics"
+	cmdRunProject      = "run_project"
+	cmdRunStop         = "run_stop"
+	cmdPromote         = "promote_artifact"
+	cmdToggleBP        = "toggle_breakpoint"
+	cmdDebugStart      = "debug_start"
+	cmdDebugCont       = "debug_continue"
+	cmdDebugNext       = "debug_next"
+	cmdDebugIn         = "debug_step_in"
+	cmdDebugOut        = "debug_step_out"
+	cmdDebugStop       = "debug_stop"
+	cmdCloseDock       = "close_dock"
+	cmdResolveConflict = "resolve_conflict"
+	cmdQuit            = "quit"
+	cmdOpenPrefix      = "open:"
 )
 
 // item es una entrada de la paleta.
@@ -97,7 +98,11 @@ var palKeys = struct{ up, down, back key.Binding }{
 // de la última lista conocida.
 func (m Model) paletteItems() []item {
 	hint := func(action string) string { return m.firstKey(action) }
-	items := []item{
+	var items []item
+	if m.chat.Alert() != "" {
+		items = append(items, newItem(cmdResolveConflict, "Resolver choque de archivos", m.resolveConflictKey()))
+	}
+	items = append(items,
 		newItem(cmdSave, "Guardar archivo", hint("save")),
 		newItem(cmdToggleTree, "Alternar árbol de archivos", hint("toggle_tree")),
 		newItem(cmdToggleAgents, "Alternar panel de agentes", hint("toggle_agents")),
@@ -132,7 +137,7 @@ func (m Model) paletteItems() []item {
 		newItem(cmdDebugOut, "Depurar: salir (step out)", hint("debug_step_out")),
 		newItem(cmdDebugStop, "Depurar: detener", hint("debug_stop")),
 		newItem(cmdCloseDock, "Cerrar el panel de salida y depuración", ""),
-	}
+	)
 	for _, f := range m.files {
 		items = append(items, newItem(cmdOpenPrefix+f, f, "archivo"))
 	}
@@ -277,6 +282,8 @@ func (m Model) runCommand(id string) (Model, tea.Cmd) {
 	switch {
 	case id == cmdSave:
 		return m.save()
+	case id == cmdResolveConflict:
+		return m.resolveConflict()
 	case id == cmdToggleTree:
 		m.treeOn = !m.treeOn
 		m.relayout()

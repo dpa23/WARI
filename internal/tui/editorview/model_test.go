@@ -10,6 +10,7 @@ import (
 
 	tea "charm.land/bubbletea/v2"
 	"charm.land/lipgloss/v2"
+	"charm.land/lipgloss/v2/compat"
 
 	"github.com/dpa23/wari/internal/editor"
 )
@@ -666,5 +667,38 @@ func TestUndoRedoDoesNotRebuildBufferString(t *testing.T) {
 	}
 	if d := time.Since(start); d > 500*time.Millisecond {
 		t.Errorf("400 deshacer/rehacer tardaron %v", d)
+	}
+}
+
+func TestAdaptiveColorsGutterAndSelect(t *testing.T) {
+	origDark := compat.HasDarkBackground
+	defer func() { compat.HasDarkBackground = origDark }()
+
+	// Modo oscuro
+	compat.HasDarkBackground = true
+	gDark := sgrGutterSeq()
+	gOnDark := sgrGutterOnSeq()
+	selDark := sgrSelectSeq()
+	if gDark == "" || gOnDark == "" || selDark == "" {
+		t.Fatal("las secuencias SGR adaptativas en modo oscuro no deben ser vacías")
+	}
+
+	// Modo claro
+	compat.HasDarkBackground = false
+	gLight := sgrGutterSeq()
+	gOnLight := sgrGutterOnSeq()
+	selLight := sgrSelectSeq()
+	if gLight == "" || gOnLight == "" || selLight == "" {
+		t.Fatal("las secuencias SGR adaptativas en modo claro no deben ser vacías")
+	}
+
+	// Verificar renderizado en el editor
+	m, _ := newFile(t, "test.txt", "linea 1\nlinea 2\n", 40, 5)
+	viewDark := m.View()
+	compat.HasDarkBackground = false
+	viewLight := m.View()
+
+	if !strings.Contains(viewDark, "linea 1") || !strings.Contains(viewLight, "linea 1") {
+		t.Fatal("el buffer debe renderizarse correctamente con colores adaptativos")
 	}
 }

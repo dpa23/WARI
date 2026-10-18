@@ -13,6 +13,7 @@ import (
 	"charm.land/bubbles/v2/viewport"
 	tea "charm.land/bubbletea/v2"
 	"charm.land/lipgloss/v2"
+	"charm.land/lipgloss/v2/compat"
 
 	"github.com/dpa23/wari/internal/agent"
 	"github.com/dpa23/wari/internal/orch"
@@ -145,10 +146,11 @@ type Panel struct {
 
 	// dv es el diff abierto (nil: se muestra el historial); armed, la
 	// reversión que espera confirmación; alert, el último choque.
-	dv        *diffView
-	armed     string
-	armedText string
-	alert     alertInfo
+	dv             *diffView
+	armed          string
+	armedText      string
+	alert          alertInfo
+	conflictActive bool
 
 	// Pipeline (pipeline.go): el Runner, su último estado, las filas que ocupa
 	// en el panel, el gate abierto y el modo de edición del prompt.
@@ -322,6 +324,18 @@ func (m Panel) handleKey(msg tea.KeyPressMsg) (Panel, tea.Cmd) {
 	case key.Matches(msg, m.keys.Cancel) && m.gateShown():
 		m.hideGate()
 		return m, nil
+	case m.conflictActive && (msg.String() == "1" || msg.Text == "1"):
+		m.conflictActive = false
+		return m, m.pauseCmd(m.cur())
+	case m.conflictActive && (msg.String() == "2" || msg.Text == "2"):
+		m.conflictActive = false
+		return m, m.stopCmd(m.cur())
+	case m.conflictActive && key.Matches(msg, m.keys.Cancel):
+		m.conflictActive = false
+		m.refresh()
+		return m, nil
+	case m.alert.id != 0 && (msg.String() == "f6" || msg.String() == "alt+c"):
+		return m.FocusConflict()
 	case m.pipe != nil && key.Matches(msg, m.keys.PipelineRun):
 		return m.pipelineRun()
 	case m.pipe != nil && key.Matches(msg, m.keys.GateApprove):
@@ -339,6 +353,7 @@ func (m Panel) handleKey(msg tea.KeyPressMsg) (Panel, tea.Cmd) {
 	case key.Matches(msg, m.keys.RevertAgent):
 		return m.revert(revertAgent, armed)
 	case key.Matches(msg, m.keys.Cancel), key.Matches(msg, m.keys.AgentStop):
+		m.conflictActive = false
 		return m, m.stopCmd(m.cur())
 	case key.Matches(msg, m.keys.AgentNew), key.Matches(msg, m.keys.NewSession):
 		return m.newAgent()
@@ -349,6 +364,7 @@ func (m Panel) handleKey(msg tea.KeyPressMsg) (Panel, tea.Cmd) {
 		m.selectView(m.sel - 1)
 		return m, nil
 	case key.Matches(msg, m.keys.AgentPause):
+		m.conflictActive = false
 		return m, m.pauseCmd(m.cur())
 	case key.Matches(msg, m.keys.StopAll):
 		return m.StopAll()
@@ -399,6 +415,7 @@ func (m *Panel) selectView(i int) {
 	if i == m.sel {
 		return
 	}
+	m.conflictActive = false
 	m.dv = nil
 	cur := m.cur()
 	cur.draft = m.input.Value()
@@ -526,6 +543,40 @@ func (m Panel) RevertAgent() (Panel, tea.Cmd) {
 	return m.revert(revertAgent, m.armed)
 }
 
+// FocusConflict enfoca al agente en conflicto y activa el modo de resolución
+// asistida en la línea de estado del panel.
+func (m Panel) FocusConflict() (Panel, tea.Cmd) {
+	if m.alert.id == 0 {
+		return m, nil
+	}
+	for i, v := range m.views {
+		if v.id == m.alert.id {
+			m.selectView(i)
+			m.conflictActive = true
+			m.refresh()
+			return m, nil
+		}
+	}
+	return m, nil
+}
+
+// ConflictActive indica si el panel está en modo de resolución asistida de choque.
+func (m Panel) ConflictActive() bool { return m.conflictActive }
+
+// SelectAgent selecciona el agente con id si existe en las vistas.
+func (m *Panel) SelectAgent(id orch.ID) bool {
+	if id == 0 {
+		return false
+	}
+	for i, v := range m.views {
+		if v.id == id {
+			m.selectView(i)
+			return true
+		}
+	}
+	return false
+}
+
 // Quit cierra a todos los agentes y sale. Si el programa muere antes, de todos
 // modos lo cierra el defer de main.
 func (m Panel) Quit() (Panel, tea.Cmd) { return m.quit() }
@@ -583,6 +634,7 @@ func (m *Panel) applyUpdates(ups []orch.Update) {
 			m.noteState(v, u.Snapshot)
 			if m.alert.id == u.ID && u.Snapshot.State != orch.Paused {
 				m.alert = alertInfo{}
+				m.conflictActive = false
 			}
 		}
 		v.snap, v.hasSnap = u.Snapshot, true
@@ -634,6 +686,7 @@ func (m *Panel) applyNotice(u orch.Update) bool {
 	case orch.NoticeTakeover:
 		if m.alert.id == n.Agent {
 			m.alert = alertInfo{}
+			m.conflictActive = false
 		}
 		add(v, kindInfo, "— "+n.Text+" —")
 	case orch.NoticeCheckpointFailed:
@@ -868,7 +921,10 @@ func (m Panel) listLine(i int) string {
 		case orch.Running:
 			st = st.Foreground(lipgloss.Color("10"))
 		case orch.Paused:
-			st = st.Foreground(lipgloss.Color("11"))
+			st = st.Foreground(compat.AdaptiveColor{
+				Light: lipgloss.Color("#b45309"),
+				Dark:  lipgloss.Color("#fbbf24"),
+			})
 		case orch.Failed, orch.BudgetExceeded:
 			st = st.Foreground(lipgloss.Color("9"))
 		case orch.Queued, orch.Stopped:
@@ -985,7 +1041,21 @@ func (m Panel) statusLine() string {
 		}
 		parts = append(parts, m.keys.panelHelpLine())
 	}
-	return m.styles.status.MaxWidth(max(m.width, 1)).Render(lead + strings.Join(parts, " · "))
+	st := m.styles.status
+	if m.conflictActive && m.alert.id != 0 && v.id == m.alert.id {
+		msg := "⚠ choque: [1] ceder archivo (reanudar) · [2] detener agente · [esc] cancelar"
+		if m.width < 75 {
+			msg = "⚠ [1] ceder archivo (reanudar) · [2] detener"
+		}
+		if m.width < 45 {
+			msg = "⚠ [1] ceder · [2] detener"
+		}
+		parts = []string{msg}
+		st = m.styles.warn
+	} else if !m.conflictActive && m.alert.id != 0 && v.id == m.alert.id {
+		parts = append(parts, "⚠ choque: [f6 resolver]")
+	}
+	return st.MaxWidth(max(m.width, 1)).Render(lead + strings.Join(parts, " · "))
 }
 
 // Body devuelve el contenido del panel sin AltScreen ni título, para

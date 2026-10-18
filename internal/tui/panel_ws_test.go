@@ -282,3 +282,91 @@ func TestDiffTimesOutGracefullyOnError(t *testing.T) {
 	w.press(keyCtrlR)
 	w.until("error de diff", func() bool { return strings.Contains(w.view(), "no se pudo obtener el diff") })
 }
+
+func TestConflictAssistedResolutionResumeAndStop(t *testing.T) {
+	keyF6 := tea.KeyPressMsg{Code: tea.KeyF6}
+	keyEsc := tea.KeyPressMsg{Code: tea.KeyEscape}
+	key1 := tea.KeyPressMsg{Text: "1"}
+	key2 := tea.KeyPressMsg{Text: "2"}
+
+	t.Run("opcion 1 ceder y reanudar", func(t *testing.T) {
+		w := newWsHarness(t, agent.PermissionAcceptEdits)
+		w.write("x.txt", "X0\n")
+		w.say("uno")
+		w.press(keyCtrlT)
+		w.say("dos")
+		w.untilState(0, "running")
+		w.untilState(1, "running")
+
+		w.edit(0, "x.txt", "X-por-1\n")
+		w.made[1].emit(agent.FileEditProposed{Tool: "Edit", Path: w.path("x.txt")})
+		w.untilState(1, "paused")
+		if w.m.Alert() == "" {
+			t.Fatal("debía haber alerta de choque")
+		}
+
+		// Cambiar al agente 1 para verificar que FocusConflict / F6 enfoca al agente 2 pausado
+		w.press(keyAltUp)
+		if w.m.cur().id == w.m.alert.id {
+			t.Fatal("el agente 1 no debía ser el pausado en choque")
+		}
+
+		// Pulsar F6 activa la resolución asistida
+		w.press(keyF6)
+		if !w.m.ConflictActive() {
+			t.Fatal("debía estar activo el modo resolución de choque")
+		}
+		if w.m.cur().id != w.m.alert.id {
+			t.Fatalf("debía enfocar al agente pausado (%d), pero está en %d", w.m.alert.id, w.m.cur().id)
+		}
+		w.wantView("[1] ceder archivo (reanudar)")
+		w.wantView("[2] detener agente")
+
+		// Probar que Esc cancela el diálogo asistido sin parar al agente
+		w.press(keyEsc)
+		if w.m.ConflictActive() {
+			t.Fatal("Esc debía cancelar el modo de resolución asistida")
+		}
+		if w.m.Alert() == "" {
+			t.Fatal("la alerta debía seguir viva")
+		}
+
+		// Volver a activar y pulsar 1 (ceder archivo / reanudar)
+		w.press(keyF6)
+		if !w.m.ConflictActive() {
+			t.Fatal("debía volver a activarse con F6")
+		}
+		w.press(key1)
+		w.untilState(1, "running")
+		w.until("sin alerta", func() bool { return w.m.Alert() == "" })
+		if w.m.ConflictActive() {
+			t.Fatal("resolución debía desactivar conflictActive")
+		}
+		w.wantView("agente 2 toma x.txt, que era de agente 1")
+	})
+
+	t.Run("opcion 2 detener agente", func(t *testing.T) {
+		w := newWsHarness(t, agent.PermissionAcceptEdits)
+		w.write("y.txt", "Y0\n")
+		w.say("uno")
+		w.press(keyCtrlT)
+		w.say("dos")
+		w.untilState(0, "running")
+		w.untilState(1, "running")
+
+		w.edit(0, "y.txt", "Y-por-1\n")
+		w.made[1].emit(agent.FileEditProposed{Tool: "Edit", Path: w.path("y.txt")})
+		w.untilState(1, "paused")
+
+		w.press(keyF6)
+		if !w.m.ConflictActive() {
+			t.Fatal("debía estar activo el modo resolución de choque")
+		}
+		w.press(key2)
+		w.untilState(1, "stopped")
+		w.until("sin alerta", func() bool { return w.m.Alert() == "" })
+		if w.m.ConflictActive() {
+			t.Fatal("detener debía desactivar conflictActive")
+		}
+	})
+}

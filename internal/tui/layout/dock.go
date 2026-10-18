@@ -10,6 +10,7 @@ import (
 	"charm.land/bubbles/v2/key"
 	tea "charm.land/bubbletea/v2"
 	"charm.land/lipgloss/v2"
+	"charm.land/lipgloss/v2/compat"
 )
 
 // El dock es la franja bajo el editor con lo de ejecutar y depurar: la salida
@@ -63,7 +64,10 @@ var (
 	boldStyle     = lipgloss.NewStyle().Bold(true)
 	faintStyle    = lipgloss.NewStyle().Faint(true)
 	askStyle      = lipgloss.NewStyle().Bold(true).
-			Foreground(lipgloss.Color("0")).Background(lipgloss.Color("11"))
+			Foreground(lipgloss.Color("0")).Background(compat.AdaptiveColor{
+		Light: lipgloss.Color("#f59e0b"),
+		Dark:  lipgloss.Color("#fbbf24"),
+	})
 )
 
 // sanitizeLine deja una línea de la salida de un proceso como texto plano

@@ -8,6 +8,7 @@ import (
 	"unicode/utf8"
 
 	"charm.land/lipgloss/v2"
+	"charm.land/lipgloss/v2/compat"
 )
 
 // entryKind distingue las líneas del historial para darles estilo.
@@ -62,12 +63,21 @@ func defaultStyles() styles {
 			PaddingLeft(1),
 		assistant: lipgloss.NewStyle(),
 		tool:      lipgloss.NewStyle().Faint(true),
-		edit:      lipgloss.NewStyle().Foreground(lipgloss.Color("11")).Faint(true),
-		denied:    lipgloss.NewStyle().Foreground(lipgloss.Color("3")),
-		err:       lipgloss.NewStyle().Foreground(lipgloss.Color("9")),
-		info:      lipgloss.NewStyle().Faint(true).Italic(true),
-		warn:      lipgloss.NewStyle().Foreground(lipgloss.Color("11")).Bold(true),
-		status:    lipgloss.NewStyle().Faint(true),
+		edit: lipgloss.NewStyle().Foreground(compat.AdaptiveColor{
+			Light: lipgloss.Color("#92400e"),
+			Dark:  lipgloss.Color("#fcd34d"),
+		}).Faint(true),
+		denied: lipgloss.NewStyle().Foreground(compat.AdaptiveColor{
+			Light: lipgloss.Color("#b45309"),
+			Dark:  lipgloss.Color("#f59e0b"),
+		}),
+		err:  lipgloss.NewStyle().Foreground(lipgloss.Color("9")),
+		info: lipgloss.NewStyle().Faint(true).Italic(true),
+		warn: lipgloss.NewStyle().Foreground(compat.AdaptiveColor{
+			Light: lipgloss.Color("#b45309"),
+			Dark:  lipgloss.Color("#fbbf24"),
+		}).Bold(true),
+		status: lipgloss.NewStyle().Faint(true),
 
 		diffHead: lipgloss.NewStyle().Bold(true),
 		diffHunk: lipgloss.NewStyle().Foreground(lipgloss.Color("6")),

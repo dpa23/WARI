@@ -16,6 +16,7 @@ import (
 	"charm.land/bubbles/v2/key"
 	tea "charm.land/bubbletea/v2"
 	"charm.land/lipgloss/v2"
+	"charm.land/lipgloss/v2/compat"
 
 	"github.com/dpa23/wari/internal/editor"
 	"github.com/dpa23/wari/internal/imports"
@@ -28,11 +29,38 @@ const (
 	tabWidth  = 4
 	tabSpaces = "    "
 
-	sgrReset    = "\x1b[0m"
-	sgrGutter   = "\x1b[38;2;110;118;129m"
-	sgrGutterOn = "\x1b[38;2;201;209;217m"
-	sgrSelect   = "\x1b[48;2;38;79;120m"
+	sgrReset = "\x1b[0m"
 )
+
+var (
+	styleGutter = lipgloss.NewStyle().Foreground(compat.AdaptiveColor{
+		Light: lipgloss.Color("#57606a"),
+		Dark:  lipgloss.Color("#6e7681"),
+	})
+	styleGutterOn = lipgloss.NewStyle().Foreground(compat.AdaptiveColor{
+		Light: lipgloss.Color("#24292f"),
+		Dark:  lipgloss.Color("#c9d1d9"),
+	})
+	styleSelect = lipgloss.NewStyle().Background(compat.AdaptiveColor{
+		Light: lipgloss.Color("#b4d5fe"),
+		Dark:  lipgloss.Color("#264f78"),
+	})
+
+	sgrSelect = sgrSelectSeq()
+)
+
+func sgrFromStyle(s lipgloss.Style) string {
+	r := s.Render("X")
+	idx := strings.Index(r, "X")
+	if idx > 0 {
+		return r[:idx]
+	}
+	return ""
+}
+
+func sgrGutterSeq() string   { return sgrFromStyle(styleGutter) }
+func sgrGutterOnSeq() string { return sgrFromStyle(styleGutterOn) }
+func sgrSelectSeq() string   { return sgrFromStyle(styleSelect) }
 
 // SavedMsg informa del resultado de guardar (ctrl+s). El layout puede
 // mostrarlo en la línea de estado.
@@ -525,9 +553,9 @@ func (m Model) View() string {
 		}
 		if gw > 0 {
 			if li == cursorLine && m.focused {
-				sb.WriteString(sgrGutterOn)
+				sb.WriteString(sgrGutterOnSeq())
 			} else {
-				sb.WriteString(sgrGutter)
+				sb.WriteString(sgrGutterSeq())
 			}
 			num := strconv.Itoa(li + 1)
 			sb.WriteString(strings.Repeat(" ", gw-2-len(num)))
@@ -581,7 +609,7 @@ func (m Model) writeLine(sb *strings.Builder, line []rune, mk []uint16, sc, ec i
 		sb.WriteString(m.hl.sgrOf(style))
 		sb.WriteString(bg)
 		if sel {
-			sb.WriteString(sgrSelect)
+			sb.WriteString(sgrSelectSeq())
 		}
 		curStyle, curSel, styled = style, sel, true
 	}

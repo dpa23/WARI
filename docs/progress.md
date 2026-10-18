@@ -84,6 +84,9 @@
 - TUI: F9/F5/F8/F10/F11 (con alternativas alt+letra), línea resaltada, paneles de pila y variables navegables; `.wari/launch.json` con argumentos opacos.
 - Sin probar con adaptadores reales (no instalados); java-debug requiere integrar el plugin en jdtls.
 
+### UX de Gemini (puntos 7 y 10)
+- UX puntos 7 y 10 de `docs/ux-review.md`: banner de choques visible con el panel plegado y resolución asistida; colores adaptativos para fondos claros y oscuros. Verificado en herdr (editor y colores) y con tests.
+
 ## Pendiente
 
 - CI se ejecuta por primera vez con el primer push que apruebe el autor.

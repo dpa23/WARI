@@ -100,6 +100,90 @@ func TestStatusBarShowsFileConflictAlert(t *testing.T) {
 	checkDims(t, m, 140, 30, "con alerta")
 }
 
+func TestConflictBannerFoldedAndAssistedResolution(t *testing.T) {
+	root := project(t)
+	sup := orch.New(2)
+	defer sup.Close()
+	if err := sup.AttachWorkspace(orch.Workspace{Root: root}); err != nil {
+		t.Fatal(err)
+	}
+	var made []*efake
+	m := New(Config{Root: root, Chat: tui.Config{
+		Supervisor: sup,
+		NewAgent:   func() agent.Agent { f := newEfake(); made = append(made, f); return f },
+	}})
+	m, _ = m.update(tea.WindowSizeMsg{Width: 140, Height: 30})
+	m = m.focusPanel(focusChat)
+
+	m, _ = send(m, typeKeys("uno")...)
+	m, _ = send(m, press(tea.KeyEnter, 0))
+	m, _ = send(m, press('t', tea.ModCtrl))
+	m, _ = send(m, typeKeys("dos")...)
+	m, _ = send(m, press(tea.KeyEnter, 0))
+	if len(made) != 2 {
+		t.Fatalf("agentes = %d", len(made))
+	}
+
+	bar := func(m Model) string {
+		ls := lines(m)
+		return plain(ls[len(ls)-1])
+	}
+
+	target := filepath.Join(root, "notes.txt")
+	made[0].ch <- agent.FileEditProposed{Tool: "Edit", Path: target}
+	for sup.Holder(target) == 0 {
+		time.Sleep(time.Millisecond)
+	}
+	made[1].ch <- agent.FileEditProposed{Tool: "Edit", Path: target}
+
+	m = pump(t, m, func(m Model) bool { return strings.Contains(bar(m), "choque") })
+	if !strings.Contains(bar(m), "[f6 resolver]") {
+		t.Fatalf("banner debía incluir el atajo del resolver: %q", bar(m))
+	}
+
+	// Plegar panel de agentes
+	m, _ = send(m, press('g', tea.ModCtrl))
+	if m.chatOn {
+		t.Fatal("el panel de agentes debía estar plegado")
+	}
+	// El banner sigue visible con panel plegado
+	if !strings.Contains(bar(m), "choque") || !strings.Contains(bar(m), "[f6 resolver]") {
+		t.Fatalf("banner sin panel = %q", bar(m))
+	}
+
+	// F6 despliega el panel, lo enfoca y muestra las opciones asistidas
+	m, cmd := send(m, press(tea.KeyF6, 0))
+	if cmd != nil {
+		if msg := cmd(); msg != nil {
+			m, _ = m.update(msg)
+		}
+	}
+	if !m.chatOn {
+		t.Fatal("F6 debía desplegar el panel de agentes")
+	}
+	if m.focus != focusChat {
+		t.Fatalf("F6 debía enfocar el panel de agentes: foco = %v", m.focus)
+	}
+	if !strings.Contains(plain(m.render()), "[1] ceder archivo (reanudar)") {
+		t.Fatalf("render debía mostrar opción 1 ceder: %q", plain(m.render()))
+	}
+	if !strings.Contains(plain(m.render()), "[2] detener") {
+		t.Fatalf("render debía mostrar opción 2 detener: %q", plain(m.render()))
+	}
+
+	// Pulsar 1 cede el archivo y reanuda
+	m, cmd = send(m, text("1"))
+	if cmd != nil {
+		if msg := cmd(); msg != nil {
+			m, _ = m.update(msg)
+		}
+	}
+	m = pump(t, m, func(m Model) bool { return !strings.Contains(bar(m), "choque") })
+	if strings.Contains(bar(m), "choque") {
+		t.Fatalf("tras ceder, choque debía desaparecer: %q", bar(m))
+	}
+}
+
 func typeKeys(s string) []tea.Msg {
 	var out []tea.Msg
 	for _, r := range s {

@@ -78,6 +78,7 @@ import (
 	"charm.land/bubbles/v2/key"
 	tea "charm.land/bubbletea/v2"
 	"charm.land/lipgloss/v2"
+	"charm.land/lipgloss/v2/compat"
 
 	"github.com/dpa23/wari/internal/config"
 	"github.com/dpa23/wari/internal/editor"
@@ -444,6 +445,8 @@ func (m Model) handleKey(k tea.KeyPressMsg) (Model, tea.Cmd) {
 		return m.debugStop()
 	case m.is(k, "stop_all"):
 		return m.stopAll()
+	case m.chat.Alert() != "" && m.isResolveConflict(k):
+		return m.resolveConflict()
 	case m.chat.HasPipeline() && (m.is(k, "pipeline_run") || m.is(k, "gate_approve") ||
 		m.is(k, "gate_reject") || m.is(k, "gate_edit")):
 		return m.pipelineKey(k)
@@ -526,6 +529,30 @@ func (m Model) stopAll() (Model, tea.Cmd) {
 	var cmd tea.Cmd
 	m.chat, cmd = m.chat.StopAll()
 	m.msg = "parando todos los agentes"
+	return m, cmd
+}
+
+// resolveConflictKey devuelve la tecla para resolver choques de archivos.
+func (m Model) resolveConflictKey() string {
+	return "f6"
+}
+
+// isResolveConflict indica si la tecla k activa la resolución de choque.
+func (m Model) isResolveConflict(k tea.KeyPressMsg) bool {
+	s := strings.ToLower(k.String())
+	return s == "f6" || s == "alt+c"
+}
+
+// resolveConflict despliega el panel de agentes si está oculto, le da el foco
+// y activa la resolución asistida del choque en el agente pausado.
+func (m Model) resolveConflict() (Model, tea.Cmd) {
+	if !m.chatOn {
+		m.chatOn = true
+		m.relayout()
+	}
+	m = m.focusPanel(focusChat)
+	var cmd tea.Cmd
+	m.chat, cmd = m.chat.FocusConflict()
 	return m, cmd
 }
 
@@ -784,7 +811,10 @@ var (
 			Foreground(lipgloss.Color("252")).Background(lipgloss.Color("238"))
 	// alertStyle pinta la barra mientras hay un choque de archivos sin resolver.
 	alertStyle = lipgloss.NewStyle().Bold(true).
-			Foreground(lipgloss.Color("0")).Background(lipgloss.Color("11"))
+			Foreground(lipgloss.Color("0")).Background(compat.AdaptiveColor{
+		Light: lipgloss.Color("#f59e0b"),
+		Dark:  lipgloss.Color("#fbbf24"),
+	})
 	sepStyle = lipgloss.NewStyle().Faint(true)
 )
 
@@ -952,7 +982,7 @@ func (m Model) statusBar() string {
 	if a := m.chat.Alert(); a != "" {
 		// El choque va primero y la barra cambia de color: es lo único que
 		// debe verse aunque el panel de agentes esté plegado.
-		left += " │ ⚠ " + a
+		left += " │ ⚠ " + a + " · [" + m.resolveConflictKey() + " resolver]"
 		st = alertStyle
 	}
 	if m.hasEd && m.focus == focusEditor {
@@ -998,6 +1028,17 @@ func (m Model) statusBar() string {
 		if gap := m.w - lipgloss.Width(left) - lipgloss.Width(r) - 1; gap >= 2 {
 			return st.Render(fit(left+strings.Repeat(" ", gap)+r, m.w))
 		}
+	}
+	if m.chat.Alert() != "" {
+		lw := lipgloss.Width(left) + 1
+		if lw >= m.w {
+			return st.Render(fit(left, m.w))
+		}
+		rem := m.w - lw - 1
+		if rem > 0 {
+			return st.Render(fit(left+" "+fit(right, rem), m.w))
+		}
+		return st.Render(fit(left, m.w))
 	}
 	rw := lipgloss.Width(right) + 1
 	if rw >= m.w {
