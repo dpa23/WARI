@@ -87,6 +87,10 @@
 ### UX de Gemini (puntos 7 y 10)
 - UX puntos 7 y 10 de `docs/ux-review.md`: banner de choques visible con el panel plegado y resolución asistida; colores adaptativos para fondos claros y oscuros. Verificado en herdr (editor y colores) y con tests.
 
+### Rama newclis (2026-10-18)
+- Adaptadores de `codex` y `opencode` (`-agent codex|opencode`, pasos de pipeline), `turn.Finisher`, README reescrito, arreglos de macOS y de SIGPIPE. CI en verde en Linux, macOS y Windows.
+- Sin verificar con la CLI real: el parser de codex salvo errores (sin sesión iniciada; ver `testdata/codex/SYNTHETIC.md`).
+
 ## Pendiente
 
 - CI se ejecuta por primera vez con el primer push que apruebe el autor.
