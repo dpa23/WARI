@@ -2,7 +2,7 @@ name: ci
 
 on:
   push:
-    branches: [main]
+    branches: [main, newclis]
   pull_request:
 
 jobs:
@@ -20,7 +20,19 @@ jobs:
       - name: Instalar staticcheck
         run: go install honnef.co/go/tools/cmd/staticcheck@latest
       - name: Verificación completa
-        run: scripts/check.sh
+        shell: bash
+        run: |
+          set +e
+          scripts/check.sh > check.log 2>&1
+          code=$?
+          if [ "$code" -ne 0 ]; then
+            # Los logs del CI exigen sesión para leerse; las anotaciones son
+            # públicas y dejan ver por qué falló sin abrir el visor.
+            grep -nE '^(--- FAIL|FAIL|panic:)|_test\.go:[0-9]+:|\.go:[0-9]+:[0-9]+:' check.log | head -10 | while IFS= read -r l; do echo "::error::${l:0:400}"; done
+            tail -10 check.log | while IFS= read -r l; do echo "::warning::${l:0:400}"; done
+          fi
+          cat check.log
+          exit "$code"
 
   windows:
     runs-on: windows-latest
