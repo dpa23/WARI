@@ -1,7 +1,7 @@
 # Progreso
 
 ## Fase actual
-Fase 3 — Editor núcleo: **terminada y verificada**. Fase 5 — Multiagente, cola y presupuestos: **terminada** (hito: el problema original queda resuelto). Siguiente: fase 6 (seguridad de cambios: checkpoints, watcher, propiedad de archivos).
+Fase 3 — Editor núcleo: **terminada y verificada**. Fase 6 — Seguridad de cambios: **terminada**. Siguiente: fase 7 (gates de aprobación y pipeline de goals).
 
 ## Hecho
 ### Fase 0 — Arranque
@@ -44,6 +44,10 @@ Fase 3 — Editor núcleo: **terminada y verificada**. Fase 5 — Multiagente, c
 - Panel multiagente: lista con estado, turnos, tokens y costo; chat por agente; ctrl+t, alt+↑/↓, ctrl+o, ctrl+x, ctrl+k; barra con activos y cola siempre visible.
 - E2e en herdr con agentes reales: 3 agentes con límite 2 (uno en cola), pausa que conserva cupo, stop que arranca la cola, parada global y salida con un agente pausado sin huérfanos.
 - Revisiones: /code-review de la fase 4 (10, atendidos), Gemini sobre orch (5: 4 reproducidos y corregidos, 1 ya correcto), /security-review (sin hallazgos).
+
+### Fase 6 — Seguridad de cambios
+- `internal/workspace/checkpoint` (Gemini vía herdr), `watch` y `owner`; integración en `orch`; diff y reversión desde el panel; `-accept-edits`.
+- Aceptación: tests de dos agentes en paralelo, choque con pausa previa y reversión con SHA256 idéntico; e2e con la CLI real (editar, diff, revertir).
 
 ## Pendiente
 

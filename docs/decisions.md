@@ -96,6 +96,12 @@ Formato: fecha · decisión · motivo · alternativas descartadas.
 - **Motivo:** WARI es dueño del buffer: puede recargar en vivo lo que edita un agente, mostrar diffs contra checkpoints y bloquear o avisar sobre archivos reclamados (fases 6 y 7) sin integraciones frágiles; no suma un proceso por editor (clave en máquinas modestas y Windows); rinde de sobra (abrir 5000 líneas en ~1,4 ms).
 - **Descartado:** Helix o Neovim en un PTY: más funciones de inmediato, pero el buffer vive en otro proceso, más RAM y la coordinación con los agentes pasa por la terminal.
 
+## 2026-10-17 · Seguridad de cambios (fase 6)
+- **Checkpoint al llegar `FileEditProposed`**, antes de reenviar el evento; claves `<fecha>-a<ID>/<turno>` en `.wari/checkpoints` (los IDs se reinician por ejecución). Implementado: `checkpoint` por Gemini vía herdr; watcher, propiedad e integración por Sonnet.
+- **Choques**: si un agente propone editar un archivo reclamado por otro activo, se pausa antes de editar y se avisa; reanudarlo le cede el archivo.
+- **Límites conocidos**: con `-accept-edits` la CLI puede ejecutar la edición antes de que termine el checkpoint (con el modo por defecto, que pregunta, se deniega); las ediciones por shell no tienen checkpoint (se ven y atribuyen, no se revierten); revertir un turno pisa ediciones posteriores de otro agente en el mismo archivo; nada limpia `.wari/checkpoints` todavía.
+- **E2e con la CLI real**: edición con checkpoint, diff y reversión del turno con SHA256 idéntico al original.
+
 ## 2026-10-17 · Orquestación del desarrollo
 - **Decisión:** Claude Code (Opus) lidera y es el único que hace commit; subagentes Sonnet implementan y Haiku hace tareas mecánicas; Antigravity (Gemini 3.8 Flash) revisa los diffs con otra familia de modelos y genera los datos del tier 1. Máximo 2 agentes activos a la vez. Commits locales; push solo a pedido del autor. Detalle en `AGENTS.md` y `CLAUDE.md`.
 - **Motivo:** máquina de 2 núcleos y 5,6 GB; la diversidad de modelos encuentra errores distintos, pero todo hallazgo se verifica (Antigravity adivinó mal flags y nombres de eventos de su propia CLI).
