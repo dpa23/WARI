@@ -24,6 +24,9 @@ func (m *Model) SetLineMarks(marks map[int]LineMark) { m.marks = marks }
 // markGlyph devuelve el texto (con su color) que ocupa en el margen la línea
 // li: un punto si está marcada y un espacio si no.
 func (m Model) markGlyph(li int) string {
+	if g := m.debugGlyph(li); g != "" {
+		return g
+	}
 	switch m.marks[li] {
 	case MarkError:
 		return sgrMarkError + "●"

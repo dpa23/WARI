@@ -95,6 +95,22 @@ func helpGroups() []helpGroup {
 			},
 		},
 		{
+			title: "Ejecución y depuración",
+			items: []helpItem{
+				{"focus_dock", "Ir al panel de salida / variables"},
+				{"run_project", "Ejecutar el proyecto en el sandbox"},
+				{"run_stop", "Detener la ejecución"},
+				{"promote_artifact", "Promover un artefacto al proyecto"},
+				{"toggle_breakpoint", "Poner o quitar breakpoint"},
+				{"debug_start", "Depurar: iniciar o continuar"},
+				{"debug_continue", "Depurar: continuar"},
+				{"debug_next", "Depurar: siguiente línea"},
+				{"debug_step_in", "Depurar: entrar"},
+				{"debug_step_out", "Depurar: salir"},
+				{"debug_stop", "Depurar: detener"},
+			},
+		},
+		{
 			title: "LSP (opcional)",
 			items: []helpItem{
 				{"toggle_lsp", "Encender o apagar el LSP"},
@@ -185,7 +201,8 @@ func (m Model) helpView(w, h int) []string {
 
 	var contentLines []string
 	if innerW >= 66 {
-		// Dos columnas: Col 1 (Navegación, Editor, Diffs), Col 2 (Agentes, Pipeline)
+		// Dos columnas: Col 1 (Navegación, Editor, Diffs), Col 2 (Agentes, Pipeline,
+		// Ejecución y depuración, LSP)
 		col1W := (innerW - 3) / 2
 		col2W := innerW - 3 - col1W
 
@@ -214,7 +231,7 @@ func (m Model) helpView(w, h int) []string {
 		}
 
 		col1 := formatCol([]helpGroup{groups[0], groups[1], groups[3]}, col1W)
-		col2 := formatCol([]helpGroup{groups[2], groups[4], groups[5]}, col2W)
+		col2 := formatCol([]helpGroup{groups[2], groups[4], groups[5], groups[6]}, col2W)
 
 		n := max(len(col1), len(col2))
 		sep := borderSt.Render("│")

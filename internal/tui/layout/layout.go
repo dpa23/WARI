@@ -5,7 +5,7 @@
 // el layout traduce el cursor del que tiene foco a coordenadas absolutas.
 //
 // Foco. focus_next y focus_prev (tab y shift+tab) recorren los paneles
-// visibles en el orden árbol, editor, agentes. En el editor, tab inserta
+// visibles en el orden árbol, editor, dock (si está abierto) y agentes. En el editor, tab inserta
 // espacios, así que ahí focus_next no actúa cuando su tecla es la misma que la
 // de Tab del editor; focus_prev sigue funcionando y sale hacia el panel
 // anterior (y el siguiente tras el último es el árbol). La paleta también
@@ -13,7 +13,8 @@
 // a otra tecla, funciona también dentro del editor.
 //
 // Atajos globales (valen con cualquier foco): quit, palette, toggle_tree,
-// toggle_agents, save, stop_all, focus_next, focus_prev y, si hay un pipeline,
+// toggle_agents, save, stop_all, focus_next, focus_prev, focus_dock, las de
+// ejecución y depuración y, si hay un pipeline,
 // pipeline_run, gate_approve, gate_reject y gate_edit (van al panel de agentes
 // aunque no tenga el foco). El resto va al panel con foco.
 // Todos salen de config.Keymap.
@@ -48,6 +49,15 @@
 // (jdtls, kotlin-language-server, csharp-ls) y caen al índice propio si no
 // está instalado o no responde a tiempo; los diagnósticos marcan el margen y
 // salen en la barra y en la lista de la acción diagnostics (alt+m). Ver lsp.go.
+//
+// Ejecución en el sandbox y depuración (fases 13 y 14). run_project ejecuta el
+// perfil del proyecto en un contenedor (nunca descarga imágenes y pide
+// confirmar la red); toggle_breakpoint marca breakpoints en el margen y
+// debug_start, debug_continue, debug_next, debug_step_in, debug_step_out y
+// debug_stop llevan la sesión con netcoredbg o java-debug, con los argumentos
+// de .wari/launch.json. Todo se ve en el dock bajo el editor (salida con su
+// tecla de parada siempre visible, pila y variables navegables, y el foco
+// con focus_dock). Ver run.go, debug.go y dock.go.
 //
 // Seguridad de datos: abrir otro archivo con el actual sin guardar, o salir
 // en ese caso (con la tecla o desde la paleta), pide repetir la acción; la
@@ -96,6 +106,8 @@ const (
 	focusTree focus = iota
 	focusEditor
 	focusChat
+	// focusDock es el dock de salida y depuración bajo el editor (ver dock.go).
+	focusDock
 )
 
 // Config configura el layout.
@@ -125,6 +137,12 @@ type Config struct {
 	// Templates son las plantillas de "Nuevo archivo desde plantilla"; sin
 	// ellas la acción solo avisa.
 	Templates []templates.Template
+	// Sandbox ejecuta el proyecto en un contenedor (acción run_project, fase
+	// 13); nil la desactiva. cmd/wari pasa un *sandbox.Container. Quien crea
+	// el layout llama a Model.Shutdown al salir.
+	Sandbox Sandbox
+	// Debug configura la depuración (fase 14).
+	Debug DebugConfig
 	// Chat configura el panel de agentes (Keymap y Task.Dir los completa el
 	// layout).
 	Chat tui.Config
@@ -171,6 +189,16 @@ type Model struct {
 
 	helpOpen   bool
 	helpScroll int
+
+	// Ejecución en el sandbox y depuración (run.go, debug.go, dock.go). hub es
+	// el único puntero compartido entre las copias del modelo.
+	hub    *hub
+	sbx    Sandbox
+	dbgCfg DebugConfig
+	run    runState
+	dbg    dbgState
+	dock   dockState
+	out    []outLine
 }
 
 // filesMsg lleva la lista de archivos del proyecto para la paleta.
@@ -208,6 +236,9 @@ func New(cfg Config) Model {
 		snips: cfg.Snippets, imps: cfg.Imports, allImps: cfg.Imports, tpls: cfg.Templates,
 		ix:     cfg.Index,
 		lsp:    lspState{mgr: cfg.LSP},
+		hub:    newHub(),
+		sbx:    cfg.Sandbox,
+		dbgCfg: cfg.Debug,
 		tree:   filetree.New(root),
 		chat:   tui.NewPanel(chatCfg),
 		w:      80,
@@ -256,6 +287,12 @@ func (m Model) update(msg tea.Msg) (Model, tea.Cmd) {
 
 func (m Model) updateMsg(msg tea.Msg) (Model, tea.Cmd) {
 	if m2, cmd, ok := m.lspUpdate(msg); ok {
+		return m2, cmd
+	}
+	if m2, cmd, ok := m.runUpdate(msg); ok {
+		return m2, cmd
+	}
+	if m2, cmd, ok := m.debugUpdate(msg); ok {
 		return m2, cmd
 	}
 	switch msg := msg.(type) {
@@ -328,6 +365,9 @@ func (m Model) handleKey(k tea.KeyPressMsg) (Model, tea.Cmd) {
 	if m.pal.open {
 		return m.paletteKey(k)
 	}
+	if m.run.confirm != nil {
+		return m.runConfirmKey(k)
+	}
 
 	// Regla de descubribilidad: F1 siempre abre el overlay de ayuda.
 	// La tecla '?' solo abre el overlay de ayuda cuando el foco no está escribiendo
@@ -380,6 +420,28 @@ func (m Model) handleKey(k tea.KeyPressMsg) (Model, tea.Cmd) {
 		return m.toggleLSP()
 	case m.focus != focusChat && m.is(k, "diagnostics"):
 		return m.showDiagnostics()
+	case m.is(k, "focus_dock"):
+		return m.focusDockPanel(), nil
+	case m.is(k, "run_project"):
+		return m.runProject()
+	case m.is(k, "run_stop"):
+		return m.runStop()
+	case m.is(k, "promote_artifact"):
+		return m.promoteStart()
+	case m.is(k, "toggle_breakpoint"):
+		return m.toggleBreakpoint()
+	case m.is(k, "debug_start"):
+		return m.debugStart()
+	case m.is(k, "debug_continue"):
+		return m.debugResume("continue")
+	case m.is(k, "debug_next"):
+		return m.debugResume("next")
+	case m.is(k, "debug_step_in"):
+		return m.debugResume("in")
+	case m.is(k, "debug_step_out"):
+		return m.debugResume("out")
+	case m.is(k, "debug_stop"):
+		return m.debugStop()
 	case m.is(k, "stop_all"):
 		return m.stopAll()
 	case m.chat.HasPipeline() && (m.is(k, "pipeline_run") || m.is(k, "gate_approve") ||
@@ -400,6 +462,15 @@ func (m Model) handleKey(k tea.KeyPressMsg) (Model, tea.Cmd) {
 		m.pendingOpen = pending
 	}
 	return m.routeToFocused(k)
+}
+
+// focusDockPanel da el foco al dock de salida y depuración, si está abierto.
+func (m Model) focusDockPanel() Model {
+	if !m.geometry().visible(focusDock) {
+		m.msg = "no hay panel de salida ni de depuración abierto"
+		return m
+	}
+	return m.focusPanel(focusDock)
 }
 
 // requestQuit sale, salvo que haya cambios sin guardar y no sea la segunda
@@ -426,6 +497,10 @@ func (m Model) routeToFocused(msg tea.Msg) (Model, tea.Cmd) {
 		}
 	case focusChat:
 		m.chat, cmd = m.chat.Handle(msg)
+	case focusDock:
+		if k, ok := msg.(tea.KeyPressMsg); ok {
+			return m.dockKey(k)
+		}
 	}
 	return m, cmd
 }
@@ -468,8 +543,11 @@ func (m Model) save() (Model, tea.Cmd) {
 	return m, cmd
 }
 
-// quit sale matando a los agentes.
+// quit sale matando a los agentes, la depuración y la ejecución del sandbox.
 func (m Model) quit() (Model, tea.Cmd) {
+	// La depuración y la ejecución del sandbox también se cierran: sin
+	// huérfanos, ni con la salida por la vía de la paleta.
+	m.Shutdown()
 	var cmd tea.Cmd
 	m.chat, cmd = m.chat.Quit()
 	return m, cmd
@@ -484,6 +562,9 @@ type geom struct {
 	edX, edW            int
 	chatX, chatW        int
 	headH, bodyH, statH int
+	// dockH es la altura del dock bajo el editor (0 si no se muestra); el
+	// editor ocupa el resto de bodyH.
+	dockH int
 }
 
 // geometry reparte m.w x m.h. Árbol ~25% y agentes ~35%; si el editor
@@ -499,6 +580,9 @@ func (m Model) geometry() geom {
 		g.headH = 1
 	}
 	g.bodyH = max(h-g.statH-g.headH, 0)
+	if m.dock.open {
+		g.dockH = dockHeight(g.bodyH)
+	}
 
 	tw := min(max(w*25/100, 16), 40)
 	cw := min(max(w*35/100, 24), 90)
@@ -542,6 +626,8 @@ func (g geom) visible(f focus) bool {
 		return g.showTree
 	case focusChat:
 		return g.showChat
+	case focusDock:
+		return g.dockH > 0
 	}
 	return true
 }
@@ -556,7 +642,7 @@ func (m *Model) relayout() {
 		m.tree.SetSize(g.treeW, g.bodyH)
 	}
 	if m.hasEd {
-		m.ed.SetSize(g.edW, g.bodyH)
+		m.ed.SetSize(g.edW, g.bodyH-g.dockH)
 	}
 	if g.showChat {
 		m.chat.SetSize(g.chatW, g.bodyH)
@@ -592,7 +678,7 @@ func (m Model) focusPanel(f focus) Model {
 // moveFocus avanza (dir > 0) o retrocede el foco entre los paneles visibles.
 func (m Model) moveFocus(dir int) Model {
 	g := m.geometry()
-	order := []focus{focusTree, focusEditor, focusChat}
+	order := []focus{focusTree, focusEditor, focusDock, focusChat}
 	cur := 0
 	for i, f := range order {
 		if f == m.focus {
@@ -656,6 +742,7 @@ func (m *Model) openFile(path string) {
 	m.focus = focusEditor
 	m.tree.Reveal(path)
 	m.relayout()
+	m.applyDebugMarks()
 	m.later(m.lspOpenDoc())
 }
 
@@ -777,7 +864,11 @@ func (m Model) render() string {
 	if m.hasEd {
 		body = m.ed.View()
 	}
-	cols = append(cols, col{m.editorTitle(), block(body, g.edW, g.bodyH), g.edW})
+	edLines := block(body, g.edW, g.bodyH-g.dockH)
+	if g.dockH > 0 {
+		edLines = append(edLines, m.dockView(g.edW, g.dockH)...)
+	}
+	cols = append(cols, col{m.editorTitle(), edLines, g.edW})
 	if g.showChat {
 		cols = append(cols, col{"Agentes", block(m.chat.Body(), g.chatW, g.bodyH), g.chatW})
 	}
@@ -790,6 +881,12 @@ func (m Model) render() string {
 		}
 	}
 	sep := sepStyle.Render("│")
+	// El dock tiene su propio título dentro de la columna del editor: con el
+	// foco en él, ningún título de columna se resalta.
+	focusedCol := -1
+	if fc, ok := focusCol[m.focus]; ok {
+		focusedCol = fc
+	}
 
 	rows := make([]string, 0, m.h)
 	if g.headH > 0 {
@@ -798,7 +895,7 @@ func (m Model) render() string {
 			if ci > 0 {
 				sb.WriteString(sep)
 			}
-			sb.WriteString(header(c.head, ci == focusCol[m.focus], c.w))
+			sb.WriteString(header(c.head, ci == focusedCol, c.w))
 		}
 		rows = append(rows, sb.String())
 	}
@@ -884,6 +981,13 @@ func (m Model) statusBar() string {
 		}
 	}
 	right := m.agentsInfo()
+	for _, info := range []string{m.runInfo(), m.debugInfo()} {
+		// La parada de la ejecución y de la depuración se ven siempre, como
+		// la de los agentes.
+		if info != "" {
+			right = info + " · " + right
+		}
+	}
 	// Con espacio, los atajos van pegados a la derecha; se descartan desde el
 	// último hasta que quepan. La información de agentes se queda siempre.
 	for n := len(hints); n >= 0; n-- {

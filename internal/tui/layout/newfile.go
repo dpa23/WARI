@@ -36,6 +36,7 @@ const (
 	palDiags                      // lista de diagnósticos del LSP (ver lsp.go)
 	palPath                       // ruta destino (desde aquí, modos de texto)
 	palVar                        // valor de una variable de la plantilla
+	palPromote                    // ruta del artefacto a promover (ver run.go)
 )
 
 const cmdTemplatePrefix = "tpl:"

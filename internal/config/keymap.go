@@ -66,6 +66,22 @@ func Default() Keymap {
 		"gate_approve":    []string{"alt+y"},
 		"gate_reject":     []string{"alt+n"},
 		"gate_edit":       []string{"alt+e"},
+
+		// Ejecución en el sandbox y depuración (fases 13 y 14). Las teclas F
+		// son las convencionales de los IDE; F10 y F11 las suelen tomar el
+		// menú de la terminal o el gestor de ventanas, y en macOS las F las
+		// captura el sistema, por eso cada acción tiene una alternativa alt+.
+		"focus_dock":        []string{"alt+v"},
+		"run_project":       []string{"alt+g"},
+		"run_stop":          []string{"alt+x"},
+		"promote_artifact":  []string{"alt+w"},
+		"toggle_breakpoint": []string{"f9", "alt+b"},
+		"debug_start":       []string{"f5", "alt+s"},
+		"debug_continue":    []string{"f8", "alt+c"},
+		"debug_next":        []string{"f10", "alt+j"},
+		"debug_step_in":     []string{"f11", "alt+k"},
+		"debug_step_out":    []string{"shift+f11", "alt+u"},
+		"debug_stop":        []string{"shift+f5", "alt+q"},
 	}
 }
 

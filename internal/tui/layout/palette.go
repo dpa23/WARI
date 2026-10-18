@@ -36,6 +36,7 @@ const (
 	cmdFocusTree    = "focus_tree"
 	cmdFocusEditor  = "focus_editor"
 	cmdFocusChat    = "focus_chat"
+	cmdFocusDock    = "focus_dock"
 	cmdHelp         = "help"
 	cmdNewFile      = "new_file"
 	cmdImportType   = "import_type"
@@ -44,6 +45,17 @@ const (
 	cmdComplete     = "complete"
 	cmdToggleLSP    = "toggle_lsp"
 	cmdDiagnostics  = "diagnostics"
+	cmdRunProject   = "run_project"
+	cmdRunStop      = "run_stop"
+	cmdPromote      = "promote_artifact"
+	cmdToggleBP     = "toggle_breakpoint"
+	cmdDebugStart   = "debug_start"
+	cmdDebugCont    = "debug_continue"
+	cmdDebugNext    = "debug_next"
+	cmdDebugIn      = "debug_step_in"
+	cmdDebugOut     = "debug_step_out"
+	cmdDebugStop    = "debug_stop"
+	cmdCloseDock    = "close_dock"
 	cmdQuit         = "quit"
 	cmdOpenPrefix   = "open:"
 )
@@ -94,6 +106,7 @@ func (m Model) paletteItems() []item {
 		newItem(cmdFocusTree, "Ir al árbol de archivos", hint("focus_prev")),
 		newItem(cmdFocusEditor, "Ir al editor", hint("focus_next")),
 		newItem(cmdFocusChat, "Ir al panel de agentes", hint("focus_next")),
+		newItem(cmdFocusDock, "Ir al panel de salida y depuración (pila y variables)", hint("focus_dock")),
 		newItem(cmdQuit, "Salir", hint("quit")),
 		newItem(cmdAgentPause, "Pausar o reanudar agente", hint("agent_pause")),
 		newItem(cmdAgentStop, "Detener agente", hint("agent_stop")),
@@ -108,6 +121,17 @@ func (m Model) paletteItems() []item {
 		newItem(cmdComplete, "Completar (LSP si está activo; si no, nombres del proyecto)", hint("complete")),
 		newItem(cmdToggleLSP, lspToggleTitle(m.lsp.on), hint("toggle_lsp")),
 		newItem(cmdDiagnostics, "Diagnósticos del LSP del archivo", hint("diagnostics")),
+		newItem(cmdRunProject, "Ejecutar el proyecto en el sandbox", hint("run_project")),
+		newItem(cmdRunStop, "Detener la ejecución del sandbox", hint("run_stop")),
+		newItem(cmdPromote, "Promover un artefacto de la ejecución al proyecto", hint("promote_artifact")),
+		newItem(cmdToggleBP, "Poner o quitar breakpoint en la línea", hint("toggle_breakpoint")),
+		newItem(cmdDebugStart, "Depurar: iniciar (o continuar si está detenido)", hint("debug_start")),
+		newItem(cmdDebugCont, "Depurar: continuar", hint("debug_continue")),
+		newItem(cmdDebugNext, "Depurar: siguiente línea (next)", hint("debug_next")),
+		newItem(cmdDebugIn, "Depurar: entrar (step in)", hint("debug_step_in")),
+		newItem(cmdDebugOut, "Depurar: salir (step out)", hint("debug_step_out")),
+		newItem(cmdDebugStop, "Depurar: detener", hint("debug_stop")),
+		newItem(cmdCloseDock, "Cerrar el panel de salida y depuración", ""),
 	}
 	for _, f := range m.files {
 		items = append(items, newItem(cmdOpenPrefix+f, f, "archivo"))
@@ -196,6 +220,8 @@ func (m Model) paletteKey(k tea.KeyPressMsg) (Model, tea.Cmd) {
 			return m.pickLSPDefinition()
 		case palDiags:
 			return m.pickDiagnostic()
+		case palPromote:
+			return m.submitPromote()
 		}
 		if len(p.results) == 0 {
 			return m, nil
@@ -326,6 +352,33 @@ func (m Model) runCommand(id string) (Model, tea.Cmd) {
 		return m.toggleLSP()
 	case id == cmdDiagnostics:
 		return m.showDiagnostics()
+	case id == cmdRunProject:
+		return m.runProject()
+	case id == cmdRunStop:
+		return m.runStop()
+	case id == cmdPromote:
+		return m.promoteStart()
+	case id == cmdToggleBP:
+		return m.toggleBreakpoint()
+	case id == cmdDebugStart:
+		return m.debugStart()
+	case id == cmdDebugCont:
+		return m.debugResume("continue")
+	case id == cmdDebugNext:
+		return m.debugResume("next")
+	case id == cmdDebugIn:
+		return m.debugResume("in")
+	case id == cmdDebugOut:
+		return m.debugResume("out")
+	case id == cmdDebugStop:
+		return m.debugStop()
+	case id == cmdCloseDock:
+		if m.busyDock() {
+			m.msg = "hay una ejecución o una depuración en curso: deténla antes de cerrar el panel"
+		} else {
+			m.closeDock()
+		}
+		return m, nil
 	case id == cmdQuit:
 		return m.requestQuit(armed)
 	case id == cmdFocusTree:
@@ -334,6 +387,8 @@ func (m Model) runCommand(id string) (Model, tea.Cmd) {
 		return m.focusPanel(focusEditor), nil
 	case id == cmdFocusChat:
 		return m.focusPanel(focusChat), nil
+	case id == cmdFocusDock:
+		return m.focusDockPanel(), nil
 	case id == cmdHelp:
 		m.helpOpen = true
 		m.helpScroll = 0

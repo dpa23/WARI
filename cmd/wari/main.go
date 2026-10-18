@@ -23,6 +23,7 @@ import (
 	"github.com/dpa23/wari/internal/index"
 	"github.com/dpa23/wari/internal/orch"
 	"github.com/dpa23/wari/internal/orch/pipeline"
+	"github.com/dpa23/wari/internal/sandbox"
 	"github.com/dpa23/wari/internal/tui"
 	"github.com/dpa23/wari/internal/tui/filetree"
 	"github.com/dpa23/wari/internal/tui/layout"
@@ -177,7 +178,10 @@ func runTUI(newAgent func() agent.Agent, task agent.Task, root, file string, max
 	defer closeLSP(lspMgr)
 
 	sets, imps, tpls := loadAssets(root)
-	p := tea.NewProgram(layout.New(layout.Config{
+	// La ejecución en el sandbox (run_project) y la depuración lanzan procesos
+	// fuera del bucle de eventos; el layout los detiene al salir por el atajo y
+	// el Shutdown cubre el resto de vías (señal, pánico) sin dejar huérfanos.
+	lay := layout.New(layout.Config{
 		Root:      root,
 		File:      file,
 		Keymap:    loadKeymap(root),
@@ -187,6 +191,7 @@ func runTUI(newAgent func() agent.Agent, task agent.Task, root, file string, max
 		LSP:       lspMgr,
 		LSPOn:     lspOn,
 		Templates: tpls,
+		Sandbox:   &sandbox.Container{},
 		Chat: tui.Config{
 			Supervisor: sup,
 			NewAgent:   newAgent,
@@ -194,7 +199,9 @@ func runTUI(newAgent func() agent.Agent, task agent.Task, root, file string, max
 			Budget:     budget,
 			Pipeline:   runner,
 		},
-	}))
+	})
+	defer lay.Shutdown()
+	p := tea.NewProgram(lay)
 
 	// Bubble Tea atrapa SIGINT y SIGTERM, pero no SIGHUP: al cerrarse la
 	// terminal, wari moriría sin cerrar al agente, que vive en su propio

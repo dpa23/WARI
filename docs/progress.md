@@ -1,7 +1,7 @@
 # Progreso
 
 ## Fase actual
-Fase 3 — Editor núcleo: **terminada y verificada**. Fase 12 — LSP opcional: **cliente listo** (integración en el TUI pendiente). Fase 13 (sandbox con Podman/Docker) en curso.
+**Las 14 fases del PLAN están implementadas.** Pendiente: revisión del autor, push y CI (aún no ejecutado), pruebas con servidores LSP/DAP reales (no instalados en la máquina de desarrollo).
 
 ## Hecho
 ### Fase 0 — Arranque
@@ -73,6 +73,16 @@ Fase 3 — Editor núcleo: **terminada y verificada**. Fase 12 — LSP opcional:
 
 ### Fase 12 — LSP opcional
 - `internal/lsp`: cliente JSON-RPC (initialize, didOpen/didChange, completion, definition, diagnósticos, cancelación), gestor bajo demanda para jdtls, kotlin-language-server y csharp-ls, RSS por grupo de procesos. `proc.Spec.Stdin` para hablar con el servidor.
+
+### Fase 13 — Sandbox (Podman/Docker)
+- `internal/sandbox`: overlay en podman o copia en docker, red none por defecto, límites, salidas fuera del proyecto y Promote con os.Root. Integración real con podman: proyecto idéntico por hash.
+- Seguridad (Gemini): 4 fallos corregidos (lectura de archivos del anfitrión vía symlink en el log, contenedor huérfano al cancelar, montaje de sockets del motor, Promote durante la ejecución).
+- TUI: alt+g ejecuta el perfil (maven/gradle/dotnet) con logs y alt+x para detener; alt+w promueve un artefacto.
+
+### Fase 14 — Debugger (DAP)
+- `internal/dap`: cliente y sesión (breakpoints, pasos, pila, ámbitos, árbol de variables), netcoredbg y java-debug (vía hook de puerto).
+- TUI: F9/F5/F8/F10/F11 (con alternativas alt+letra), línea resaltada, paneles de pila y variables navegables; `.wari/launch.json` con argumentos opacos.
+- Sin probar con adaptadores reales (no instalados); java-debug requiere integrar el plugin en jdtls.
 
 ## Pendiente
 

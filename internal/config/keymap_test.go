@@ -47,6 +47,18 @@ func TestDefault(t *testing.T) {
 		"gate_approve":    {"alt+y"},
 		"gate_reject":     {"alt+n"},
 		"gate_edit":       {"alt+e"},
+
+		"focus_dock":        {"alt+v"},
+		"run_project":       {"alt+g"},
+		"run_stop":          {"alt+x"},
+		"promote_artifact":  {"alt+w"},
+		"toggle_breakpoint": {"f9", "alt+b"},
+		"debug_start":       {"f5", "alt+s"},
+		"debug_continue":    {"f8", "alt+c"},
+		"debug_next":        {"f10", "alt+j"},
+		"debug_step_in":     {"f11", "alt+k"},
+		"debug_step_out":    {"shift+f11", "alt+u"},
+		"debug_stop":        {"shift+f5", "alt+q"},
 	}
 
 	got := Default()

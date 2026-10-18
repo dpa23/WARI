@@ -86,8 +86,11 @@ type Model struct {
 	imps    map[string]imports.Map
 	suggest string
 
-	// marks son las marcas del margen por línea (ver SetLineMarks).
+	// marks son las marcas del margen por línea (ver SetLineMarks); bps y
+	// exec, las de depuración (ver debug.go; exec es la línea base 1 o 0).
 	marks map[int]LineMark
+	bps   map[int]BreakpointMark
+	exec  int
 }
 
 // fingerprint resume el contenido del buffer: líneas y un hash FNV-1a.
@@ -529,7 +532,7 @@ func (m Model) View() string {
 			num := strconv.Itoa(li + 1)
 			sb.WriteString(strings.Repeat(" ", gw-2-len(num)))
 			sb.WriteString(num)
-			if len(m.marks) == 0 {
+			if !m.hasGutterMarks() {
 				sb.WriteString("  ")
 			} else {
 				sb.WriteString(m.markGlyph(li))
@@ -556,13 +559,17 @@ func (m Model) View() string {
 			}
 			nlSel = li < selEnd.Line
 		}
-		m.writeLine(&sb, m.buf.Line(li), mk, sc, ec, nlSel, xoff, tw)
+		bg := ""
+		if m.exec > 0 && li == m.exec-1 {
+			bg = sgrExecLineBg
+		}
+		m.writeLine(&sb, m.buf.Line(li), mk, sc, ec, nlSel, xoff, tw, bg)
 	}
 	return sb.String()
 }
 
 // writeLine escribe la parte visible de una línea, rellena hasta tw celdas.
-func (m Model) writeLine(sb *strings.Builder, line []rune, mk []uint16, sc, ec int, nlSel bool, xoff, tw int) {
+func (m Model) writeLine(sb *strings.Builder, line []rune, mk []uint16, sc, ec int, nlSel bool, xoff, tw int, bg string) {
 	var curStyle uint16
 	curSel := false
 	styled := false
@@ -572,6 +579,7 @@ func (m Model) writeLine(sb *strings.Builder, line []rune, mk []uint16, sc, ec i
 		}
 		sb.WriteString(sgrReset)
 		sb.WriteString(m.hl.sgrOf(style))
+		sb.WriteString(bg)
 		if sel {
 			sb.WriteString(sgrSelect)
 		}
@@ -620,7 +628,13 @@ func (m Model) writeLine(sb *strings.Builder, line []rune, mk []uint16, sc, ec i
 		sb.WriteString(sgrReset)
 	}
 	if out < tw {
-		sb.WriteString(strings.Repeat(" ", tw-out))
+		if bg != "" {
+			sb.WriteString(bg)
+			sb.WriteString(strings.Repeat(" ", tw-out))
+			sb.WriteString(sgrReset)
+		} else {
+			sb.WriteString(strings.Repeat(" ", tw-out))
+		}
 	}
 }
 
