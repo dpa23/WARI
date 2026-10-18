@@ -38,6 +38,13 @@ type KeyMap struct {
 	RevertFile  key.Binding
 	RevertTurn  key.Binding
 	RevertAgent key.Binding
+
+	// Pipeline y gates (fase 7): lanzar el paso que toca, aprobar o rechazar
+	// el gate abierto y editar el prompt del paso siguiente.
+	PipelineRun key.Binding
+	GateApprove key.Binding
+	GateReject  key.Binding
+	GateEdit    key.Binding
 }
 
 // DefaultKeyMap devuelve los atajos predeterminados (los de config.Default).
@@ -76,6 +83,11 @@ func NewKeyMap(km config.Keymap) KeyMap {
 		RevertFile:  b("revert_file", "revertir archivo"),
 		RevertTurn:  b("revert_turn", "revertir turno"),
 		RevertAgent: b("revert_agent", "revertir agente"),
+
+		PipelineRun: b("pipeline_run", "lanzar pipeline"),
+		GateApprove: b("gate_approve", "aprobar"),
+		GateReject:  b("gate_reject", "rechazar"),
+		GateEdit:    b("gate_edit", "editar prompt"),
 	}
 }
 

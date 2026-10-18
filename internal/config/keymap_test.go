@@ -36,6 +36,10 @@ func TestDefault(t *testing.T) {
 		"revert_file":   {"alt+r"},
 		"revert_turn":   {"alt+t"},
 		"revert_agent":  {"alt+a"},
+		"pipeline_run":  {"alt+p"},
+		"gate_approve":  {"alt+y"},
+		"gate_reject":   {"alt+n"},
+		"gate_edit":     {"alt+e"},
 	}
 
 	got := Default()

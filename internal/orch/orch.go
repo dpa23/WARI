@@ -164,6 +164,13 @@ type entry struct {
 	edits     []Edit
 	conflicts []string
 
+	// Detección de bucles (loop.go).
+	lastTool   string // herramienta y argumentos de la última llamada
+	toolRun    int    // llamadas idénticas seguidas
+	turnEdited bool   // el turno en curso cambió algún archivo
+	idleTurns  int    // turnos seguidos sin cambios de archivo
+	pauseNext  string // motivo por el que el próximo turno arranca pausado
+
 	// launching está abierto mientras un turno reservado todavía no terminó
 	// su llamada a Start/Send; cancelAndRelease lo espera para que Cancel vea
 	// el turno ya lanzado.
@@ -197,6 +204,11 @@ type Supervisor struct {
 	// hookBeforeLaunch es un gancho de pruebas: se llama justo antes de
 	// lanzar un turno reservado, fuera del mutex.
 	hookBeforeLaunch func(launch)
+
+	// observers reciben cada novedad justo antes de encolarla en Updates
+	// (Observe); loops son los límites de la detección de bucles (loop.go).
+	observers []func(Update)
+	loops     LoopLimits
 
 	// Espacio de trabajo (workspace.go): propiedad de archivos, checkpoints
 	// y watcher. owners existe siempre; el resto lo fija AttachWorkspace.
@@ -547,6 +559,9 @@ func (s *Supervisor) pushLocked(u Update) {
 	if s.closed {
 		return
 	}
+	for _, f := range s.observers {
+		f(u)
+	}
 	select {
 	case s.updates <- u:
 		return
@@ -611,6 +626,7 @@ func (s *Supervisor) reserveLocked(e *entry) launch {
 	e.turns++
 	e.turnSeq++
 	e.turnErr = ""
+	e.lastTool, e.toolRun, e.turnEdited = "", 0, false
 	l.seq = e.turnSeq
 	s.startClockLocked(e)
 	s.setStateLocked(e, Running, "")
@@ -695,6 +711,8 @@ func (s *Supervisor) run(l launch) error {
 	case err == nil && closing:
 		// Close pudo llamar al agente antes de que este lanzara el turno.
 		_ = e.a.Close()
+	case err == nil:
+		s.pauseIfLooping(e, l.seq)
 	}
 	return err
 }
@@ -718,6 +736,7 @@ func (s *Supervisor) afterReleaseLocked() {
 // el mutex suelto, después).
 func (s *Supervisor) stopLocked(e *entry) bool {
 	defer s.releaseLocked(e)
+	e.pauseNext, e.idleTurns = "", 0
 	switch e.state {
 	case Queued:
 		for i, q := range s.queue {
@@ -861,6 +880,9 @@ func (s *Supervisor) handle(e *entry, ev agent.Event) {
 				s.goLocked(func() { s.cancelAndRelease(e, true) })
 			}
 		}
+	case agent.ToolCall:
+		s.emitLocked(e, ev)
+		s.noteToolCallLocked(e, ev)
 	case agent.Error:
 		if ev.Err != nil {
 			e.turnErr = ev.Err.Error()
@@ -876,6 +898,7 @@ func (s *Supervisor) handle(e *entry, ev agent.Event) {
 		}
 		s.stopClockLocked(e)
 		e.holding = false
+		s.noteTurnEndLocked(e)
 		if ev.IsError {
 			reason := e.turnErr
 			if reason == "" {

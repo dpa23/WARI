@@ -11,6 +11,7 @@ import (
 
 	"github.com/dpa23/wari/internal/agent"
 	"github.com/dpa23/wari/internal/orch"
+	"github.com/dpa23/wari/internal/orch/pipeline"
 	"github.com/dpa23/wari/internal/tui"
 )
 
@@ -152,5 +153,53 @@ func TestSaveIsNotAttributedToRunningAgent(t *testing.T) {
 	got := changed()
 	if len(got) == 0 || got[0].Attr != orch.AttrSoleActive {
 		t.Fatalf("avisos = %+v", got)
+	}
+}
+
+// Las teclas del pipeline y del gate valen con cualquier foco y, si no hay
+// pipeline, siguen su camino normal al panel con foco.
+func TestPipelineKeysAreGlobalOnlyWithPipeline(t *testing.T) {
+	root := project(t)
+	sup := orch.New(2)
+	defer sup.Close()
+	fn := func() agent.Agent { return newEfake() }
+	r, err := pipeline.New(sup, pipeline.Pipeline{Name: "p", Steps: []pipeline.Step{
+		{Name: "uno", Agent: fn, Prompt: "x", Mode: pipeline.Semi},
+		{Name: "dos", Agent: fn, Prompt: "y", Mode: pipeline.Semi},
+	}}, pipeline.Config{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer r.Close()
+
+	m := New(Config{Root: root, Chat: tui.Config{Supervisor: sup, Pipeline: r, NewAgent: fn}})
+	m, _ = m.update(tea.WindowSizeMsg{Width: 140, Height: 30})
+	m = m.focusPanel(focusTree)
+
+	// alt+p lanza el pipeline aunque el foco esté en el árbol.
+	m, cmd := send(m, press('p', tea.ModAlt))
+	if cmd == nil {
+		t.Fatal("alt+p debe llegar al panel de agentes")
+	}
+	if msg := cmd(); msg != nil {
+		m, _ = m.update(msg)
+	}
+	deadline := time.Now().Add(3 * time.Second)
+	for len(sup.Snapshots()) == 0 {
+		if time.Now().After(deadline) {
+			t.Fatal("alt+p no lanzó el primer paso")
+		}
+		time.Sleep(2 * time.Millisecond)
+	}
+	if m.focus != focusTree {
+		t.Fatal("lanzar el pipeline no debe mover el foco")
+	}
+
+	// Sin pipeline la tecla no se intercepta.
+	noPipe := New(Config{Root: root, Chat: tui.Config{Supervisor: sup, NewAgent: fn}})
+	noPipe, _ = noPipe.update(tea.WindowSizeMsg{Width: 140, Height: 30})
+	noPipe = noPipe.focusPanel(focusTree)
+	if _, cmd := send(noPipe, press('e', tea.ModAlt)); cmd != nil {
+		t.Fatal("sin pipeline, alt+e no debe hacer nada")
 	}
 }

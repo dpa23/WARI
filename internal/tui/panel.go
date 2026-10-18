@@ -1,6 +1,7 @@
 package tui
 
 import (
+	"cmp"
 	"fmt"
 	"strings"
 
@@ -13,6 +14,7 @@ import (
 
 	"github.com/dpa23/wari/internal/agent"
 	"github.com/dpa23/wari/internal/orch"
+	"github.com/dpa23/wari/internal/orch/pipeline"
 )
 
 const (
@@ -62,10 +64,12 @@ type diffView struct {
 	text string
 }
 
-// alertInfo es el último choque sin resolver, para el panel y la barra.
+// alertInfo es el último choque o bucle sin resolver, para el panel y la
+// barra. label es lo que la lista muestra junto al agente ("" es "choque").
 type alertInfo struct {
-	id   orch.ID
-	text string
+	id    orch.ID
+	text  string
+	label string
 }
 
 // revertible es lo que se pidió revertir.
@@ -143,6 +147,15 @@ type Panel struct {
 	armed     string
 	armedText string
 	alert     alertInfo
+
+	// Pipeline (pipeline.go): el Runner, su último estado, las filas que ocupa
+	// en el panel, el gate abierto y el modo de edición del prompt.
+	pipe      *pipeline.Runner
+	ps        pipeline.Snapshot
+	pipeH     int
+	gate      *gateView
+	gateEdit  bool
+	gateDraft string
 }
 
 var _ tea.Model = Panel{}
@@ -161,6 +174,10 @@ func NewPanel(cfg Config) Panel {
 		spin:      newSpinner(),
 		byID:      make(map[orch.ID]*agentView),
 		listening: cfg.Supervisor != nil,
+		pipe:      cfg.Pipeline,
+	}
+	if m.pipe != nil {
+		m.ps = m.pipe.Snapshot()
 	}
 	m.addView()
 	m.layout(80, 24)
@@ -169,10 +186,14 @@ func NewPanel(cfg Config) Panel {
 
 // Init implementa tea.Model: empieza a escuchar las novedades del supervisor.
 func (m Panel) Init() tea.Cmd {
-	if m.sup == nil {
-		return nil
+	var cmds []tea.Cmd
+	if m.sup != nil {
+		cmds = append(cmds, listenUpdates(m.sup.Updates()))
 	}
-	return listenUpdates(m.sup.Updates())
+	if m.pipe != nil {
+		cmds = append(cmds, listenPipeline(m.pipe.Changed()))
+	}
+	return tea.Batch(cmds...)
 }
 
 // Update implementa tea.Model.
@@ -255,6 +276,18 @@ func (m Panel) dispatch(msg tea.Msg) (Panel, tea.Cmd) {
 		m.refreshTo(v != m.cur() || m.vp.AtBottom())
 		return m, nil
 
+	case pipeMsg:
+		if msg.closed {
+			return m, nil
+		}
+		cmds := m.syncPipeline()
+		cmds = append(cmds, listenPipeline(m.pipe.Changed()))
+		return m, tea.Batch(cmds...)
+
+	case gateDiffMsg:
+		m.applyGateDiff(msg)
+		return m, nil
+
 	case quitMsg:
 		return m, tea.Quit
 	}
@@ -281,6 +314,20 @@ func (m Panel) handleKey(msg tea.KeyPressMsg) (Panel, tea.Cmd) {
 	case key.Matches(msg, m.keys.Cancel) && m.dv != nil:
 		m.closeDiff()
 		return m, nil
+	case key.Matches(msg, m.keys.Cancel) && m.gateEdit:
+		m.endGateEdit()
+		return m, nil
+	case key.Matches(msg, m.keys.Cancel) && m.gateShown():
+		m.hideGate()
+		return m, nil
+	case m.pipe != nil && key.Matches(msg, m.keys.PipelineRun):
+		return m.pipelineRun()
+	case m.pipe != nil && key.Matches(msg, m.keys.GateApprove):
+		return m.pipelineOp("aprobar", (*pipeline.Runner).Approve)
+	case m.pipe != nil && key.Matches(msg, m.keys.GateReject):
+		return m.pipelineOp("rechazar", (*pipeline.Runner).Reject)
+	case m.pipe != nil && key.Matches(msg, m.keys.GateEdit):
+		return m.gateEditStart()
 	case key.Matches(msg, m.keys.DiffFile):
 		return m.diff()
 	case key.Matches(msg, m.keys.RevertFile):
@@ -370,6 +417,9 @@ func (m *Panel) selectView(i int) {
 // proceso, así que se llaman en línea; así el ID del agente se conoce antes de
 // que llegue cualquiera de sus novedades.
 func (m Panel) send() (Panel, tea.Cmd) {
+	if m.gateEdit {
+		return m.gateEditSave()
+	}
 	text := strings.TrimSpace(m.input.Value())
 	v := m.cur()
 	if text == "" || m.sup == nil || v.inFlight() {
@@ -477,7 +527,7 @@ func (m Panel) quit() (Panel, tea.Cmd) {
 // applyUpdates aplica un lote de novedades a las vistas y vuelca el
 // historial del seleccionado si cambió.
 func (m *Panel) applyUpdates(ups []orch.Update) {
-	touched := false
+	touched, adopted := false, false
 	for _, u := range ups {
 		if u.Notice != nil {
 			if m.applyNotice(u) {
@@ -487,7 +537,10 @@ func (m *Panel) applyUpdates(ups []orch.Update) {
 		}
 		v := m.byID[u.ID]
 		if v == nil {
-			continue
+			if v = m.adopt(u); v == nil {
+				continue
+			}
+			adopted = true
 		}
 		if u.Event != nil {
 			v.applyEvent(u.Event)
@@ -505,7 +558,9 @@ func (m *Panel) applyUpdates(ups []orch.Update) {
 			touched = true
 		}
 	}
-	if touched {
+	if adopted {
+		m.layout(m.width, m.height)
+	} else if touched {
 		m.refresh()
 	}
 }
@@ -534,6 +589,15 @@ func (m *Panel) applyNotice(u orch.Update) bool {
 			if h := m.byID[n.Holder]; h != nil && v != nil {
 				add(h, kindWarn, fmt.Sprintf("⚠ %s quiso editar %s, que tienes reclamado", v.name, n.Path))
 			}
+		}
+	case orch.NoticeLoop:
+		if !n.Late {
+			m.alert = alertInfo{id: n.Agent, text: n.Text, label: "bucle"}
+		}
+		add(v, kindWarn, "⚠ "+n.Text)
+		if !n.Late {
+			add(v, kindInfo, fmt.Sprintf("%s reanuda; %s lo detiene",
+				m.keys.AgentPause.Help().Key, m.keys.AgentStop.Help().Key))
 		}
 	case orch.NoticeTakeover:
 		if m.alert.id == n.Agent {
@@ -611,6 +675,10 @@ func (m *Panel) refreshTo(follow bool) {
 		m.vp.SetContent(m.dv.render(m.styles, m.vp.Width()))
 		return
 	}
+	if m.gateShown() {
+		m.vp.SetContent(m.gate.render(m.styles, m.keys, m.vp.Width()))
+		return
+	}
 	m.vp.SetContent(v.cache.render(v.entries, v.asstOpen, m.styles, m.vp.Width()))
 	if follow {
 		m.vp.GotoBottom()
@@ -623,8 +691,10 @@ func (m *Panel) layout(w, h int) {
 	follow := m.vp.AtBottom()
 	m.width, m.height = w, h
 	w = max(w, minWidth)
-	m.listH = min(len(m.views), maxListRows, max(h-minChatRows, 0))
-	m.histH, m.statH, m.inH = splitRows(h - m.listH)
+	avail := max(h-minChatRows, 0)
+	m.pipeH = m.pipelineRows(avail)
+	m.listH = min(len(m.views), maxListRows, max(avail-m.pipeH, 0))
+	m.histH, m.statH, m.inH = splitRows(h - m.pipeH - m.listH)
 	m.vp.SetWidth(w)
 	m.vp.SetHeight(max(m.histH, 1))
 	m.input.SetWidth(w)
@@ -697,7 +767,7 @@ func (m Panel) listLine(i int) string {
 		marker, truncate(v.name, 10), v.stateLabel(), turns, tokens, v.snap.CostUSD)
 
 	if m.alert.id != 0 && v.id == m.alert.id {
-		line += " ⚠ choque"
+		line += " ⚠ " + cmp.Or(m.alert.label, "choque")
 	}
 
 	st := lipgloss.NewStyle()
@@ -787,6 +857,9 @@ func (m Panel) statusLine() string {
 	if v.sessionID != "" {
 		parts = append(parts, "sesión "+shortSession(v.sessionID))
 	}
+	if h := m.pipelineHint(); h != "" {
+		parts = append(parts, h)
+	}
 	parts = append(parts, formatUsage(v.tokensIn, v.tokensOut, v.costUSD))
 	if m.dv != nil && m.dv.v == v {
 		parts = append(parts, joinHelp(m.keys.DiffFile, m.keys.RevertFile, m.keys.RevertTurn, m.keys.Cancel))
@@ -802,7 +875,7 @@ func (m Panel) statusLine() string {
 // Body devuelve el contenido del panel sin AltScreen ni título, para
 // componerlo dentro de un layout.
 func (m Panel) Body() string {
-	rows := m.listRows()
+	rows := append(m.pipeRows(), m.listRows()...)
 	if m.histH > 0 {
 		rows = append(rows, m.vp.View())
 	}
@@ -832,7 +905,7 @@ func (m Panel) Cursor() *tea.Cursor {
 	if c == nil {
 		return nil
 	}
-	c.Position.Y += m.listH + m.histH + m.statH
+	c.Position.Y += m.pipeH + m.listH + m.histH + m.statH
 	return c
 }
 

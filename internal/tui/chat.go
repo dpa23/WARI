@@ -16,6 +16,7 @@ import (
 	"github.com/dpa23/wari/internal/agent"
 	"github.com/dpa23/wari/internal/config"
 	"github.com/dpa23/wari/internal/orch"
+	"github.com/dpa23/wari/internal/orch/pipeline"
 )
 
 // inputLines es la altura de la entrada; statusLines, la de la línea de estado.
@@ -45,6 +46,10 @@ type Config struct {
 	Supervisor *orch.Supervisor
 	NewAgent   func() agent.Agent
 	Budget     orch.Budget
+	// Pipeline, si no es nil, es el pipeline de goals (fase 7) que el panel
+	// muestra y controla; debe correr sobre Supervisor. Lo cierra quien lo
+	// creó.
+	Pipeline *pipeline.Runner
 }
 
 // Mensajes internos.

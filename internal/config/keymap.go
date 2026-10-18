@@ -55,6 +55,10 @@ func Default() Keymap {
 		"revert_file":   []string{"alt+r"},
 		"revert_turn":   []string{"alt+t"},
 		"revert_agent":  []string{"alt+a"},
+		"pipeline_run":  []string{"alt+p"},
+		"gate_approve":  []string{"alt+y"},
+		"gate_reject":   []string{"alt+n"},
+		"gate_edit":     []string{"alt+e"},
 	}
 }
 

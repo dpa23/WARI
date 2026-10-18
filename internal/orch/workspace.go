@@ -97,6 +97,9 @@ const (
 	NoticeChanged
 	// NoticeCheckpointFailed: no se pudo guardar el checkpoint de Path.
 	NoticeCheckpointFailed
+	// NoticeLoop: Agent parece atascado en un bucle (loop.go); Loop dice cuál
+	// y el agente queda pausado.
+	NoticeLoop
 )
 
 // Attribution dice cómo se atribuyó un cambio.
@@ -123,6 +126,8 @@ type Notice struct {
 	Op   string
 	Attr Attribution
 	Late bool
+	// Loop, en NoticeLoop, es LoopTool o LoopTurns.
+	Loop string
 	// Text es el aviso listo para mostrar.
 	Text string
 }
@@ -240,6 +245,7 @@ func (s *Supervisor) pauseForConflict(e *entry) {
 
 // recordEditLocked agrega la edición sin repetir (turno, archivo).
 func (s *Supervisor) recordEditLocked(e *entry, ed Edit) {
+	e.turnEdited = true
 	for i, x := range e.edits {
 		if x.Turn == ed.Turn && x.Path == ed.Path {
 			e.edits[i].Saved = e.edits[i].Saved || ed.Saved

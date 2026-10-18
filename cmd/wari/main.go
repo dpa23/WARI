@@ -18,6 +18,7 @@ import (
 	"github.com/dpa23/wari/internal/agent/claude"
 	"github.com/dpa23/wari/internal/config"
 	"github.com/dpa23/wari/internal/orch"
+	"github.com/dpa23/wari/internal/orch/pipeline"
 	"github.com/dpa23/wari/internal/tui"
 	"github.com/dpa23/wari/internal/tui/filetree"
 	"github.com/dpa23/wari/internal/tui/layout"
@@ -38,6 +39,10 @@ func main() {
 	acceptEdits := flag.Bool("accept-edits", false,
 		"los agentes editan archivos sin preguntar (PermissionAcceptEdits); sin esta opción la CLI deniega las ediciones. "+
 			"Cada edición queda con checkpoint en .wari/checkpoints y se puede ver y revertir")
+	loopCalls := flag.Int("loop-calls", 0,
+		"llamadas seguidas a la misma herramienta con los mismos argumentos que cuentan como bucle y pausan al agente (0: 3, negativo: sin detección)")
+	loopTurns := flag.Int("loop-turns", 0,
+		"turnos seguidos sin cambios de archivo que cuentan como bucle (solo con -accept-edits; 0: 3, negativo: sin detección)")
 	showVersion := flag.Bool("version", false, "muestra la versión y sale")
 	flag.Parse()
 
@@ -68,7 +73,8 @@ func main() {
 			os.Exit(2)
 		}
 		budget := orch.Budget{MaxTurns: *maxTurns, MaxDuration: *maxTime, MaxTokens: *maxTokens}
-		os.Exit(runTUI(agent.Task{Model: *model, Permissions: perms}, root, file, *maxActive, budget))
+		loops := orch.LoopLimits{SameTool: *loopCalls, IdleTurns: *loopTurns}
+		os.Exit(runTUI(agent.Task{Model: *model, Permissions: perms}, root, file, *maxActive, budget, loops))
 	}
 }
 
@@ -117,10 +123,15 @@ func loadKeymap(root string) config.Keymap {
 // bucle de eventos), no debe quedar ningún agente vivo: el defer cierra el
 // supervisor, que cierra a cada agente y mata su turno en curso con todos sus
 // descendientes.
-func runTUI(task agent.Task, root, file string, maxActive int, budget orch.Budget) int {
+func runTUI(task agent.Task, root, file string, maxActive int, budget orch.Budget, loops orch.LoopLimits) int {
 	sup := orch.New(maxActive)
 	defer sup.Close()
+	sup.SetLoopLimits(loops)
 	attachWorkspace(sup, root)
+	runner := loadPipeline(sup, root, task, budget)
+	if runner != nil {
+		defer runner.Close()
+	}
 
 	p := tea.NewProgram(layout.New(layout.Config{
 		Root:   root,
@@ -131,6 +142,7 @@ func runTUI(task agent.Task, root, file string, maxActive int, budget orch.Budge
 			NewAgent:   func() agent.Agent { return claude.New("") },
 			Task:       task,
 			Budget:     budget,
+			Pipeline:   runner,
 		},
 	}))
 
@@ -150,6 +162,32 @@ func runTUI(task agent.Task, root, file string, maxActive int, budget orch.Budge
 		return 1
 	}
 	return 0
+}
+
+// pipelineFile es el pipeline de goals del proyecto, relativo a la raíz.
+var pipelineFile = filepath.Join(".wari", "pipeline.json")
+
+// loadPipeline carga root/.wari/pipeline.json si existe y crea su Runner (sin
+// lanzar nada: el usuario lo lanza desde el panel). Si el archivo es
+// inválido, avisa y sigue sin pipeline.
+func loadPipeline(sup *orch.Supervisor, root string, task agent.Task, budget orch.Budget) *pipeline.Runner {
+	p, err := pipeline.Load(filepath.Join(root, pipelineFile), pipeline.Registry{
+		"claude": func() agent.Agent { return claude.New("") },
+	})
+	if errors.Is(err, os.ErrNotExist) {
+		return nil
+	}
+	if err != nil {
+		fmt.Fprintln(os.Stderr, "wari: aviso: pipeline:", err)
+		return nil
+	}
+	task.Dir = root
+	r, err := pipeline.New(sup, p, pipeline.Config{Task: task, Budget: budget})
+	if err != nil {
+		fmt.Fprintln(os.Stderr, "wari: aviso: pipeline:", err)
+		return nil
+	}
+	return r
 }
 
 // attachWorkspace activa la seguridad de cambios: checkpoints en

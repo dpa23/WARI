@@ -1,7 +1,7 @@
 # Progreso
 
 ## Fase actual
-Fase 3 — Editor núcleo: **terminada y verificada**. Fase 6 — Seguridad de cambios: **terminada**. Siguiente: fase 7 (gates de aprobación y pipeline de goals).
+Fase 3 — Editor núcleo: **terminada y verificada**. Fase 7 — Gates y pipeline: **terminada**. Siguiente: fase 8 (adaptador de agy).
 
 ## Hecho
 ### Fase 0 — Arranque
@@ -48,6 +48,11 @@ Fase 3 — Editor núcleo: **terminada y verificada**. Fase 6 — Seguridad de c
 ### Fase 6 — Seguridad de cambios
 - `internal/workspace/checkpoint` (Gemini vía herdr), `watch` y `owner`; integración en `orch`; diff y reversión desde el panel; `-accept-edits`.
 - Aceptación: tests de dos agentes en paralelo, choque con pausa previa y reversión con SHA256 idéntico; e2e con la CLI real (editar, diff, revertir).
+
+### Fase 7 — Gates y pipeline
+- Pipeline de pasos con gates de aprobación (resumen y diff), detección de bucles con pausa automática; atajos alt+p/alt+y/alt+n/alt+e.
+- Aceptación (tests): pipeline de 3 pasos que se detiene en el gate y sigue al aprobar; rechazar detiene; agente en bucle se pausa solo.
+- Seguridad de la fase 6: vulnerabilidad de manifest fabricado corregida con os.Root (tests reproducen el ataque).
 
 ## Pendiente
 

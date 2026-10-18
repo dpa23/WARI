@@ -102,6 +102,11 @@ Formato: fecha · decisión · motivo · alternativas descartadas.
 - **Límites conocidos**: con `-accept-edits` la CLI puede ejecutar la edición antes de que termine el checkpoint (con el modo por defecto, que pregunta, se deniega); las ediciones por shell no tienen checkpoint (se ven y atribuyen, no se revierten); revertir un turno pisa ediciones posteriores de otro agente en el mismo archivo; nada limpia `.wari/checkpoints` todavía.
 - **E2e con la CLI real**: edición con checkpoint, diff y reversión del turno con SHA256 idéntico al original.
 
+## 2026-10-17 · Gates, pipeline y bucles (fase 7)
+- **Pipeline** (`internal/orch/pipeline`, `.wari/pipeline.json`): pasos Manual, Semi o Auto; Auto exige presupuesto propio y no reutiliza agentes existentes. Lo lanza el usuario; un paso Manual tras un gate espera otro Run; no hay gate tras el último paso.
+- **Gate**: estado `WaitingApproval` con resultado, archivos editados y su diff contra el checkpoint; aprobar, rechazar o editar el prompt siguiente.
+- **Bucles** (cualquier agente): misma herramienta con los mismos argumentos 3 veces seguidas en un turno → pausa inmediata; 3 turnos seguidos sin cambios de archivo (solo con `-accept-edits`) → el turno siguiente arranca pausado. Límite: las ediciones por shell no atribuidas no cuentan como cambio.
+
 ## 2026-10-17 · Orquestación del desarrollo
 - **Decisión:** Claude Code (Opus) lidera y es el único que hace commit; subagentes Sonnet implementan y Haiku hace tareas mecánicas; Antigravity (Gemini 3.8 Flash) revisa los diffs con otra familia de modelos y genera los datos del tier 1. Máximo 2 agentes activos a la vez. Commits locales; push solo a pedido del autor. Detalle en `AGENTS.md` y `CLAUDE.md`.
 - **Motivo:** máquina de 2 núcleos y 5,6 GB; la diversidad de modelos encuentra errores distintos, pero todo hallazgo se verifica (Antigravity adivinó mal flags y nombres de eventos de su propia CLI).

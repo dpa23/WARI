@@ -13,7 +13,9 @@
 // a otra tecla, funciona también dentro del editor.
 //
 // Atajos globales (valen con cualquier foco): quit, palette, toggle_tree,
-// toggle_agents, save, stop_all, focus_next, focus_prev. El resto va al panel con foco.
+// toggle_agents, save, stop_all, focus_next, focus_prev y, si hay un pipeline,
+// pipeline_run, gate_approve, gate_reject y gate_edit (van al panel de agentes
+// aunque no tenga el foco). El resto va al panel con foco.
 // Todos salen de config.Keymap.
 //
 // Seguridad de datos: abrir otro archivo con el actual sin guardar, o salir
@@ -237,6 +239,9 @@ func (m Model) handleKey(k tea.KeyPressMsg) (Model, tea.Cmd) {
 		return m.save()
 	case m.is(k, "stop_all"):
 		return m.stopAll()
+	case m.chat.HasPipeline() && (m.is(k, "pipeline_run") || m.is(k, "gate_approve") ||
+		m.is(k, "gate_reject") || m.is(k, "gate_edit")):
+		return m.pipelineKey(k)
 	case m.is(k, "focus_prev"):
 		return m.moveFocus(-1), nil
 	case m.is(k, "focus_next"):
@@ -275,6 +280,22 @@ func (m Model) routeToFocused(msg tea.Msg) (Model, tea.Cmd) {
 		}
 	case focusChat:
 		m.chat, cmd = m.chat.Handle(msg)
+	}
+	return m, cmd
+}
+
+// pipelineKey entrega al panel de agentes una tecla del pipeline o del gate,
+// con cualquier foco. Editar el prompt necesita escribir en el panel, así que
+// lo muestra y le da el foco.
+func (m Model) pipelineKey(k tea.KeyPressMsg) (Model, tea.Cmd) {
+	var cmd tea.Cmd
+	if m.is(k, "gate_edit") && !m.chatOn {
+		m.chatOn = true
+		m.relayout()
+	}
+	m.chat, cmd = m.chat.Handle(k)
+	if m.is(k, "gate_edit") {
+		m = m.focusPanel(focusChat)
 	}
 	return m, cmd
 }
