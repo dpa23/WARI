@@ -85,6 +85,7 @@ import (
 	"github.com/dpa23/wari/internal/imports"
 	"github.com/dpa23/wari/internal/index"
 	"github.com/dpa23/wari/internal/lsp"
+	"github.com/dpa23/wari/internal/orch"
 	"github.com/dpa23/wari/internal/snippets"
 	"github.com/dpa23/wari/internal/templates"
 	"github.com/dpa23/wari/internal/tui"
@@ -200,6 +201,7 @@ type Model struct {
 	dbg    dbgState
 	dock   dockState
 	out    []outLine
+	sup    *orch.Supervisor
 }
 
 // filesMsg lleva la lista de archivos del proyecto para la paleta.
@@ -240,6 +242,7 @@ func New(cfg Config) Model {
 		hub:    newHub(),
 		sbx:    cfg.Sandbox,
 		dbgCfg: cfg.Debug,
+		sup:    cfg.Chat.Supervisor,
 		tree:   filetree.New(root),
 		chat:   tui.NewPanel(chatCfg),
 		w:      80,
@@ -342,6 +345,7 @@ func (m Model) updateMsg(msg tea.Msg) (Model, tea.Cmd) {
 	// Eventos de agentes, spinner, etc.: son del chat aunque no tenga foco.
 	var cmd tea.Cmd
 	m.chat, cmd = m.chat.Handle(msg)
+	m.updateTreeMarkers()
 	return m, cmd
 }
 
@@ -396,6 +400,12 @@ func (m Model) handleKey(k tea.KeyPressMsg) (Model, tea.Cmd) {
 	case m.is(k, "palette"):
 		m.quitArmed = armed
 		return m, m.openPalette()
+	case m.is(k, "focus_tree"):
+		return m.focusTreePanel(), nil
+	case m.is(k, "focus_editor"):
+		return m.focusEditorPanel(), nil
+	case m.is(k, "focus_agents"):
+		return m.focusAgentsPanel(), nil
 	case m.is(k, "toggle_tree"):
 		m.treeOn = !m.treeOn
 		m.relayout()
@@ -465,6 +475,29 @@ func (m Model) handleKey(k tea.KeyPressMsg) (Model, tea.Cmd) {
 		m.pendingOpen = pending
 	}
 	return m.routeToFocused(k)
+}
+
+// focusTreePanel da el foco al árbol de archivos, desplegándolo si estaba oculto.
+func (m Model) focusTreePanel() Model {
+	if !m.treeOn {
+		m.treeOn = true
+		m.relayout()
+	}
+	return m.focusPanel(focusTree)
+}
+
+// focusEditorPanel da el foco al editor.
+func (m Model) focusEditorPanel() Model {
+	return m.focusPanel(focusEditor)
+}
+
+// focusAgentsPanel da el foco al panel de agentes, desplegándolo si estaba oculto.
+func (m Model) focusAgentsPanel() Model {
+	if !m.chatOn {
+		m.chatOn = true
+		m.relayout()
+	}
+	return m.focusPanel(focusChat)
 }
 
 // focusDockPanel da el foco al dock de salida y depuración, si está abierto.
@@ -864,7 +897,135 @@ func (m Model) editorTitle() string {
 	if m.ed.Dirty() {
 		t += " ●"
 	}
+	p := m.ed.Path()
+	if h := m.fileHolder(p); h > 0 {
+		t += fmt.Sprintf(" · [reclamado por agente %d]", h)
+	} else if ed := m.fileEditor(p); ed > 0 {
+		t += fmt.Sprintf(" · [editado por agente %d]", ed)
+	}
+	if m.isFileConflict(p) {
+		t += " ⚠ [choque]"
+	}
 	return t
+}
+
+func (m Model) supervisor() *orch.Supervisor {
+	if m.sup != nil {
+		return m.sup
+	}
+	return m.chat.Supervisor()
+}
+
+func (m Model) fileHolder(path string) orch.ID {
+	sup := m.supervisor()
+	if sup == nil {
+		return 0
+	}
+	return sup.Holder(path)
+}
+
+func (m Model) fileEditor(path string) orch.ID {
+	sup := m.supervisor()
+	if sup == nil {
+		return 0
+	}
+	rel := path
+	if filepath.IsAbs(path) {
+		if r, err := filepath.Rel(m.root, path); err == nil && !strings.HasPrefix(r, "..") {
+			rel = filepath.ToSlash(r)
+		}
+	}
+	for _, s := range sup.Snapshots() {
+		for _, e := range sup.Edits(s.ID) {
+			if e.Path == rel || e.Path == path || filepath.Join(m.root, e.Path) == path {
+				return s.ID
+			}
+		}
+	}
+	return 0
+}
+
+func (m Model) isFileConflict(path string) bool {
+	if m.chat.Alert() == "" {
+		return false
+	}
+	cp := m.chat.ConflictPath()
+	if cp == "" {
+		return false
+	}
+	if cp == path || filepath.ToSlash(cp) == filepath.ToSlash(path) {
+		return true
+	}
+	if filepath.IsAbs(path) {
+		if rel, err := filepath.Rel(m.root, path); err == nil && (rel == cp || filepath.ToSlash(rel) == filepath.ToSlash(cp)) {
+			return true
+		}
+	}
+	if filepath.IsAbs(cp) {
+		if rel, err := filepath.Rel(m.root, cp); err == nil && (rel == path || filepath.ToSlash(rel) == filepath.ToSlash(path)) {
+			return true
+		}
+	}
+	return false
+}
+
+func (m *Model) updateTreeMarkers() {
+	markers := make(map[string]filetree.Marker)
+	sup := m.supervisor()
+	if sup != nil {
+		snaps := sup.Snapshots()
+		for _, s := range snaps {
+			id := int(s.ID)
+			for _, rel := range sup.Claims(s.ID) {
+				mk := markers[rel]
+				mk.Agent = id
+				mk.Claimed = true
+				markers[rel] = mk
+				markers[filepath.ToSlash(rel)] = mk
+				if !filepath.IsAbs(rel) {
+					markers[filepath.Join(m.root, rel)] = mk
+				}
+			}
+			for _, e := range sup.Edits(s.ID) {
+				rel := e.Path
+				mk := markers[rel]
+				if !mk.Claimed {
+					mk.Edited = true
+					if mk.Agent == 0 {
+						mk.Agent = id
+					}
+					markers[rel] = mk
+					markers[filepath.ToSlash(rel)] = mk
+					if !filepath.IsAbs(rel) {
+						markers[filepath.Join(m.root, rel)] = mk
+					}
+				}
+			}
+		}
+	}
+	if m.chat.Alert() != "" && m.chat.ConflictPath() != "" {
+		cPath := m.chat.ConflictPath()
+		cAgent := int(m.chat.ConflictAgent())
+		addConflict := func(p string) {
+			mk := markers[p]
+			mk.Conflict = true
+			if mk.Agent == 0 && cAgent > 0 {
+				mk.Agent = cAgent
+			}
+			markers[p] = mk
+		}
+		addConflict(cPath)
+		addConflict(filepath.ToSlash(cPath))
+		if filepath.IsAbs(cPath) {
+			if rel, err := filepath.Rel(m.root, cPath); err == nil && !strings.HasPrefix(rel, "..") {
+				addConflict(rel)
+				addConflict(filepath.ToSlash(rel))
+			}
+		} else {
+			addConflict(filepath.Join(m.root, cPath))
+		}
+	}
+	m.tree.SetMarkers(markers)
 }
 
 // placeholder es el contenido del editor sin archivo abierto.
@@ -877,6 +1038,7 @@ func (m Model) placeholder() string {
 }
 
 func (m Model) render() string {
+	m.updateTreeMarkers()
 	g := m.geometry()
 	if m.w <= 0 || m.h <= 0 {
 		return ""

@@ -108,9 +108,9 @@ func (m Model) paletteItems() []item {
 		newItem(cmdToggleAgents, "Alternar panel de agentes", hint("toggle_agents")),
 		newItem(cmdNewSession, "Agente nuevo", hint("agent_new")),
 		newItem(cmdStopAll, "Detener todos los agentes", hint("stop_all")),
-		newItem(cmdFocusTree, "Ir al árbol de archivos", hint("focus_prev")),
-		newItem(cmdFocusEditor, "Ir al editor", hint("focus_next")),
-		newItem(cmdFocusChat, "Ir al panel de agentes", hint("focus_next")),
+		newItem(cmdFocusTree, "Ir al árbol de archivos", hint("focus_tree")),
+		newItem(cmdFocusEditor, "Ir al editor", hint("focus_editor")),
+		newItem(cmdFocusChat, "Ir al panel de agentes", hint("focus_agents")),
 		newItem(cmdFocusDock, "Ir al panel de salida y depuración (pila y variables)", hint("focus_dock")),
 		newItem(cmdQuit, "Salir", hint("quit")),
 		newItem(cmdAgentPause, "Pausar o reanudar agente", hint("agent_pause")),
@@ -389,11 +389,11 @@ func (m Model) runCommand(id string) (Model, tea.Cmd) {
 	case id == cmdQuit:
 		return m.requestQuit(armed)
 	case id == cmdFocusTree:
-		return m.focusPanel(focusTree), nil
+		return m.focusTreePanel(), nil
 	case id == cmdFocusEditor:
-		return m.focusPanel(focusEditor), nil
+		return m.focusEditorPanel(), nil
 	case id == cmdFocusChat:
-		return m.focusPanel(focusChat), nil
+		return m.focusAgentsPanel(), nil
 	case id == cmdFocusDock:
 		return m.focusDockPanel(), nil
 	case id == cmdHelp:

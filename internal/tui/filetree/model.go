@@ -3,6 +3,7 @@
 package filetree
 
 import (
+	"fmt"
 	"os"
 	"path/filepath"
 	"sort"
@@ -11,7 +12,48 @@ import (
 	"charm.land/bubbles/v2/key"
 	tea "charm.land/bubbletea/v2"
 	"charm.land/lipgloss/v2"
+	"charm.land/lipgloss/v2/compat"
 )
+
+// Marker describe el estado de un archivo respecto a los agentes.
+type Marker struct {
+	Agent    int  // ID del agente (1, 2, ...)
+	Claimed  bool // archivo reclamado por el agente
+	Edited   bool // archivo editado / modificado por el agente
+	Conflict bool // archivo con choque activo
+}
+
+var (
+	badgeClaim = lipgloss.NewStyle().Foreground(compat.AdaptiveColor{
+		Light: lipgloss.Color("#0969da"),
+		Dark:  lipgloss.Color("#58a6ff"),
+	})
+	badgeEdit = lipgloss.NewStyle().Foreground(compat.AdaptiveColor{
+		Light: lipgloss.Color("#92400e"),
+		Dark:  lipgloss.Color("#fcd34d"),
+	})
+	badgeConflict = lipgloss.NewStyle().Bold(true).Foreground(compat.AdaptiveColor{
+		Light: lipgloss.Color("#b45309"),
+		Dark:  lipgloss.Color("#fbbf24"),
+	})
+)
+
+func (mk Marker) badge() string {
+	var parts []string
+	if mk.Claimed && mk.Agent > 0 {
+		parts = append(parts, badgeClaim.Render(fmt.Sprintf("●%d", mk.Agent)))
+	} else if mk.Edited && mk.Agent > 0 {
+		parts = append(parts, badgeEdit.Render(fmt.Sprintf("✎%d", mk.Agent)))
+	} else if mk.Claimed {
+		parts = append(parts, badgeClaim.Render("●"))
+	} else if mk.Edited {
+		parts = append(parts, badgeEdit.Render("✎"))
+	}
+	if mk.Conflict {
+		parts = append(parts, badgeConflict.Render("⚠"))
+	}
+	return strings.Join(parts, " ")
+}
 
 // OpenFileMsg lo emite el árbol al pulsar enter sobre un archivo.
 type OpenFileMsg struct{ Path string }
@@ -63,6 +105,28 @@ type Model struct {
 
 	w, h    int
 	focused bool
+	markers map[string]Marker
+}
+
+// SetMarkers actualiza los marcadores de los archivos (por ruta relativa o absoluta).
+func (m *Model) SetMarkers(markers map[string]Marker) {
+	m.markers = markers
+}
+
+func (m Model) markerFor(n *node) (Marker, bool) {
+	if len(m.markers) == 0 || n == nil {
+		return Marker{}, false
+	}
+	if mk, ok := m.markers[n.path]; ok {
+		return mk, true
+	}
+	if mk, ok := m.markers[n.rel]; ok {
+		return mk, true
+	}
+	if mk, ok := m.markers[filepath.ToSlash(n.rel)]; ok {
+		return mk, true
+	}
+	return Marker{}, false
 }
 
 // New crea el árbol de root con la raíz desplegada.
@@ -351,6 +415,13 @@ func (m Model) View() string {
 		text := strings.Repeat("  ", max(n.depth-1, 0)) + marker + name
 		if n == m.root {
 			text = "▾ " + n.name + "/"
+		}
+		if !n.dir {
+			if mk, ok := m.markerFor(n); ok {
+				if b := mk.badge(); b != "" {
+					text += " " + b
+				}
+			}
 		}
 		text = fit(text, m.w)
 		switch {

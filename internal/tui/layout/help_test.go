@@ -201,9 +201,9 @@ func TestPaletteAgentActionsAndHints(t *testing.T) {
 		id   string
 		hint string
 	}{
-		{cmdFocusTree, "shift+tab"},
-		{cmdFocusEditor, "tab"},
-		{cmdFocusChat, "tab"},
+		{cmdFocusTree, "alt+1"},
+		{cmdFocusEditor, "alt+2"},
+		{cmdFocusChat, "alt+3"},
 	}
 	for _, fc := range focusChecks {
 		it := findItem(fc.id)

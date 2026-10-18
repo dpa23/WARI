@@ -71,6 +71,7 @@ type diffView struct {
 // barra. label es lo que la lista muestra junto al agente ("" es "choque").
 type alertInfo struct {
 	id    orch.ID
+	path  string
 	text  string
 	label string
 }
@@ -577,6 +578,15 @@ func (m *Panel) SelectAgent(id orch.ID) bool {
 	return false
 }
 
+// Supervisor devuelve el supervisor de agentes (nil si no hay).
+func (m Panel) Supervisor() *orch.Supervisor { return m.sup }
+
+// ConflictPath devuelve la ruta relativa del archivo en choque sin resolver ("" si no hay).
+func (m Panel) ConflictPath() string { return m.alert.path }
+
+// ConflictAgent devuelve el ID del agente pausado por el choque (0 si no hay).
+func (m Panel) ConflictAgent() orch.ID { return m.alert.id }
+
 // Quit cierra a todos los agentes y sale. Si el programa muere antes, de todos
 // modos lo cierra el defer de main.
 func (m Panel) Quit() (Panel, tea.Cmd) { return m.quit() }
@@ -665,7 +675,7 @@ func (m *Panel) applyNotice(u orch.Update) bool {
 	}
 	switch n.Kind {
 	case orch.NoticeConflict:
-		m.alert = alertInfo{id: n.Agent, text: n.Text}
+		m.alert = alertInfo{id: n.Agent, path: n.Path, text: n.Text}
 		add(v, kindWarn, "⚠ "+n.Text)
 		if !n.Late {
 			add(v, kindInfo, fmt.Sprintf("%s reanuda y le da el archivo; %s lo detiene y descarta su turno",

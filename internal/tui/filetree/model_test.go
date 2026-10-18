@@ -409,3 +409,42 @@ func TestRefreshDropsDeletedAndClampsCursor(t *testing.T) {
 		t.Error("debía quedar algo seleccionado")
 	}
 }
+
+func TestFileTreeMarkersClaimEditConflict(t *testing.T) {
+	root := project(t)
+	m := newTree(t, root)
+
+	// Inicialmente sin marcadores
+	view0 := m.View()
+	if strings.Contains(view0, "●") || strings.Contains(view0, "✎") || strings.Contains(view0, "⚠") {
+		t.Fatalf("no debía haber marcadores: %q", view0)
+	}
+
+	// 1. Archivo reclamado por agente 1
+	m.SetMarkers(map[string]Marker{
+		"b.txt": {Agent: 1, Claimed: true},
+	})
+	view1 := m.View()
+	if !strings.Contains(view1, "b.txt") || !strings.Contains(view1, "●1") {
+		t.Fatalf("b.txt debía tener marcador ●1: %q", view1)
+	}
+
+	// 2. Archivo editado por agente 2
+	m.SetMarkers(map[string]Marker{
+		"b.txt":     {Agent: 1, Claimed: true},
+		"Zeta.java": {Agent: 2, Edited: true},
+	})
+	view2 := m.View()
+	if !strings.Contains(view2, "Zeta.java") || !strings.Contains(view2, "✎2") {
+		t.Fatalf("Zeta.java debía tener marcador ✎2: %q", view2)
+	}
+
+	// 3. Archivo con choque activo
+	m.SetMarkers(map[string]Marker{
+		"b.txt": {Agent: 1, Claimed: true, Conflict: true},
+	})
+	view3 := m.View()
+	if !strings.Contains(view3, "●1") || !strings.Contains(view3, "⚠") {
+		t.Fatalf("b.txt con choque debía tener ●1 y ⚠: %q", view3)
+	}
+}

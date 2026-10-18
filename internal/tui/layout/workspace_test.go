@@ -287,3 +287,133 @@ func TestPipelineKeysAreGlobalOnlyWithPipeline(t *testing.T) {
 		t.Fatal("sin pipeline, alt+e no debe hacer nada")
 	}
 }
+
+// TestDirectPanelFocusEscapingEditor comprueba que las acciones directas de foco
+// (focus_tree con alt+1, focus_editor con alt+2, focus_agents con alt+3)
+// escapan del editor aunque esté recibiendo texto y desplegan los paneles si estaban ocultos.
+func TestDirectPanelFocusEscapingEditor(t *testing.T) {
+	root := project(t)
+	m := newLayout(t, Config{Root: root}, 140, 30)
+	target := filepath.Join(root, "notes.txt")
+	m.openFile(target)
+	if !m.hasEd || m.focus != focusEditor {
+		t.Fatalf("editor debió abrirse con foco, focus=%v", m.focus)
+	}
+
+	// El usuario escribe en el editor; tab normalmente insertaría sangría
+	m, _ = send(m, typeKeys("texto")...)
+	if m.focus != focusEditor {
+		t.Fatalf("foco debió permanecer en editor al escribir, focus=%v", m.focus)
+	}
+
+	// alt+1 salta directamente al árbol de archivos
+	m, _ = send(m, press('1', tea.ModAlt))
+	if m.focus != focusTree {
+		t.Fatalf("alt+1 debió enfocar el árbol, focus=%v", m.focus)
+	}
+
+	// alt+3 salta directamente al panel de agentes
+	m, _ = send(m, press('3', tea.ModAlt))
+	if m.focus != focusChat {
+		t.Fatalf("alt+3 debió enfocar agentes, focus=%v", m.focus)
+	}
+
+	// alt+2 salta de vuelta al editor
+	m, _ = send(m, press('2', tea.ModAlt))
+	if m.focus != focusEditor {
+		t.Fatalf("alt+2 debió enfocar editor, focus=%v", m.focus)
+	}
+
+	// Con el árbol oculto, alt+1 lo despliega y le da el foco
+	m.treeOn = false
+	m.relayout()
+	if m.treeOn {
+		t.Fatal("árbol debía estar plegado")
+	}
+	m, _ = send(m, press('1', tea.ModAlt))
+	if !m.treeOn || m.focus != focusTree {
+		t.Fatalf("alt+1 debió desplegar y enfocar árbol: treeOn=%v focus=%v", m.treeOn, m.focus)
+	}
+
+	// Con el chat oculto, alt+3 lo despliega y le da el foco
+	m.chatOn = false
+	m.relayout()
+	if m.chatOn {
+		t.Fatal("chat debía estar plegado")
+	}
+	m, _ = send(m, press('3', tea.ModAlt))
+	if !m.chatOn || m.focus != focusChat {
+		t.Fatalf("alt+3 debió desplegar y enfocar chat: chatOn=%v focus=%v", m.chatOn, m.focus)
+	}
+}
+
+// TestTreeMarkersAndEditorHeaderAgentIndicators comprueba que los reclamos y
+// ediciones de agentes se reflejan en el árbol de archivos (●1, ✎1, ⚠) y en la cabecera
+// del editor ([reclamado por agente 1], ⚠ [choque]).
+func TestTreeMarkersAndEditorHeaderAgentIndicators(t *testing.T) {
+	root := project(t)
+	sup := orch.New(2)
+	defer sup.Close()
+	if err := sup.AttachWorkspace(orch.Workspace{Root: root}); err != nil {
+		t.Fatal(err)
+	}
+	var made []*efake
+	m := New(Config{Root: root, Chat: tui.Config{
+		Supervisor: sup,
+		NewAgent:   func() agent.Agent { f := newEfake(); made = append(made, f); return f },
+	}})
+	m, _ = m.update(tea.WindowSizeMsg{Width: 140, Height: 30})
+	m = m.focusPanel(focusChat)
+
+	// Iniciar agente 1 y agente 2
+	m, _ = send(m, typeKeys("uno")...)
+	m, _ = send(m, press(tea.KeyEnter, 0))
+	m, _ = send(m, press('t', tea.ModCtrl))
+	m, _ = send(m, typeKeys("dos")...)
+	m, _ = send(m, press(tea.KeyEnter, 0))
+	if len(made) != 2 {
+		t.Fatalf("agentes = %d", len(made))
+	}
+
+	target := filepath.Join(root, "notes.txt")
+	made[0].ch <- agent.FileEditProposed{Tool: "Edit", Path: target}
+	for sup.Holder(target) == 0 {
+		time.Sleep(time.Millisecond)
+	}
+
+	// Abrir el archivo en el editor
+	m.openFile(target)
+	m.updateTreeMarkers()
+
+	// 1. Título del editor debe indicar que el archivo está reclamado por el agente 1
+	title := m.editorTitle()
+	if !strings.Contains(title, "[reclamado por agente 1]") {
+		t.Fatalf("título del editor = %q, want [reclamado por agente 1]", title)
+	}
+
+	// 2. Vista del árbol debe contener el indicador ●1
+	_ = m.render()
+	treeView := plain(m.tree.View())
+	if !strings.Contains(treeView, "●1") {
+		t.Fatalf("árbol debe mostrar ●1 para notes.txt:\n%s", treeView)
+	}
+
+	// 3. Provocar choque con el segundo agente
+	made[1].ch <- agent.FileEditProposed{Tool: "Edit", Path: target}
+	m = pump(t, m, func(m Model) bool {
+		return m.chat.Alert() != ""
+	})
+
+	_ = m.render()
+	// Título del editor ahora debe indicar el choque
+	titleWithConflict := m.editorTitle()
+	if !strings.Contains(titleWithConflict, "[reclamado por agente 1]") || !strings.Contains(titleWithConflict, "⚠ [choque]") {
+		t.Fatalf("título del editor en choque = %q, want [reclamado por agente 1] y ⚠ [choque]", titleWithConflict)
+	}
+
+	// Árbol debe mostrar el indicador de choque ⚠
+	treeViewWithConflict := plain(m.tree.View())
+	if !strings.Contains(treeViewWithConflict, "⚠") {
+		t.Fatalf("árbol debe mostrar ⚠ tras choque:\n%s", treeViewWithConflict)
+	}
+}
