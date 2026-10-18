@@ -324,3 +324,23 @@ func TestStdinNilByDefault(t *testing.T) {
 		t.Error("Stdin no es nil sin Spec.Stdin")
 	}
 }
+
+func TestNoSignalableMembers(t *testing.T) {
+	tests := []struct {
+		name string
+		err  error
+		goos string
+		want bool
+	}{
+		{"ESRCH en linux", syscall.ESRCH, "linux", true},
+		{"ESRCH en darwin", syscall.ESRCH, "darwin", true},
+		{"EPERM en darwin: grupo de zombis", syscall.EPERM, "darwin", true},
+		{"EPERM en linux: permiso denegado real", syscall.EPERM, "linux", false},
+		{"sin error", nil, "darwin", false},
+	}
+	for _, tt := range tests {
+		if got := noSignalableMembers(tt.err, tt.goos); got != tt.want {
+			t.Errorf("%s: noSignalableMembers = %v, quiero %v", tt.name, got, tt.want)
+		}
+	}
+}

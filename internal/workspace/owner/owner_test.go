@@ -121,3 +121,20 @@ func TestReleaseAndTakeover(t *testing.T) {
 		t.Fatal("ReleasePath")
 	}
 }
+
+// En macOS el directorio temporal vive bajo un enlace (/var → /private/var):
+// la ruta sin resolver y la raíz resuelta deben seguir coincidiendo, también
+// para un archivo que aún no existe.
+func TestRelPathThroughSymlinkedParent(t *testing.T) {
+	real := t.TempDir()
+	link := filepath.Join(t.TempDir(), "enlace")
+	if err := os.Symlink(real, link); err != nil {
+		t.Skip("sin enlaces simbólicos")
+	}
+	if rel, in := Rel(real, filepath.Join(link, "nuevo.go")); rel != "nuevo.go" || !in {
+		t.Errorf("ruta por enlace, raíz real: %q %v", rel, in)
+	}
+	if rel, in := Rel(link, filepath.Join(real, "sub", "x.go")); in && rel != "sub/x.go" {
+		t.Errorf("raíz por enlace: %q %v", rel, in)
+	}
+}

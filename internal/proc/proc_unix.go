@@ -5,6 +5,7 @@ package proc
 import (
 	"errors"
 	"os/exec"
+	"runtime"
 	"syscall"
 )
 
@@ -34,15 +35,27 @@ func killGroup(p *Process) error {
 	return signalGroupIfAny(p, syscall.SIGKILL)
 }
 
-// groupAlive indica si el grupo todavía tiene miembros (incluidos zombis).
+// groupAlive indica si el grupo todavía tiene miembros a los que señalar.
 // La señal 0 solo comprueba existencia.
 func groupAlive(p *Process) bool {
-	return !errors.Is(syscall.Kill(-p.PGID(), 0), syscall.ESRCH)
+	return !noSignalableMembers(syscall.Kill(-p.PGID(), 0), runtime.GOOS)
+}
+
+// noSignalableMembers dice si el error de kill(-pgid, ...) significa que el
+// grupo ya no tiene procesos a los que señalar. ESRCH es el caso general. En
+// macOS, un grupo cuyos únicos miembros son zombis responde EPERM en vez de
+// ESRCH: como el grupo es nuestro, EPERM solo puede venir de ahí, y no hay
+// nada que matar. En Linux EPERM sí es un permiso denegado real.
+func noSignalableMembers(err error, goos string) bool {
+	if errors.Is(err, syscall.ESRCH) {
+		return true
+	}
+	return goos == "darwin" && errors.Is(err, syscall.EPERM)
 }
 
 func signalGroup(p *Process, sig syscall.Signal) error {
 	err := syscall.Kill(-p.PGID(), sig)
-	if errors.Is(err, syscall.ESRCH) {
+	if noSignalableMembers(err, runtime.GOOS) {
 		return ErrNotRunning
 	}
 	return err
