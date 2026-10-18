@@ -1,6 +1,7 @@
 package checkpoint
 
 import (
+	"crypto/rand"
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
@@ -16,11 +17,21 @@ import (
 )
 
 // Store manages file checkpoints per agent and turn under <root>/.wari/checkpoints/.
+//
+// Every access to the workspace and to the checkpoint tree goes through an
+// *os.Root, so no path (manifest key, symlink, race) can reach outside root.
 type Store struct {
-	mu      sync.RWMutex
-	root    string
-	baseDir string
+	mu   sync.RWMutex
+	root string
+	rt   *os.Root
 }
+
+// baseRel is the checkpoint directory relative to the workspace root.
+var baseRel = filepath.Join(".wari", "checkpoints")
+
+// maxMode is the widest permission set accepted from a manifest: ordinary
+// rwx bits only, never setuid, setgid, sticky or file-type bits.
+const maxMode os.FileMode = 0o777
 
 type fileRecord struct {
 	Existed bool        `json:"existed"`
@@ -55,20 +66,26 @@ func Open(root string) (*Store, error) {
 		return nil, fmt.Errorf("checkpoint: root %q is not a directory", absRoot)
 	}
 
-	baseDir := filepath.Join(absRoot, ".wari", "checkpoints")
-	if err := os.MkdirAll(baseDir, 0o755); err != nil {
-		return nil, fmt.Errorf("checkpoint: create checkpoints dir %q: %w", baseDir, err)
+	rt, err := os.OpenRoot(absRoot)
+	if err != nil {
+		return nil, fmt.Errorf("checkpoint: open root %q: %w", absRoot, err)
+	}
+	if err := rt.MkdirAll(baseRel, 0o755); err != nil {
+		_ = rt.Close()
+		return nil, fmt.Errorf("checkpoint: create checkpoints dir %q: %w", filepath.Join(absRoot, baseRel), err)
 	}
 
-	return &Store{
-		root:    absRoot,
-		baseDir: baseDir,
-	}, nil
+	return &Store{root: absRoot, rt: rt}, nil
 }
 
 // Root returns the root directory managed by this store.
 func (s *Store) Root() string {
 	return s.root
+}
+
+// Close releases the handle to the workspace root. The Store must not be used afterwards.
+func (s *Store) Close() error {
+	return s.rt.Close()
 }
 
 // Save copies the current state of the file at relPath (or records that it did not exist)
@@ -93,7 +110,7 @@ func (s *Store) Save(agent string, turn int, relPath string) error {
 	defer s.mu.Unlock()
 
 	turnDir := s.turnDir(agent, turn)
-	if err := os.MkdirAll(turnDir, 0o755); err != nil {
+	if err := s.rt.MkdirAll(turnDir, 0o755); err != nil {
 		return fmt.Errorf("checkpoint: create turn dir %q: %w", turnDir, err)
 	}
 
@@ -109,37 +126,36 @@ func (s *Store) Save(agent string, turn int, relPath string) error {
 		return nil
 	}
 
-	targetPath := filepath.Join(s.root, filepath.FromSlash(cleanRel))
-	fi, err := os.Lstat(targetPath)
+	targetPath := filepath.FromSlash(cleanRel)
+	fi, err := s.rt.Lstat(targetPath)
 	if err == nil {
-		data, err := os.ReadFile(targetPath)
+		if !fi.Mode().IsRegular() {
+			return fmt.Errorf("checkpoint: %q is not a regular file", cleanRel)
+		}
+		data, err := s.rt.ReadFile(targetPath)
 		if err != nil {
-			return fmt.Errorf("checkpoint: read file %q: %w", targetPath, err)
+			return fmt.Errorf("checkpoint: read file %q: %w", cleanRel, err)
 		}
 
-		destPath := filepath.Join(s.turnFilesDir(agent, turn), filepath.FromSlash(cleanRel))
-		if err := os.MkdirAll(filepath.Dir(destPath), 0o755); err != nil {
-			return fmt.Errorf("checkpoint: create checkpoint file dir %q: %w", filepath.Dir(destPath), err)
-		}
-
+		destPath := filepath.Join(s.turnFilesDir(agent, turn), targetPath)
 		perm := fi.Mode().Perm()
 		if perm == 0 {
 			perm = 0o644
 		}
-		if err := os.WriteFile(destPath, data, perm); err != nil {
-			return fmt.Errorf("checkpoint: write checkpoint file %q: %w", destPath, err)
+		if err := s.atomicWriteFile(destPath, data, perm); err != nil {
+			return err
 		}
 
 		m.Files[cleanRel] = fileRecord{
 			Existed: true,
-			Mode:    fi.Mode(),
+			Mode:    perm,
 		}
 	} else if errors.Is(err, os.ErrNotExist) {
 		m.Files[cleanRel] = fileRecord{
 			Existed: false,
 		}
 	} else {
-		return fmt.Errorf("checkpoint: stat %q: %w", targetPath, err)
+		return fmt.Errorf("checkpoint: stat %q: %w", cleanRel, err)
 	}
 
 	return s.saveManifest(agent, turn, m)
@@ -164,35 +180,49 @@ func (s *Store) RevertFile(agent string, turn int, relPath string) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
-	return s.revertFileLocked(agent, turn, cleanRel)
-}
-
-func (s *Store) revertFileLocked(agent string, turn int, cleanRel string) error {
 	m, err := s.loadManifest(agent, turn)
 	if err != nil {
 		return err
 	}
+	// The whole manifest must be sound, not only the requested entry.
+	if err := s.validateManifestKeys(m); err != nil {
+		return err
+	}
+	return s.revertFileLocked(agent, turn, m, cleanRel)
+}
 
+// revertFileLocked restores cleanRel from m. Callers must have validated m
+// with validateManifestKeys.
+func (s *Store) revertFileLocked(agent string, turn int, m *manifest, cleanRel string) error {
 	rec, ok := m.Files[cleanRel]
 	if !ok {
 		return fmt.Errorf("checkpoint: file %q not found in checkpoint for agent %q turn %d", cleanRel, agent, turn)
 	}
 
-	targetPath := filepath.Join(s.root, filepath.FromSlash(cleanRel))
+	target := filepath.FromSlash(cleanRel)
 	if !rec.Existed {
-		if err := os.Remove(targetPath); err != nil && !errors.Is(err, os.ErrNotExist) {
-			return fmt.Errorf("checkpoint: remove %q: %w", targetPath, err)
+		if err := s.rt.Remove(target); err != nil && !errors.Is(err, os.ErrNotExist) {
+			return fmt.Errorf("checkpoint: remove %q: %w", cleanRel, err)
 		}
 		return nil
 	}
 
-	srcPath := filepath.Join(s.turnFilesDir(agent, turn), filepath.FromSlash(cleanRel))
-	data, err := os.ReadFile(srcPath)
+	src := filepath.Join(s.turnFilesDir(agent, turn), target)
+	// The copy must be a plain file: a planted symlink must not be followed
+	// (even inside root) to smuggle other content into the workspace.
+	fi, err := s.rt.Lstat(src)
 	if err != nil {
-		return fmt.Errorf("checkpoint: read checkpoint copy %q: %w", srcPath, err)
+		return fmt.Errorf("checkpoint: stat checkpoint copy %q: %w", src, err)
+	}
+	if !fi.Mode().IsRegular() {
+		return fmt.Errorf("checkpoint: checkpoint copy %q is not a regular file", src)
+	}
+	data, err := s.rt.ReadFile(src)
+	if err != nil {
+		return fmt.Errorf("checkpoint: read checkpoint copy %q: %w", src, err)
 	}
 
-	return s.atomicWriteFile(targetPath, data, rec.Mode)
+	return s.atomicWriteFile(target, data, rec.Mode)
 }
 
 // RevertTurn restores all files checkpointed for the given agent and turn.
@@ -207,23 +237,19 @@ func (s *Store) RevertTurn(agent string, turn int) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
-	return s.revertTurnLocked(agent, turn)
-}
-
-func (s *Store) revertTurnLocked(agent string, turn int) error {
 	m, err := s.loadManifest(agent, turn)
 	if err != nil {
 		return err
 	}
-
-	files := make([]string, 0, len(m.Files))
-	for f := range m.Files {
-		files = append(files, f)
+	if err := s.validateManifestKeys(m); err != nil {
+		return err
 	}
-	sort.Strings(files)
+	return s.revertManifestLocked(agent, turn, m)
+}
 
-	for _, f := range files {
-		if err := s.revertFileLocked(agent, turn, f); err != nil {
+func (s *Store) revertManifestLocked(agent string, turn int, m *manifest) error {
+	for _, f := range sortedKeys(m) {
+		if err := s.revertFileLocked(agent, turn, m, f); err != nil {
 			return err
 		}
 	}
@@ -231,6 +257,7 @@ func (s *Store) revertTurnLocked(agent string, turn int) error {
 }
 
 // RevertAgent reverts all turns recorded for agent, from the newest turn to the oldest.
+// Every manifest is validated before anything is modified.
 func (s *Store) RevertAgent(agent string) error {
 	if err := validateAgent(agent); err != nil {
 		return err
@@ -244,8 +271,20 @@ func (s *Store) RevertAgent(agent string) error {
 		return err
 	}
 
-	for _, turn := range turns {
-		if err := s.revertTurnLocked(agent, turn); err != nil {
+	manifests := make([]*manifest, len(turns))
+	for i, turn := range turns {
+		m, err := s.loadManifest(agent, turn)
+		if err != nil {
+			return fmt.Errorf("checkpoint: revert turn %d: %w", turn, err)
+		}
+		if err := s.validateManifestKeys(m); err != nil {
+			return fmt.Errorf("checkpoint: revert turn %d: %w", turn, err)
+		}
+		manifests[i] = m
+	}
+
+	for i, turn := range turns {
+		if err := s.revertManifestLocked(agent, turn, manifests[i]); err != nil {
 			return fmt.Errorf("checkpoint: revert turn %d: %w", turn, err)
 		}
 	}
@@ -268,13 +307,16 @@ func (s *Store) Files(agent string, turn int) ([]string, error) {
 	if err != nil {
 		return nil, err
 	}
+	return sortedKeys(m), nil
+}
 
+func sortedKeys(m *manifest) []string {
 	files := make([]string, 0, len(m.Files))
 	for f := range m.Files {
 		files = append(files, f)
 	}
 	sort.Strings(files)
-	return files, nil
+	return files
 }
 
 // Diff returns the checkpointed content (old) and current workspace content (current)
@@ -307,23 +349,30 @@ func (s *Store) Diff(agent string, turn int, relPath string) (old, current []byt
 		return nil, nil, fmt.Errorf("checkpoint: file %q not found in checkpoint for agent %q turn %d", cleanRel, agent, turn)
 	}
 
+	target := filepath.FromSlash(cleanRel)
 	if rec.Existed {
-		srcPath := filepath.Join(s.turnFilesDir(agent, turn), filepath.FromSlash(cleanRel))
-		data, err := os.ReadFile(srcPath)
+		srcPath := filepath.Join(s.turnFilesDir(agent, turn), target)
+		fi, err := s.rt.Lstat(srcPath)
+		if err != nil {
+			return nil, nil, fmt.Errorf("checkpoint: stat checkpoint file %q: %w", srcPath, err)
+		}
+		if !fi.Mode().IsRegular() {
+			return nil, nil, fmt.Errorf("checkpoint: checkpoint file %q is not a regular file", srcPath)
+		}
+		data, err := s.rt.ReadFile(srcPath)
 		if err != nil {
 			return nil, nil, fmt.Errorf("checkpoint: read checkpoint file %q: %w", srcPath, err)
 		}
 		old = data
 	}
 
-	targetPath := filepath.Join(s.root, filepath.FromSlash(cleanRel))
-	curData, err := os.ReadFile(targetPath)
+	curData, err := s.rt.ReadFile(target)
 	if err == nil {
 		current = curData
 	} else if errors.Is(err, os.ErrNotExist) {
 		current = nil
 	} else {
-		return nil, nil, fmt.Errorf("checkpoint: read workspace file %q: %w", targetPath, err)
+		return nil, nil, fmt.Errorf("checkpoint: read workspace file %q: %w", cleanRel, err)
 	}
 
 	return old, current, nil
@@ -344,8 +393,11 @@ func SHA256(path string) (string, error) {
 	return hex.EncodeToString(h.Sum(nil)), nil
 }
 
+// The helpers below return paths relative to the workspace root; they are only
+// ever passed to s.rt.
+
 func (s *Store) turnDir(agent string, turn int) string {
-	return filepath.Join(s.baseDir, agent, strconv.Itoa(turn))
+	return filepath.Join(baseRel, agent, strconv.Itoa(turn))
 }
 
 func (s *Store) turnFilesDir(agent string, turn int) string {
@@ -356,9 +408,13 @@ func (s *Store) manifestPath(agent string, turn int) string {
 	return filepath.Join(s.turnDir(agent, turn), "manifest.json")
 }
 
+// loadManifest reads and sanity-checks the manifest of agent/turn. The manifest
+// lives inside the workspace and may be forged, so it is untrusted input: every
+// key must already be in canonical form and every mode must be a plain
+// permission set. A single bad entry rejects the whole manifest.
 func (s *Store) loadManifest(agent string, turn int) (*manifest, error) {
 	path := s.manifestPath(agent, turn)
-	data, err := os.ReadFile(path)
+	data, err := s.rt.ReadFile(path)
 	if err != nil {
 		if errors.Is(err, os.ErrNotExist) {
 			return nil, fmt.Errorf("checkpoint: turn %d not found for agent %q: %w", turn, agent, os.ErrNotExist)
@@ -373,7 +429,34 @@ func (s *Store) loadManifest(agent string, turn int) (*manifest, error) {
 	if m.Files == nil {
 		m.Files = make(map[string]fileRecord)
 	}
+	for key, rec := range m.Files {
+		clean, err := cleanRelPath(key)
+		if err != nil {
+			return nil, fmt.Errorf("checkpoint: manifest %q: invalid key: %w", path, err)
+		}
+		if clean != key {
+			return nil, fmt.Errorf("checkpoint: manifest %q: key %q is not canonical (%q)", path, key, clean)
+		}
+		if rec.Mode&^maxMode != 0 {
+			return nil, fmt.Errorf("checkpoint: manifest %q: key %q has invalid mode %#o", path, key, uint32(rec.Mode))
+		}
+	}
 	return &m, nil
+}
+
+// validateManifestKeys applies the full path validation (including the
+// symlink walk against the current workspace) to every key of m.
+func (s *Store) validateManifestKeys(m *manifest) error {
+	for key := range m.Files {
+		clean, err := s.validateAndCleanRelPath(key)
+		if err != nil {
+			return fmt.Errorf("checkpoint: manifest key rejected: %w", err)
+		}
+		if clean != key {
+			return fmt.Errorf("checkpoint: manifest key %q is not canonical (%q)", key, clean)
+		}
+	}
+	return nil
 }
 
 func (s *Store) saveManifest(agent string, turn int, m *manifest) error {
@@ -385,12 +468,17 @@ func (s *Store) saveManifest(agent string, turn int, m *manifest) error {
 }
 
 func (s *Store) agentTurnsLocked(agent string) ([]int, error) {
-	agentDir := filepath.Join(s.baseDir, agent)
-	entries, err := os.ReadDir(agentDir)
+	agentDir := filepath.Join(baseRel, agent)
+	d, err := s.rt.Open(agentDir)
 	if err != nil {
 		if errors.Is(err, os.ErrNotExist) {
 			return nil, nil
 		}
+		return nil, fmt.Errorf("checkpoint: read agent dir %q: %w", agentDir, err)
+	}
+	entries, err := d.ReadDir(-1)
+	_ = d.Close()
+	if err != nil {
 		return nil, fmt.Errorf("checkpoint: read agent dir %q: %w", agentDir, err)
 	}
 
@@ -413,21 +501,48 @@ func (s *Store) agentTurnsLocked(agent string) ([]int, error) {
 	return turns, nil
 }
 
-func (s *Store) atomicWriteFile(targetPath string, data []byte, mode os.FileMode) error {
-	dir := filepath.Dir(targetPath)
-	if err := os.MkdirAll(dir, 0o755); err != nil {
-		return fmt.Errorf("checkpoint: mkdir %q: %w", dir, err)
+// atomicWriteFile writes data to target (relative to the root) through a
+// temporary file in the same directory followed by a rename, all inside s.rt.
+func (s *Store) atomicWriteFile(target string, data []byte, mode os.FileMode) error {
+	dir := filepath.Dir(target)
+	if dir != "." {
+		if err := s.rt.MkdirAll(dir, 0o755); err != nil {
+			return fmt.Errorf("checkpoint: mkdir %q: %w", dir, err)
+		}
 	}
 
-	tmp, err := os.CreateTemp(dir, ".wari-atomic-*")
-	if err != nil {
-		return fmt.Errorf("checkpoint: create temp in %q: %w", dir, err)
+	perm := mode.Perm()
+	if perm == 0 {
+		perm = 0o644
 	}
-	tmpName := tmp.Name()
+
+	var (
+		tmp     *os.File
+		tmpName string
+	)
+	for range 16 {
+		var rnd [8]byte
+		if _, err := rand.Read(rnd[:]); err != nil {
+			return fmt.Errorf("checkpoint: random temp name: %w", err)
+		}
+		tmpName = filepath.Join(dir, ".wari-atomic-"+hex.EncodeToString(rnd[:]))
+		f, err := s.rt.OpenFile(tmpName, os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0o600)
+		if err == nil {
+			tmp = f
+			break
+		}
+		if !errors.Is(err, os.ErrExist) {
+			return fmt.Errorf("checkpoint: create temp in %q: %w", dir, err)
+		}
+	}
+	if tmp == nil {
+		return fmt.Errorf("checkpoint: create temp in %q: too many name collisions", dir)
+	}
+
 	success := false
 	defer func() {
 		if !success {
-			_ = os.Remove(tmpName)
+			_ = s.rt.Remove(tmpName)
 		}
 	}()
 
@@ -439,26 +554,25 @@ func (s *Store) atomicWriteFile(targetPath string, data []byte, mode os.FileMode
 		_ = tmp.Close()
 		return fmt.Errorf("checkpoint: sync temp %q: %w", tmpName, err)
 	}
+	if err := tmp.Chmod(perm); err != nil {
+		_ = tmp.Close()
+		return fmt.Errorf("checkpoint: chmod temp %q: %w", tmpName, err)
+	}
 	if err := tmp.Close(); err != nil {
 		return fmt.Errorf("checkpoint: close temp %q: %w", tmpName, err)
 	}
 
-	perm := mode.Perm()
-	if perm == 0 {
-		perm = 0o644
-	}
-	if err := os.Chmod(tmpName, perm); err != nil {
-		return fmt.Errorf("checkpoint: chmod temp %q: %w", tmpName, err)
-	}
-
-	if err := os.Rename(tmpName, targetPath); err != nil {
-		return fmt.Errorf("checkpoint: rename temp %q to %q: %w", tmpName, targetPath, err)
+	if err := s.rt.Rename(tmpName, target); err != nil {
+		return fmt.Errorf("checkpoint: rename temp %q to %q: %w", tmpName, target, err)
 	}
 	success = true
 	return nil
 }
 
-func (s *Store) validateAndCleanRelPath(relPath string) (string, error) {
+// cleanRelPath is the purely syntactic part of path validation: it returns the
+// cleaned, slash-separated relative path or an error if relPath is empty,
+// absolute, contains "..", or points into .wari.
+func cleanRelPath(relPath string) (string, error) {
 	if relPath == "" {
 		return "", fmt.Errorf("checkpoint: path cannot be empty")
 	}
@@ -484,18 +598,26 @@ func (s *Store) validateAndCleanRelPath(relPath string) (string, error) {
 	if cleanSlash == ".wari" || strings.HasPrefix(cleanSlash, ".wari/") {
 		return "", fmt.Errorf("checkpoint: path %q inside .wari is not allowed", relPath)
 	}
-
-	target := filepath.Join(s.root, filepath.FromSlash(cleanSlash))
-	rel, err := filepath.Rel(s.root, target)
-	if err != nil || rel == ".." || strings.HasPrefix(rel, ".."+string(filepath.Separator)) || strings.HasPrefix(rel, "../") {
+	if !filepath.IsLocal(clean) {
 		return "", fmt.Errorf("checkpoint: path %q escapes root", relPath)
+	}
+	return cleanSlash, nil
+}
+
+// validateAndCleanRelPath validates relPath syntactically (cleanRelPath) and
+// then walks it inside the root rejecting symlinks and directories. The walk is
+// defense in depth; containment itself is guaranteed by s.rt.
+func (s *Store) validateAndCleanRelPath(relPath string) (string, error) {
+	cleanSlash, err := cleanRelPath(relPath)
+	if err != nil {
+		return "", err
 	}
 
 	parts := strings.Split(cleanSlash, "/")
-	curr := s.root
+	curr := ""
 	for i, part := range parts {
 		curr = filepath.Join(curr, part)
-		fi, err := os.Lstat(curr)
+		fi, err := s.rt.Lstat(curr)
 		if err != nil {
 			if errors.Is(err, os.ErrNotExist) {
 				break
