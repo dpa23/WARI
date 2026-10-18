@@ -18,6 +18,13 @@
 // aunque no tenga el foco). El resto va al panel con foco.
 // Todos salen de config.Keymap.
 //
+// Ayuda. F1 o '?' abren el overlay modal de ayuda con los atajos vigentes de
+// config.Keymap agrupados por contexto (Navegación, Editor, Agentes, Diffs, Pipeline).
+// Regla para '?': solo actúa cuando el foco no está escribiendo en el editor
+// (con archivo abierto) ni en la entrada de texto del chat, para no interceptar
+// el signo '?' al redactar código o mensajes. F1 abre la ayuda siempre.
+// Esc cierra el overlay; el overlay se adapta sin desbordes a cualquier tamaño.
+//
 // Seguridad de datos: abrir otro archivo con el actual sin guardar, o salir
 // en ese caso (con la tecla o desde la paleta), pide repetir la acción; la
 // confirmación se desarma con cualquier otra tecla. Guardar la confirma.
@@ -98,6 +105,9 @@ type Model struct {
 	// files es la última lista de archivos del proyecto; se refresca en
 	// segundo plano cada vez que se abre la paleta.
 	files []string
+
+	helpOpen   bool
+	helpScroll int
 }
 
 // filesMsg lleva la lista de archivos del proyecto para la paleta.
@@ -162,6 +172,9 @@ func (m Model) update(msg tea.Msg) (Model, tea.Cmd) {
 	case tea.KeyPressMsg:
 		return m.handleKey(msg)
 	case tea.PasteMsg:
+		if m.helpOpen {
+			return m, nil
+		}
 		if m.pal.open {
 			m.pal.addText(msg.Content)
 			return m, nil
@@ -211,9 +224,26 @@ func (m Model) firstKey(action string) string {
 
 func (m Model) handleKey(k tea.KeyPressMsg) (Model, tea.Cmd) {
 	m.msg = ""
+	if m.helpOpen {
+		return m.helpKey(k)
+	}
 	if m.pal.open {
 		return m.paletteKey(k)
 	}
+
+	// Regla de descubribilidad: F1 siempre abre el overlay de ayuda.
+	// La tecla '?' solo abre el overlay de ayuda cuando el foco no está escribiendo
+	// en el editor (con un archivo abierto) ni en la entrada de texto del chat,
+	// evitando interceptar el carácter '?' al redactar código o hacer preguntas.
+	isF1 := k.String() == "f1" || k.String() == "F1"
+	isQuestion := k.Text == "?" || k.String() == "?"
+	writing := (m.focus == focusEditor && m.hasEd) || (m.focus == focusChat && m.chat.Writing())
+	if isF1 || (isQuestion && !writing) {
+		m.helpOpen = true
+		m.helpScroll = 0
+		return m, nil
+	}
+
 	// Las confirmaciones pendientes (salir, abrir otro archivo) se desarman
 	// con cualquier otra tecla. Abrir la paleta no desarma la de salir, para
 	// poder confirmarla con "Salir"; las teclas del árbol no desarman la de
@@ -671,6 +701,11 @@ func (m Model) render() string {
 			rows[i] = l
 		}
 	}
+	if m.helpOpen {
+		for i, l := range m.helpView(m.w, len(rows)) {
+			rows[i] = l
+		}
+	}
 	return strings.Join(rows, "\n")
 }
 
@@ -736,6 +771,9 @@ func (m Model) statusBar() string {
 // cursor devuelve el cursor del componente con foco en coordenadas absolutas.
 func (m Model) cursor() *tea.Cursor {
 	if m.w <= 0 || m.h <= 0 {
+		return nil
+	}
+	if m.helpOpen {
 		return nil
 	}
 	if m.pal.open {

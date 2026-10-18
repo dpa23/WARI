@@ -552,3 +552,155 @@ func TestAtajosDelPanelSalenDeLaConfiguracion(t *testing.T) {
 		t.Fatalf("views = %d tras f2", len(m.views))
 	}
 }
+
+func TestPresupuestoEstilosYMicroBar(t *testing.T) {
+	// 1. microBar
+	if got := microBar(0); got != "[░░░░░]" {
+		t.Errorf("microBar(0) = %q; want [░░░░░]", got)
+	}
+	if got := microBar(0.6); got != "[■■■░░]" {
+		t.Errorf("microBar(0.6) = %q; want [■■■░░]", got)
+	}
+	if got := microBar(0.8); got != "[■■■■░]" {
+		t.Errorf("microBar(0.8) = %q; want [■■■■░]", got)
+	}
+	if got := microBar(1.0); got != "[■■■■■]" {
+		t.Errorf("microBar(1.0) = %q; want [■■■■■]", got)
+	}
+	if got := microBar(1.5); got != "[■■■■■]" {
+		t.Errorf("microBar(1.5) = %q; want [■■■■■]", got)
+	}
+
+	// 2. budgetStyle
+	base := lipgloss.NewStyle()
+	normal := budgetStyle(base, 0.70)
+	if normal.GetForeground() != base.GetForeground() {
+		t.Errorf("<=75%% no debe alterar color: %v", normal)
+	}
+	amber := budgetStyle(base, 0.76)
+	if amber.GetForeground() != lipgloss.Color("214") {
+		t.Errorf(">75%% debe ser ámbar (214): %v", amber.GetForeground())
+	}
+	redBold := budgetStyle(base, 0.91)
+	if redBold.GetForeground() != lipgloss.Color("9") || !redBold.GetBold() {
+		t.Errorf(">90%% debe ser rojo negrita (9 bold): fg=%v bold=%v", redBold.GetForeground(), redBold.GetBold())
+	}
+
+	// 3. formatDuration
+	if got := formatDuration(45 * time.Second); got != "45s" {
+		t.Errorf("formatDuration(45s) = %q", got)
+	}
+	if got := formatDuration(60 * time.Second); got != "1m" {
+		t.Errorf("formatDuration(60s) = %q", got)
+	}
+	if got := formatDuration(90 * time.Second); got != "1m30s" {
+		t.Errorf("formatDuration(90s) = %q", got)
+	}
+}
+
+func TestPresupuestoEnListaDeAgentes(t *testing.T) {
+	sup := orch.New(2)
+	defer sup.Close()
+	m := NewPanel(Config{
+		Supervisor: sup,
+		Budget: orch.Budget{
+			MaxTurns:    10,
+			MaxTokens:   1000,
+			MaxDuration: 100 * time.Second,
+		},
+	})
+	m.addView() // 2 agentes: m.views[0] (sel), m.views[1]
+	m.views[0].hasSnap = true
+	m.views[0].snap = orch.Snapshot{
+		State:   orch.Running,
+		Turns:   8, // 80% -> ámbar
+		Tokens:  500,
+		Elapsed: 92 * time.Second, // 92% -> rojo negrita
+		CostUSD: 0.05,
+	}
+	m.views[1].hasSnap = true
+	m.views[1].snap = orch.Snapshot{
+		State:   orch.Running,
+		Turns:   3,
+		Tokens:  950, // 95% -> rojo negrita
+		Elapsed: 10 * time.Second,
+		CostUSD: 0.02,
+	}
+
+	line0 := m.listLine(0) // seleccionado: microBar del recurso más cercano (tiempo: 92%)
+	line1 := m.listLine(1) // no seleccionado: sin microBar
+
+	// Agente 0 debe incluir la micro barra [■■■■■] y timeStr 92s/1m40s (o 92s/100s)
+	if !strings.Contains(line0, "[■■■■■]") {
+		t.Errorf("line0 debe tener micro barra [■■■■■]: %q", line0)
+	}
+	if !strings.Contains(line0, "t8/10") {
+		t.Errorf("line0 debe incluir t8/10: %q", line0)
+	}
+	if !strings.Contains(line0, "500/1000 tok") {
+		t.Errorf("line0 debe incluir 500/1000 tok: %q", line0)
+	}
+
+	// Agente 1 no está seleccionado: no debe contener microBar
+	if strings.Contains(line1, "[") && strings.Contains(line1, "░") {
+		t.Errorf("line1 no seleccionado no debe tener microBar: %q", line1)
+	}
+	if !strings.Contains(line1, "950/1000 tok") {
+		t.Errorf("line1 debe incluir 950/1000 tok: %q", line1)
+	}
+
+	// Comprobación de secuencias ANSI de color
+	// line0 tiene turnos al 80% (ámbar 214) y tiempo al 92% (rojo 9)
+	if !strings.Contains(line0, "214") {
+		t.Errorf("line0 debe contener código ANSI de ámbar 214: %q", line0)
+	}
+	if !strings.Contains(line0, "9") {
+		t.Errorf("line0 debe contener código ANSI de rojo 9: %q", line0)
+	}
+	// line1 tiene tokens al 95% (rojo 9)
+	if !strings.Contains(line1, "9") {
+		t.Errorf("line1 debe contener código ANSI de rojo 9: %q", line1)
+	}
+}
+
+func TestPanelAccionesExportadas(t *testing.T) {
+	sup := orch.New(2)
+	defer sup.Close()
+	m := NewPanel(Config{
+		Supervisor: sup,
+		NewAgent:   func() agent.Agent { return newPfake() },
+	})
+	if !m.Writing() {
+		t.Error("Writing() debe ser true al tener foco la entrada")
+	}
+	m.Blur()
+	if m.Writing() {
+		t.Error("Writing() debe ser false cuando está blurred")
+	}
+
+	// Métodos de acción
+	m2, _ := m.Pause()
+	if m2.cur() == nil {
+		t.Error("Pause retornó modelo inválido")
+	}
+	m3, _ := m.Stop()
+	if m3.cur() == nil {
+		t.Error("Stop retornó modelo inválido")
+	}
+	m4, _ := m.Diff()
+	if m4.cur() == nil {
+		t.Error("Diff retornó modelo inválido")
+	}
+	m5, _ := m.RevertFile()
+	if m5.cur() == nil {
+		t.Error("RevertFile retornó modelo inválido")
+	}
+	m6, _ := m.RevertTurn()
+	if m6.cur() == nil {
+		t.Error("RevertTurn retornó modelo inválido")
+	}
+	m7, _ := m.RevertAgent()
+	if m7.cur() == nil {
+		t.Error("RevertAgent retornó modelo inválido")
+	}
+}

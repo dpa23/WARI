@@ -26,11 +26,18 @@ const (
 	cmdToggleTree   = "toggle_tree"
 	cmdToggleAgents = "toggle_agents"
 	cmdNewSession   = "new_session"
+	cmdAgentPause   = "agent_pause"
+	cmdAgentStop    = "agent_stop"
 	cmdStopAll      = "stop_all"
-	cmdQuit         = "quit"
+	cmdDiffFile     = "diff_file"
+	cmdRevertFile   = "revert_file"
+	cmdRevertTurn   = "revert_turn"
+	cmdRevertAgent  = "revert_agent"
 	cmdFocusTree    = "focus_tree"
 	cmdFocusEditor  = "focus_editor"
 	cmdFocusChat    = "focus_chat"
+	cmdHelp         = "help"
+	cmdQuit         = "quit"
 	cmdOpenPrefix   = "open:"
 )
 
@@ -74,10 +81,16 @@ func (m Model) paletteItems() []item {
 		newItem(cmdToggleAgents, "Alternar panel de agentes", hint("toggle_agents")),
 		newItem(cmdNewSession, "Agente nuevo", hint("agent_new")),
 		newItem(cmdStopAll, "Detener todos los agentes", hint("stop_all")),
-		newItem(cmdFocusTree, "Ir al árbol de archivos", ""),
-		newItem(cmdFocusEditor, "Ir al editor", ""),
-		newItem(cmdFocusChat, "Ir al panel de agentes", ""),
+		newItem(cmdFocusTree, "Ir al árbol de archivos", hint("focus_prev")),
+		newItem(cmdFocusEditor, "Ir al editor", hint("focus_next")),
+		newItem(cmdFocusChat, "Ir al panel de agentes", hint("focus_next")),
 		newItem(cmdQuit, "Salir", hint("quit")),
+		newItem(cmdAgentPause, "Pausar o reanudar agente", hint("agent_pause")),
+		newItem(cmdAgentStop, "Detener agente", hint("agent_stop")),
+		newItem(cmdDiffFile, "Ver diff", hint("diff_file")),
+		newItem(cmdRevertFile, "Revertir archivo", hint("revert_file")),
+		newItem(cmdRevertTurn, "Revertir turno", hint("revert_turn")),
+		newItem(cmdRevertAgent, "Revertir agente", hint("revert_agent")),
 	}
 	for _, f := range m.files {
 		items = append(items, newItem(cmdOpenPrefix+f, f, "archivo"))
@@ -209,6 +222,54 @@ func (m Model) runCommand(id string) (Model, tea.Cmd) {
 		var cmd tea.Cmd
 		m.chat, cmd = m.chat.NewSession()
 		return m, cmd
+	case id == cmdAgentPause:
+		if !m.chatOn {
+			m.chatOn = true
+			m.relayout()
+		}
+		var cmd tea.Cmd
+		m.chat, cmd = m.chat.Pause()
+		return m, cmd
+	case id == cmdAgentStop:
+		if !m.chatOn {
+			m.chatOn = true
+			m.relayout()
+		}
+		var cmd tea.Cmd
+		m.chat, cmd = m.chat.Stop()
+		return m, cmd
+	case id == cmdDiffFile:
+		if !m.chatOn {
+			m.chatOn = true
+			m.relayout()
+		}
+		var cmd tea.Cmd
+		m.chat, cmd = m.chat.Diff()
+		return m, cmd
+	case id == cmdRevertFile:
+		if !m.chatOn {
+			m.chatOn = true
+			m.relayout()
+		}
+		var cmd tea.Cmd
+		m.chat, cmd = m.chat.RevertFile()
+		return m, cmd
+	case id == cmdRevertTurn:
+		if !m.chatOn {
+			m.chatOn = true
+			m.relayout()
+		}
+		var cmd tea.Cmd
+		m.chat, cmd = m.chat.RevertTurn()
+		return m, cmd
+	case id == cmdRevertAgent:
+		if !m.chatOn {
+			m.chatOn = true
+			m.relayout()
+		}
+		var cmd tea.Cmd
+		m.chat, cmd = m.chat.RevertAgent()
+		return m, cmd
 	case id == cmdStopAll:
 		return m.stopAll()
 	case id == cmdQuit:
@@ -219,6 +280,10 @@ func (m Model) runCommand(id string) (Model, tea.Cmd) {
 		return m.focusPanel(focusEditor), nil
 	case id == cmdFocusChat:
 		return m.focusPanel(focusChat), nil
+	case id == cmdHelp:
+		m.helpOpen = true
+		m.helpScroll = 0
+		return m, nil
 	case strings.HasPrefix(id, cmdOpenPrefix):
 		m.openFile(filepath.Join(m.root, filepath.FromSlash(strings.TrimPrefix(id, cmdOpenPrefix))))
 	}

@@ -3,7 +3,9 @@ package tui
 import (
 	"cmp"
 	"fmt"
+	"math"
 	"strings"
+	"time"
 
 	"charm.land/bubbles/v2/key"
 	"charm.land/bubbles/v2/spinner"
@@ -494,6 +496,36 @@ func (m Panel) StopAll() (Panel, tea.Cmd) {
 // un agente nuevo.
 func (m Panel) NewSession() (Panel, tea.Cmd) { return m.newAgent() }
 
+// Pause conmuta la pausa o reanudación del agente seleccionado.
+func (m Panel) Pause() (Panel, tea.Cmd) {
+	return m, m.pauseCmd(m.cur())
+}
+
+// Stop detiene el turno del agente seleccionado.
+func (m Panel) Stop() (Panel, tea.Cmd) {
+	return m, m.stopCmd(m.cur())
+}
+
+// Diff abre o alterna el diff de la última edición del agente seleccionado.
+func (m Panel) Diff() (Panel, tea.Cmd) {
+	return m.diff()
+}
+
+// RevertFile inicia o confirma la reversión del archivo seleccionado.
+func (m Panel) RevertFile() (Panel, tea.Cmd) {
+	return m.revert(revertFile, m.armed)
+}
+
+// RevertTurn inicia o confirma la reversión del turno del agente.
+func (m Panel) RevertTurn() (Panel, tea.Cmd) {
+	return m.revert(revertTurn, m.armed)
+}
+
+// RevertAgent inicia o confirma la reversión total del agente.
+func (m Panel) RevertAgent() (Panel, tea.Cmd) {
+	return m.revert(revertAgent, m.armed)
+}
+
 // Quit cierra a todos los agentes y sale. Si el programa muere antes, de todos
 // modos lo cierra el defer de main.
 func (m Panel) Quit() (Panel, tea.Cmd) { return m.quit() }
@@ -744,6 +776,41 @@ func (v *agentView) stateLabel() string {
 	return v.snap.State.String()
 }
 
+// formatDuration formatea una duración de forma compacta (p. ej. "45s", "1m30s").
+func formatDuration(d time.Duration) string {
+	d = d.Round(time.Second)
+	if d < time.Minute {
+		return fmt.Sprintf("%ds", int(d.Seconds()))
+	}
+	m := int(d.Minutes())
+	s := int(d.Seconds()) % 60
+	if s == 0 {
+		return fmt.Sprintf("%dm", m)
+	}
+	return fmt.Sprintf("%dm%ds", m, s)
+}
+
+// microBar genera una barra compacta de 5 caracteres tipo [■■■░░] según el ratio.
+func microBar(ratio float64) string {
+	const total = 5
+	clamped := max(0.0, min(ratio, 1.0))
+	filled := int(math.Round(clamped * float64(total)))
+	filled = max(0, min(filled, total))
+	return "[" + strings.Repeat("■", filled) + strings.Repeat("░", total-filled) + "]"
+}
+
+// budgetStyle aplica color ámbar al superar 75% del presupuesto (> 0.75) y
+// rojo negrita al superar 90% (> 0.90).
+func budgetStyle(base lipgloss.Style, ratio float64) lipgloss.Style {
+	if ratio > 0.90 {
+		return base.Foreground(lipgloss.Color("9")).Bold(true)
+	}
+	if ratio > 0.75 {
+		return base.Foreground(lipgloss.Color("214"))
+	}
+	return base
+}
+
 // listLine compone la fila del agente i de la lista.
 func (m Panel) listLine(i int) string {
 	v := m.views[i]
@@ -755,6 +822,18 @@ func (m Panel) listLine(i int) string {
 		marker = m.spin.View() + " "
 	}
 	b := m.cfg.Budget
+
+	var turnsRatio, tokensRatio, timeRatio float64
+	if b.MaxTurns > 0 {
+		turnsRatio = float64(v.snap.Turns) / float64(b.MaxTurns)
+	}
+	if b.MaxTokens > 0 {
+		tokensRatio = float64(v.snap.Tokens) / float64(b.MaxTokens)
+	}
+	if b.MaxDuration > 0 {
+		timeRatio = float64(v.snap.Elapsed) / float64(b.MaxDuration)
+	}
+
 	turns := fmt.Sprintf("t%d", v.snap.Turns)
 	if b.MaxTurns > 0 {
 		turns += fmt.Sprintf("/%d", b.MaxTurns)
@@ -763,11 +842,24 @@ func (m Panel) listLine(i int) string {
 	if b.MaxTokens > 0 {
 		tokens += fmt.Sprintf("/%d", b.MaxTokens)
 	}
-	line := fmt.Sprintf("%s%-10s %-15s %s · %s tok · US$%.4f",
-		marker, truncate(v.name, 10), v.stateLabel(), turns, tokens, v.snap.CostUSD)
+	var timeStr string
+	if b.MaxDuration > 0 {
+		timeStr = fmt.Sprintf("%s/%s", formatDuration(v.snap.Elapsed), formatDuration(b.MaxDuration))
+	}
 
-	if m.alert.id != 0 && v.id == m.alert.id {
-		line += " ⚠ " + cmp.Or(m.alert.label, "choque")
+	var bar string
+	var maxRatio float64 = -1
+	if b.MaxTurns > 0 && turnsRatio > maxRatio {
+		maxRatio = turnsRatio
+	}
+	if b.MaxTokens > 0 && tokensRatio > maxRatio {
+		maxRatio = tokensRatio
+	}
+	if b.MaxDuration > 0 && timeRatio > maxRatio {
+		maxRatio = timeRatio
+	}
+	if i == m.sel && maxRatio >= 0 {
+		bar = microBar(maxRatio)
 	}
 
 	st := lipgloss.NewStyle()
@@ -788,7 +880,31 @@ func (m Panel) listLine(i int) string {
 	if i == m.sel {
 		st = st.Bold(true).Reverse(true)
 	}
-	return st.MaxWidth(max(m.width, 1)).Render(line)
+
+	turnsSt := budgetStyle(st, turnsRatio)
+	tokensSt := budgetStyle(st, tokensRatio)
+	timeSt := budgetStyle(st, timeRatio)
+	barSt := budgetStyle(st, maxRatio)
+
+	var bldr strings.Builder
+	bldr.WriteString(st.Render(fmt.Sprintf("%s%-10s %-15s ", marker, truncate(v.name, 10), v.stateLabel())))
+	bldr.WriteString(turnsSt.Render(turns))
+	bldr.WriteString(st.Render(" · "))
+	bldr.WriteString(tokensSt.Render(tokens + " tok"))
+	if timeStr != "" {
+		bldr.WriteString(st.Render(" · "))
+		bldr.WriteString(timeSt.Render(timeStr))
+	}
+	if bar != "" {
+		bldr.WriteString(st.Render(" "))
+		bldr.WriteString(barSt.Render(bar))
+	}
+	bldr.WriteString(st.Render(fmt.Sprintf(" · US$%.4f", v.snap.CostUSD)))
+	if m.alert.id != 0 && v.id == m.alert.id {
+		bldr.WriteString(st.Render(" ⚠ " + cmp.Or(m.alert.label, "choque")))
+	}
+
+	return lipgloss.NewStyle().MaxWidth(max(m.width, 1)).Render(bldr.String())
 }
 
 // listRows son las filas visibles de la lista, con el seleccionado dentro.
@@ -923,6 +1039,9 @@ func (m *Panel) Blur() {
 
 // Focused indica si el panel tiene el foco.
 func (m Panel) Focused() bool { return !m.blurred }
+
+// Writing indica si el panel tiene el foco y su entrada de texto está activa.
+func (m Panel) Writing() bool { return !m.blurred }
 
 // maxUpdateBatch es el máximo de novedades que listenUpdates entrega junto.
 const maxUpdateBatch = 256
