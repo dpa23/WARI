@@ -315,9 +315,7 @@ func (m Model) runCommand(id string) (Model, tea.Cmd) {
 			m.chatOn = true
 			m.relayout()
 		}
-		var cmd tea.Cmd
-		m.chat, cmd = m.chat.Diff()
-		return m, cmd
+		return m.openDiff()
 	case id == cmdRevertFile:
 		if !m.chatOn {
 			m.chatOn = true

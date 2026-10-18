@@ -89,6 +89,11 @@ func (w *wsHarness) edit(i int, rel, body string) {
 	w.write(rel, body)
 }
 
+// diffScreen es lo que el layout dibujaría en el panel central: el diff.
+func (w *wsHarness) diffScreen() string {
+	return ansiRe.ReplaceAllString(strings.Join(w.m.DiffLines(100, 30), "\n"), "")
+}
+
 func (w *wsHarness) pressAll(ks ...tea.KeyPressMsg) {
 	for _, k := range ks {
 		w.press(k)
@@ -117,19 +122,29 @@ func TestDiffViewShowsChangesAndCycles(t *testing.T) {
 	w.edit(0, "b.txt", "b-nueva\n")
 
 	w.press(keyCtrlR) // abre el de la última edición
-	w.until("diff de b", func() bool { return strings.Contains(w.view(), "+b-nueva") })
-	w.wantView("-b-vieja")
-	w.wantView("@@ -1 +1 @@")
+	w.until("diff de b", func() bool { return strings.Contains(w.diffScreen(), "+b-nueva") })
+	if !strings.Contains(w.diffScreen(), "-b-vieja") || !strings.Contains(w.diffScreen(), "@@ -1 +1 @@") {
+		t.Fatalf("diff incompleto:\n%s", w.diffScreen())
+	}
+	if got := w.m.DiffTitle(); !strings.Contains(got, "diff b.txt · turno 1") {
+		t.Fatalf("título = %q", got)
+	}
 	w.wantView("diff b.txt (turno 1)")
-	w.wantNoView("✎ a.txt") // el historial está oculto mientras se ve el diff
+	// El historial sigue visible: el diff va al panel central.
+	w.wantView("✎ a.txt")
+	w.wantNoView("+b-nueva")
 
 	w.press(keyCtrlR) // siguiente (da la vuelta)
-	w.until("diff de a", func() bool { return strings.Contains(w.view(), "+a-nueva") })
-	w.wantView("-a-vieja")
+	w.until("diff de a", func() bool { return strings.Contains(w.diffScreen(), "+a-nueva") })
+	if !strings.Contains(w.diffScreen(), "-a-vieja") {
+		t.Fatalf("diff de a incompleto:\n%s", w.diffScreen())
+	}
 
 	w.press(keyEsc)
+	if w.m.DiffOpen() {
+		t.Fatal("Esc debía cerrar el diff")
+	}
 	w.wantView("✎ a.txt")
-	w.wantNoView("+a-nueva")
 	if got := w.made[0].get(&w.made[0].cancels); got != 0 {
 		t.Fatal("Esc con el diff abierto solo lo cierra, no detiene al agente")
 	}
@@ -195,14 +210,14 @@ func TestRevertFileUsesTheDiffSelection(t *testing.T) {
 
 	w.press(keyCtrlR) // b
 	w.press(keyCtrlR) // a
-	w.until("diff de a", func() bool { return strings.Contains(w.view(), "+A1") })
+	w.until("diff de a", func() bool { return strings.Contains(w.diffScreen(), "+A1") })
 	w.pressAll(keyAltR, keyAltR)
 	w.until("a revertido", func() bool { return w.hash("a.txt") == hashA })
 	if b, _ := os.ReadFile(w.path("b.txt")); string(b) != "B1\n" {
 		t.Fatalf("b.txt no debía tocarse: %q", b)
 	}
 	// El diff se cierra tras revertir.
-	w.until("historial", func() bool { return !strings.Contains(w.view(), "+A1") })
+	w.until("diff cerrado", func() bool { return !w.m.DiffOpen() })
 }
 
 func TestRevertAgentRestoresEverythingAndDeletesNewFiles(t *testing.T) {
@@ -280,7 +295,7 @@ func TestDiffTimesOutGracefullyOnError(t *testing.T) {
 		t.Fatal(err)
 	}
 	w.press(keyCtrlR)
-	w.until("error de diff", func() bool { return strings.Contains(w.view(), "no se pudo obtener el diff") })
+	w.until("error de diff", func() bool { return strings.Contains(w.diffScreen(), "no se pudo obtener el diff") })
 }
 
 func TestConflictAssistedResolutionResumeAndStop(t *testing.T) {

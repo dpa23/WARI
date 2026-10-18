@@ -59,6 +59,13 @@
 // tecla de parada siempre visible, pila y variables navegables, y el foco
 // con focus_dock). Ver run.go, debug.go y dock.go.
 //
+// Diff. diff_file (ctrl+r) abre el diff de la última edición de un agente
+// contra su checkpoint en el panel central, como vista de solo lectura a todo
+// el ancho del editor (números de línea, n/p entre hunks, flechas y pgup/pgdn
+// para desplazar, revert_file/revert_turn/revert_agent con su confirmación).
+// Esc vuelve al editor: el archivo abierto y sus cambios sin guardar no se
+// tocan. El panel de agentes conserva su historial. Ver tui.Panel.DiffKey.
+//
 // Seguridad de datos: abrir otro archivo con el actual sin guardar, o salir
 // en ese caso (con la tecla o desde la paleta), pide repetir la acción; la
 // confirmación se desarma con cualquier otra tecla. Guardar la confirma.
@@ -307,8 +314,8 @@ func (m Model) updateMsg(msg tea.Msg) (Model, tea.Cmd) {
 	case tea.KeyPressMsg:
 		return m.handleKey(msg)
 	case tea.PasteMsg:
-		if m.helpOpen {
-			return m, nil
+		if m.helpOpen || m.diffShown() {
+			return m, nil // con el diff en el centro, el editor no recibe nada
 		}
 		if m.pal.open {
 			m.pal.addText(msg.Content)
@@ -380,7 +387,7 @@ func (m Model) handleKey(k tea.KeyPressMsg) (Model, tea.Cmd) {
 	// evitando interceptar el carácter '?' al redactar código o hacer preguntas.
 	isF1 := k.String() == "f1" || k.String() == "F1"
 	isQuestion := k.Text == "?" || k.String() == "?"
-	writing := (m.focus == focusEditor && m.hasEd) || (m.focus == focusChat && m.chat.Writing())
+	writing := (m.focus == focusEditor && m.hasEd && !m.diffShown()) || (m.focus == focusChat && m.chat.Writing())
 	if isF1 || (isQuestion && !writing) {
 		m.helpOpen = true
 		m.helpScroll = 0
@@ -419,6 +426,12 @@ func (m Model) handleKey(k tea.KeyPressMsg) (Model, tea.Cmd) {
 	case m.is(k, "new_file"):
 		m.openTemplatePicker()
 		return m, nil
+	case m.diffShown() && m.focus == focusEditor && (m.is(k, "import_type") || m.is(k, "outline") ||
+		m.is(k, "goto_definition") || m.is(k, "complete") || m.is(k, "diagnostics") || m.is(k, "toggle_breakpoint")):
+		// El editor no se ve: sus acciones no deben tocar el buffer a ciegas.
+		return m, nil
+	case m.is(k, "diff_file"):
+		return m.openDiff()
 	case m.is(k, "import_type"):
 		return m.importType()
 	case m.focus != focusChat && m.is(k, "outline"):
@@ -467,7 +480,7 @@ func (m Model) handleKey(k tea.KeyPressMsg) (Model, tea.Cmd) {
 		return m.moveFocus(-1), nil
 	case m.is(k, "focus_next"):
 		// En el editor, la tecla de Tab inserta espacios y no mueve el foco.
-		if !(m.focus == focusEditor && m.hasEd && key.Matches(k, m.ed.Keys().Tab)) {
+		if !(m.focus == focusEditor && m.hasEd && !m.diffShown() && key.Matches(k, m.ed.Keys().Tab)) {
 			return m.moveFocus(1), nil
 		}
 	}
@@ -475,6 +488,24 @@ func (m Model) handleKey(k tea.KeyPressMsg) (Model, tea.Cmd) {
 		m.pendingOpen = pending
 	}
 	return m.routeToFocused(k)
+}
+
+// diffShown indica que el panel central muestra un diff en lugar del editor.
+func (m Model) diffShown() bool { return m.chat.DiffOpen() }
+
+// openDiff abre (o pasa al siguiente) el diff de la última edición del agente
+// en el panel central y le da el foco, para leerlo con todo el ancho del
+// editor. El archivo abierto y sus cambios sin guardar quedan intactos.
+func (m Model) openDiff() (Model, tea.Cmd) {
+	var cmd tea.Cmd
+	m.chat, cmd = m.chat.Diff()
+	if !m.chat.DiffOpen() {
+		m.msg = "no hay ediciones con checkpoint que mostrar"
+		return m, cmd
+	}
+	m.focus = focusEditor
+	m.applyFocus()
+	return m, cmd
 }
 
 // focusTreePanel da el foco al árbol de archivos, desplegándolo si estaba oculto.
@@ -528,6 +559,13 @@ func (m Model) routeToFocused(msg tea.Msg) (Model, tea.Cmd) {
 	case focusTree:
 		m.tree, cmd = m.tree.Update(msg)
 	case focusEditor:
+		if m.diffShown() {
+			// Vista de solo lectura: las teclas son del diff.
+			if k, ok := msg.(tea.KeyPressMsg); ok {
+				m.chat, cmd = m.chat.DiffKey(k)
+			}
+			return m, cmd
+		}
 		if m.hasEd {
 			m.ed, cmd = m.ed.Update(msg)
 		}
@@ -704,6 +742,7 @@ func (m *Model) relayout() {
 	if m.hasEd {
 		m.ed.SetSize(g.edW, g.bodyH-g.dockH)
 	}
+	m.chat.SetDiffArea(g.edW, g.bodyH-g.dockH)
 	if g.showChat {
 		m.chat.SetSize(g.chatW, g.bodyH)
 	}
@@ -773,6 +812,7 @@ func (m *Model) openFile(path string) {
 		path = abs
 	}
 	if m.hasEd && m.ed.Path() == path {
+		m.chat = m.chat.CloseDiff()
 		m.focus = focusEditor
 		m.pendingOpen = ""
 		m.relayout()
@@ -799,6 +839,7 @@ func (m *Model) openFile(path string) {
 	m.ed.SetSnippets(m.snips)
 	m.ed.SetImports(m.allImps)
 	m.hasEd = true
+	m.chat = m.chat.CloseDiff()
 	m.focus = focusEditor
 	m.tree.Reveal(path)
 	m.relayout()
@@ -890,6 +931,16 @@ func header(title string, focused bool, w int) string {
 
 // editorTitle es el título del panel del editor.
 func (m Model) editorTitle() string {
+	if m.diffShown() {
+		t := m.chat.DiffTitle()
+		if m.hasEd {
+			t += " · editor: " + m.display(m.ed.Path())
+			if m.ed.Dirty() {
+				t += " ●"
+			}
+		}
+		return t
+	}
 	if !m.hasEd {
 		return "Editor"
 	}
@@ -1057,6 +1108,9 @@ func (m Model) render() string {
 		body = m.ed.View()
 	}
 	edLines := block(body, g.edW, g.bodyH-g.dockH)
+	if m.diffShown() {
+		edLines = block(strings.Join(m.chat.DiffLines(g.edW, g.bodyH-g.dockH), "\n"), g.edW, g.bodyH-g.dockH)
+	}
 	if g.dockH > 0 {
 		edLines = append(edLines, m.dockView(g.edW, g.dockH)...)
 	}
@@ -1229,7 +1283,7 @@ func (m Model) cursor() *tea.Cursor {
 	var x0 int
 	switch m.focus {
 	case focusEditor:
-		if m.hasEd {
+		if m.hasEd && !m.diffShown() {
 			c, x0 = m.ed.Cursor(), g.edX
 		}
 	case focusChat:

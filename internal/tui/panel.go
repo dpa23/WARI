@@ -59,14 +59,6 @@ type (
 	}
 )
 
-// diffView es el diff abierto en lugar del historial del agente v.
-type diffView struct {
-	v    *agentView
-	edit orch.Edit
-	// text es el diff unificado; vacío mientras se calcula.
-	text string
-}
-
 // alertInfo es el último choque o bucle sin resolver, para el panel y la
 // barra. label es lo que la lista muestra junto al agente ("" es "choque").
 type alertInfo struct {
@@ -145,11 +137,15 @@ type Panel struct {
 	listening, spinning, quitting bool
 	blurred                       bool
 
-	// dv es el diff abierto (nil: se muestra el historial); armed, la
-	// reversión que espera confirmación; alert, el último choque.
+	// dv es el diff abierto (nil: ninguno). No toca el historial: el layout
+	// lo dibuja en el panel central (diffview.go). armed es la reversión que
+	// espera confirmación (armedText, su aviso; armedShort, el aviso corto
+	// para áreas angostas); alert, el último choque.
 	dv             *diffView
+	diffW, diffH   int // área del panel central donde se dibuja el diff
 	armed          string
 	armedText      string
+	armedShort     string
 	alert          alertInfo
 	conflictActive bool
 
@@ -257,11 +253,10 @@ func (m Panel) dispatch(msg tea.Msg) (Panel, tea.Cmd) {
 	case diffMsg:
 		if m.dv != nil && m.dv.v.id == msg.id && m.dv.edit == msg.edit {
 			if msg.err != nil {
-				m.dv.text = "no se pudo obtener el diff: " + msg.err.Error()
+				m.dv.setText("no se pudo obtener el diff: " + msg.err.Error())
 			} else {
-				m.dv.text = diffText(msg.edit.Path, msg.edit.Turn, msg.old, msg.cur)
+				m.dv.setText(diffText(msg.edit.Path, msg.edit.Turn, msg.old, msg.cur))
 			}
-			m.refreshTo(false)
 		}
 		return m, nil
 
@@ -310,7 +305,7 @@ func (m Panel) cur() *agentView { return m.views[m.sel] }
 func (m Panel) handleKey(msg tea.KeyPressMsg) (Panel, tea.Cmd) {
 	// La confirmación de una reversión se desarma con cualquier otra tecla.
 	armed := m.armed
-	m.armed, m.armedText = "", ""
+	m.armed, m.armedText, m.armedShort = "", "", ""
 	switch {
 	case key.Matches(msg, m.keys.Quit):
 		return m.quit()
@@ -527,6 +522,92 @@ func (m Panel) Stop() (Panel, tea.Cmd) {
 // Diff abre o alterna el diff de la última edición del agente seleccionado.
 func (m Panel) Diff() (Panel, tea.Cmd) {
 	return m.diff()
+}
+
+// SetDiffArea fija el tamaño del área central donde se dibuja el diff (la
+// que usan el desplazamiento y los saltos entre hunks).
+func (m *Panel) SetDiffArea(w, h int) {
+	m.diffW, m.diffH = w, h
+	if m.dv != nil {
+		m.dv.setArea(w, h)
+	}
+}
+
+// CloseDiff cierra el diff abierto, si lo hay.
+func (m Panel) CloseDiff() Panel {
+	m.dv = nil
+	return m
+}
+
+// DiffOpen indica que el agente seleccionado tiene un diff abierto, que el
+// layout dibuja en el panel central con DiffTitle y DiffLines.
+func (m Panel) DiffOpen() bool { return m.dv != nil && m.dv.v == m.cur() }
+
+// DiffTitle es el título de la vista del diff: archivo, turno, hunk actual y
+// desplazamiento horizontal.
+func (m Panel) DiffTitle() string {
+	if !m.DiffOpen() {
+		return ""
+	}
+	d := m.dv
+	t := fmt.Sprintf("diff %s · turno %d", d.edit.Path, d.edit.Turn)
+	if n := len(d.hunks); n > 0 {
+		t += fmt.Sprintf(" · hunk %d/%d", d.cur+1, n)
+	}
+	if d.xoff > 0 {
+		t += fmt.Sprintf(" · col %d", d.xoff+1)
+	}
+	return t
+}
+
+// DiffLines dibuja el diff abierto en exactamente h filas de w celdas (vacío
+// si no hay ninguno abierto).
+func (m Panel) DiffLines(w, h int) []string {
+	if !m.DiffOpen() {
+		return nil
+	}
+	return m.dv.lines(m.styles, m.keys, m.armedText, m.armedShort, w, h)
+}
+
+// DiffKey atiende una tecla con la vista del diff en primer plano: desplazar,
+// saltar entre hunks, pasar al diff siguiente, volver (Esc) y revertir con su
+// confirmación. Las demás teclas no hacen nada: la vista es de solo lectura.
+func (m Panel) DiffKey(msg tea.KeyPressMsg) (Panel, tea.Cmd) {
+	if !m.DiffOpen() {
+		return m, nil
+	}
+	switch {
+	case key.Matches(msg, m.keys.Cancel), key.Matches(msg, m.keys.DiffFile),
+		key.Matches(msg, m.keys.RevertFile), key.Matches(msg, m.keys.RevertTurn),
+		key.Matches(msg, m.keys.RevertAgent):
+		return m.handleKey(msg)
+	}
+	m.armed, m.armedText, m.armedShort = "", "", ""
+	d := m.dv
+	page := max(d.bodyH()-1, 1)
+	switch s := msg.String(); {
+	case s == "n" || s == "]":
+		d.gotoHunk(d.cur + 1)
+	case s == "p" || s == "[":
+		d.gotoHunk(d.cur - 1)
+	case s == "up" || s == "k":
+		d.scroll(-1, 0)
+	case s == "down" || s == "j":
+		d.scroll(1, 0)
+	case key.Matches(msg, m.keys.PageUp):
+		d.scroll(-page, 0)
+	case key.Matches(msg, m.keys.PageDown), s == "space":
+		d.scroll(page, 0)
+	case s == "home" || s == "g":
+		d.scroll(-len(d.rows), 0)
+	case s == "end" || s == "G":
+		d.scroll(len(d.rows), 0)
+	case s == "left" || s == "h":
+		d.scroll(0, -8)
+	case s == "right" || s == "l":
+		d.scroll(0, 8)
+	}
+	return m, nil
 }
 
 // RevertFile inicia o confirma la reversión del archivo seleccionado.
@@ -766,10 +847,6 @@ func (m *Panel) refresh() { m.refreshTo(m.vp.AtBottom()) }
 
 func (m *Panel) refreshTo(follow bool) {
 	v := m.cur()
-	if m.dv != nil && m.dv.v == v {
-		m.vp.SetContent(m.dv.render(m.styles, m.vp.Width()))
-		return
-	}
 	if m.gateShown() {
 		m.vp.SetContent(m.gate.render(m.styles, m.keys, m.vp.Width()))
 		return
@@ -1152,20 +1229,8 @@ func listenUpdates(ch <-chan orch.Update) tea.Cmd {
 	}
 }
 
-// render compone el diff abierto con su título.
-func (d *diffView) render(st styles, width int) string {
-	title := st.info.Render(fmt.Sprintf("%s · turno %d", d.edit.Path, d.edit.Turn))
-	if d.text == "" {
-		return title + "\n" + st.info.Render("calculando el diff…")
-	}
-	return title + "\n" + renderDiff(d.text, st, width)
-}
-
-// closeDiff vuelve al historial del agente.
-func (m *Panel) closeDiff() {
-	m.dv = nil
-	m.refreshTo(m.vp.AtBottom())
-}
+// closeDiff cierra el diff abierto.
+func (m *Panel) closeDiff() { m.dv = nil }
 
 // savedEdits son las ediciones del agente con checkpoint (las que se pueden
 // ver y revertir).
@@ -1202,9 +1267,7 @@ func (m Panel) diff() (Panel, tea.Cmd) {
 		}
 	}
 	ed := eds[idx]
-	m.dv = &diffView{v: v, edit: ed}
-	m.refreshTo(false)
-	m.vp.GotoTop()
+	m.dv = &diffView{v: v, edit: ed, numW: 1, w: m.diffW, h: m.diffH}
 	sup, id := m.sup, v.id
 	return m, func() tea.Msg {
 		old, cur, err := sup.Diff(id, ed.Turn, ed.Path)
@@ -1227,24 +1290,28 @@ func (m Panel) revert(kind, armed string) (Panel, tea.Cmd) {
 	if m.dv != nil && m.dv.v == v {
 		ed = m.dv.edit
 	}
-	var what, token, keyName string
+	var what, short, token, keyName string
 	switch kind {
 	case revertFile:
 		what = fmt.Sprintf("revertir %s al checkpoint del turno %d", ed.Path, ed.Turn)
+		short = "revertir " + ed.Path
 		token = fmt.Sprintf("%s:%d:%s", kind, ed.Turn, ed.Path)
 		keyName = m.keys.RevertFile.Help().Key
 	case revertTurn:
 		what = fmt.Sprintf("revertir los archivos que editó %s en el turno %d", v.name, ed.Turn)
+		short = fmt.Sprintf("revertir el turno %d", ed.Turn)
 		token = fmt.Sprintf("%s:%d", kind, ed.Turn)
 		keyName = m.keys.RevertTurn.Help().Key
 	default:
 		what = fmt.Sprintf("revertir todo lo que editó %s", v.name)
+		short = "revertir todo el agente"
 		token = kind
 		keyName = m.keys.RevertAgent.Help().Key
 	}
 	if armed != token {
 		m.armed = token
 		m.armedText = fmt.Sprintf("¿%s? repite %s para confirmar", what, keyName)
+		m.armedShort = fmt.Sprintf("¿%s? repite %s", short, keyName)
 		v.add(kindWarn, m.armedText+" (cualquier otra tecla cancela)")
 		m.refresh()
 		return m, nil

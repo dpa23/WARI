@@ -79,7 +79,7 @@ func helpGroups() []helpGroup {
 		{
 			title: "Diffs",
 			items: []helpItem{
-				{"diff_file", "Ver diff con checkpoint"},
+				{"diff_file", "Ver diff en el centro (n/p hunks)"},
 				{"revert_file", "Revertir archivo"},
 				{"revert_turn", "Revertir turno"},
 				{"revert_agent", "Revertir agente completo"},
