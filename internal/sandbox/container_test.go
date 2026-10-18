@@ -181,7 +181,13 @@ func TestRunStreamsLogsPerChannel(t *testing.T) {
 	if !hasPair(args, "--name", run.Name) || !strings.HasPrefix(run.Name, "wari-") {
 		t.Errorf("nombre: %v", args)
 	}
-	if !hasPair(args, "--network", "none") || !hasPair(args, "-v", root+":/workspace:O") {
+	// El sandbox monta la raíz con los enlaces resueltos; en macOS el
+	// directorio temporal está bajo /var, un enlace a /private/var.
+	realRoot, err := filepath.EvalSymlinks(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !hasPair(args, "--network", "none") || !hasPair(args, "-v", realRoot+":/workspace:O") {
 		t.Errorf("args = %v", args)
 	}
 	if filepath.Dir(run.OutDir) != c.RunsDir || filepath.Base(run.OutDir) != run.ID {
