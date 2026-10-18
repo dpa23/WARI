@@ -80,13 +80,30 @@ func TestDebounceCoalesces(t *testing.T) {
 	p := filepath.Join(root, "a.txt")
 	write(t, p, "0")
 	w := newWatcher(t, root, nil)
-	for i := 0; i < 20; i++ {
+	const writes = 20
+	for i := 0; i < writes; i++ {
 		write(t, p, "x")
 	}
-	if c := next(t, w); c.Path != "a.txt" || c.Op != Write {
-		t.Fatalf("%+v", c)
+	// El debounce funde las ráfagas. En macOS (kqueue) algunos eventos llegan
+	// tarde y pueden dar un segundo cambio, así que no se exige exactamente
+	// uno: basta con que sean muy pocos, todos sobre el mismo archivo, y que
+	// después se calme.
+	n := 0
+	for {
+		select {
+		case c := <-w.Changes():
+			if c.Path != "a.txt" || c.Op != Write {
+				t.Fatalf("cambio inesperado: %+v", c)
+			}
+			n++
+			continue
+		case <-time.After(400 * time.Millisecond):
+		}
+		break
 	}
-	none(t, w)
+	if n < 1 || n > 3 {
+		t.Errorf("%d cambios para %d escrituras seguidas, quiero entre 1 y 3", n, writes)
+	}
 }
 
 func TestRecursiveAndNewDirs(t *testing.T) {

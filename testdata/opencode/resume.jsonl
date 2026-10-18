@@ -1,0 +1,2 @@
+{"type":"step_start","timestamp":1792344965179,"sessionID":"ses_000000000002","part":{"id":"prt_000000000003","sessionID":"ses_000000000002","messageID":"msg_000000000004","type":"step-start"}}
+{"type":"text","timestamp":1792344965497,"sessionID":"ses_000000000002","part":{"id":"prt_000000000005_text-0","sessionID":"ses_000000000002","messageID":"msg_000000000004","type":"text","text":"hola","time":{"start":1792344963821,"end":1792344965497}}}

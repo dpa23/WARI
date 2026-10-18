@@ -1,0 +1,7 @@
+{"type":"thread.started","thread_id":"00000000-0000-0000-0000-000000000001"}
+{"type":"turn.started"}
+{"type":"item.started","item":{"id":"item_0","type":"command_execution","command":"/bin/bash -lc 'cat nota.txt'","aggregated_output":"","exit_code":null,"status":"in_progress"}}
+{"type":"item.completed","item":{"id":"item_0","type":"command_execution","command":"/bin/bash -lc 'cat nota.txt'","aggregated_output":"contenido de prueba 42\n","exit_code":0,"status":"completed"}}
+{"type":"item.completed","item":{"id":"item_1","type":"agent_message","text":"Leí nota.txt."}}
+{"type":"item.completed","item":{"id":"item_2","type":"agent_message","text":"contenido de prueba 42"}}
+{"type":"turn.completed","usage":{"input_tokens":3000,"cached_input_tokens":2048,"output_tokens":90,"reasoning_output_tokens":0}}

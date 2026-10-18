@@ -69,12 +69,28 @@ func Rel(root, p string) (rel string, inside bool) {
 		if r == "" {
 			continue
 		}
-		if x, err := filepath.Rel(r, p); err == nil && x != "." && x != ".." &&
-			!strings.HasPrefix(x, ".."+string(filepath.Separator)) {
-			return filepath.ToSlash(x), true
+		for _, q := range paths(p) {
+			if x, err := filepath.Rel(r, q); err == nil && x != "." && x != ".." &&
+				!strings.HasPrefix(x, ".."+string(filepath.Separator)) {
+				return filepath.ToSlash(x), true
+			}
 		}
 	}
 	return filepath.ToSlash(filepath.Clean(p)), false
+}
+
+// paths devuelve p y, si difiere, p con los enlaces simbólicos de su carpeta
+// resueltos: el archivo puede no existir todavía, pero su carpeta sí. Sin
+// esto, en macOS (donde /var es un enlace a /private/var) una ruta y una
+// raíz que apuntan al mismo sitio no coincidirían.
+func paths(p string) []string {
+	out := []string{filepath.Clean(p)}
+	if d, err := filepath.EvalSymlinks(filepath.Dir(p)); err == nil {
+		if q := filepath.Join(d, filepath.Base(p)); q != out[0] {
+			out = append(out, q)
+		}
+	}
+	return out
 }
 
 // roots devuelve root y, si difiere, su ruta con los enlaces simbólicos

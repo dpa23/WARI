@@ -1,0 +1,11 @@
+{"type":"thread.started","thread_id":"00000000-0000-0000-0000-000000000001"}
+{"type":"turn.started"}
+{"type":"item.started","item":{"id":"item_0","type":"mcp_tool_call","server":"docs","tool":"search","arguments":{"q":"wari"},"status":"in_progress"}}
+{"type":"item.completed","item":{"id":"item_0","type":"mcp_tool_call","server":"docs","tool":"search","arguments":{"q":"wari"},"result":{"content":[],"structured_content":null},"error":null,"status":"completed"}}
+{"type":"item.started","item":{"id":"item_1","type":"web_search","query":"","action":{"type":"other"},"results":[]}}
+{"type":"item.completed","item":{"id":"item_1","type":"web_search","query":"codex exec json","action":{"type":"search","query":"codex exec json"},"results":[]}}
+{"type":"item.completed","item":{"id":"item_2","type":"collab_tool_call","tool":"spawn_agent","sender_thread_id":"00000000-0000-0000-0000-000000000001","receiver_thread_ids":[],"prompt":"x","agents_states":{},"status":"completed"}}
+{"type":"item.completed","item":{"id":"item_3","type":"agent_message","text":"hecho"}}
+{"type":"future.event","detail":"tipo que no existe en 0.163.0"}
+{"type":"item.completed","item":{"id":"item_4","type":"future_item","foo":1}}
+{"type":"turn.completed","usage":{"input_tokens":10,"cached_input_tokens":0,"output_tokens":5,"reasoning_output_tokens":0}}

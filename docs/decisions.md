@@ -123,6 +123,17 @@ Formato: fecha · decisión · motivo · alternativas descartadas.
 - **Decisión del autor:** solo Podman/Docker para aislar la ejecución y depuración (fase 13): proyecto montado en solo lectura con capa de escritura efímera, detrás de una interfaz `Sandbox`.
 - **Descartado:** bubblewrap (más liviano, pero el autor prefiere contenedores reproducibles).
 
+## 2026-10-18 · Adaptadores de codex y opencode (rama newclis)
+- **opencode 2.0.18** (fixtures reales): `opencode run` **escribe sin pedir permiso** si no se le indica nada; `--agent plan` no escribió en nuestras pruebas, así que Ask y Plan usan `--agent plan` y solo `-accept-edits` lo quita. Nunca `--auto`. Sin evento final: `turn.Finisher` (nuevo, opcional) cierra el turno con la salida del proceso. `Session not found` y los errores de modelo salen como evento `error`.
+- **codex 0.163.0**: `-s read-only` por defecto y `workspace-write` con `-accept-edits`; nunca los flags de bypass. Esquema leído del código fuente (`docs/codex-events.md`); solo `thread.started`, `turn.started`, `error` y `turn.failed` están grabados con la CLI real (sin sesión iniciada). El resto de fixtures son sintéticos y están declarados en `testdata/codex/SYNTHETIC.md`; `scripts/record-codex-fixtures.sh` graba los reales tras `codex login`. Reanudar una sesión inexistente falla con `no rollout found for thread id` sin `thread.started`, así que el ejecutor ya lo traduce a `ErrSessionNotFound`.
+- **Edición ya ejecutada**: con codex y opencode el evento de la herramienta llega cuando la edición ya ocurrió. WARI no emite `FileEditProposed` para ellos: ni checkpoint previo ni detección de choques antes de editar (el watcher la ve después).
+- **Autenticación**: WARI no maneja credenciales con ninguna CLI; cada una usa su propia sesión.
+
+## 2026-10-18 · Lo que reveló el CI de macOS
+- El CI de `main` falló solo en macOS. Los logs exigen sesión, pero las anotaciones son públicas: el CI ahora vuelca los fallos como anotaciones.
+- **proc**: en macOS, señalar un grupo con solo zombis da `EPERM` (no `ESRCH`); `Kill` y `Cancel` devolvían error. **owner.Rel** y el test del sandbox: el directorio temporal vive bajo `/var → /private/var`. **watch**: kqueue entrega algún evento tarde. Corregidos en `newclis`.
+- **SIGPIPE** (modo `-prompt`): `wari -prompt x | head -1` mataba a wari sin limpiar y dejaba al agente huérfano; ahora termina su grupo.
+
 ## 2026-10-17 · Orquestación del desarrollo
 - **Decisión:** Claude Code (Opus) lidera y es el único que hace commit; subagentes Sonnet implementan y Haiku hace tareas mecánicas; Antigravity (Gemini 3.8 Flash) revisa los diffs con otra familia de modelos y genera los datos del tier 1. Máximo 2 agentes activos a la vez. Commits locales; push solo a pedido del autor. Detalle en `AGENTS.md` y `CLAUDE.md`.
 - **Motivo:** máquina de 2 núcleos y 5,6 GB; la diversidad de modelos encuentra errores distintos, pero todo hallazgo se verifica (Antigravity adivinó mal flags y nombres de eventos de su propia CLI).

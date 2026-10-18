@@ -19,6 +19,8 @@ import (
 	"github.com/dpa23/wari/internal/agent"
 	"github.com/dpa23/wari/internal/agent/agy"
 	"github.com/dpa23/wari/internal/agent/claude"
+	"github.com/dpa23/wari/internal/agent/codex"
+	"github.com/dpa23/wari/internal/agent/opencode"
 	"github.com/dpa23/wari/internal/config"
 	"github.com/dpa23/wari/internal/index"
 	"github.com/dpa23/wari/internal/orch"
@@ -99,8 +101,10 @@ func main() {
 // -agent y el campo "agent" de los pasos de .wari/pipeline.json. Añadir una
 // CLI es añadir una entrada aquí.
 var agentFactories = pipeline.Registry{
-	"claude": func() agent.Agent { return claude.New("") },
-	"agy":    func() agent.Agent { return agy.New("") },
+	"claude":   func() agent.Agent { return claude.New("") },
+	"agy":      func() agent.Agent { return agy.New("") },
+	"codex":    func() agent.Agent { return codex.New("") },
+	"opencode": func() agent.Agent { return opencode.New("") },
 }
 
 // agentNames devuelve los nombres de agentFactories, ordenados.
@@ -286,10 +290,13 @@ func attachWorkspace(sup *orch.Supervisor, root string) {
 }
 
 // runTurn ejecuta un turno: la respuesta va a stdout y el resto de los
-// eventos a stderr. Ctrl+C o -kill-after terminan el grupo completo.
+// eventos a stderr. Ctrl+C, -kill-after o que el lector de stdout desaparezca
+// (`wari -prompt x | head -1`) terminan el grupo completo.
 func runTurn(c agent.Agent, task agent.Task, killAfter time.Duration) int {
 	sigs := make(chan os.Signal, 1)
-	signal.Notify(sigs, os.Interrupt, syscall.SIGTERM)
+	// SIGPIPE: sin Notify, escribir en un stdout roto mata el proceso sin
+	// ejecutar ninguna limpieza y el agente quedaría huérfano.
+	signal.Notify(sigs, os.Interrupt, syscall.SIGTERM, syscall.SIGPIPE)
 	defer signal.Stop(sigs)
 
 	if err := c.Start(context.Background(), task); err != nil {

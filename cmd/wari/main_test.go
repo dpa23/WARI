@@ -3,6 +3,7 @@ package main
 import (
 	"os"
 	"path/filepath"
+	"slices"
 	"testing"
 
 	"github.com/dpa23/wari/internal/agent"
@@ -50,8 +51,9 @@ func TestLoadPipeline(t *testing.T) {
 }
 
 func TestAgentFactories(t *testing.T) {
-	if got := agentNames(); len(got) != 2 || got[0] != "agy" || got[1] != "claude" {
-		t.Errorf("agentNames = %v, quiero [agy claude]", got)
+	want := []string{"agy", "claude", "codex", "opencode"}
+	if got := agentNames(); !slices.Equal(got, want) {
+		t.Errorf("agentNames = %v, quiero %v", got, want)
 	}
 	for name, newAgent := range agentFactories {
 		a := newAgent()
