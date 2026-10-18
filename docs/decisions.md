@@ -107,6 +107,13 @@ Formato: fecha · decisión · motivo · alternativas descartadas.
 - **Gate**: estado `WaitingApproval` con resultado, archivos editados y su diff contra el checkpoint; aprobar, rechazar o editar el prompt siguiente.
 - **Bucles** (cualquier agente): misma herramienta con los mismos argumentos 3 veces seguidas en un turno → pausa inmediata; 3 turnos seguidos sin cambios de archivo (solo con `-accept-edits`) → el turno siguiente arranca pausado. Límite: las ediciones por shell no atribuidas no cuentan como cambio.
 
+## 2026-10-17 · Adaptador agy (fase 8, agy 1.4.2)
+- **Driver** en `internal/agent/agy` sobre `turn.Runner`, sin cambios al contrato: el segundo adaptador no obligó a tocar nada fuera de su carpeta salvo el registro de fábricas en `main` (`-agent claude|agy`).
+- **Sin modo de solo lectura**: `--mode plan` solo agrega un comando `/plan`; si se le pide escribir con `write_to_file`, escribe en el proyecto (verificado). `PermissionAsk`/`Plan` → `--mode=plan` como mejor esfuerzo; la protección real con agy son los checkpoints de WARI (fase 6). Los comandos de shell sí se deniegan solos en modo print, y llegan en `result.denied_actions` sin ID ni argumentos.
+- **`--conversation` con ID inexistente no falla**: abre otra conversación; el adaptador emite `ErrSessionNotFound` si `Started` trae otro ID.
+- **Planes de agy** (`write_to_file` a `~/.gemini/antigravity-cli/brain/`) no cuentan como edición del proyecto (filtro por ruta, frágil si agy la cambia).
+- **Aceptación**: pipeline mixto claude → agy con `{{prev}}` (test sobre CLIs falsas) y corridas reales de `wari -agent agy -prompt` sin huérfanos.
+
 ## 2026-10-17 · Orquestación del desarrollo
 - **Decisión:** Claude Code (Opus) lidera y es el único que hace commit; subagentes Sonnet implementan y Haiku hace tareas mecánicas; Antigravity (Gemini 3.8 Flash) revisa los diffs con otra familia de modelos y genera los datos del tier 1. Máximo 2 agentes activos a la vez. Commits locales; push solo a pedido del autor. Detalle en `AGENTS.md` y `CLAUDE.md`.
 - **Motivo:** máquina de 2 núcleos y 5,6 GB; la diversidad de modelos encuentra errores distintos, pero todo hallazgo se verifica (Antigravity adivinó mal flags y nombres de eventos de su propia CLI).

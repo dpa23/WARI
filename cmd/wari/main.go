@@ -9,12 +9,15 @@ import (
 	"os"
 	"os/signal"
 	"path/filepath"
+	"slices"
+	"strings"
 	"syscall"
 	"time"
 
 	tea "charm.land/bubbletea/v2"
 
 	"github.com/dpa23/wari/internal/agent"
+	"github.com/dpa23/wari/internal/agent/agy"
 	"github.com/dpa23/wari/internal/agent/claude"
 	"github.com/dpa23/wari/internal/config"
 	"github.com/dpa23/wari/internal/orch"
@@ -29,7 +32,9 @@ import (
 var version = "dev"
 
 func main() {
-	prompt := flag.String("prompt", "", "sin TUI: lanza un turno del agente claude con este prompt y vuelca su salida")
+	prompt := flag.String("prompt", "", "sin TUI: lanza un turno del agente (-agent) con este prompt y vuelca su salida")
+	agentName := flag.String("agent", "claude", "CLI del agente del chat y de -prompt: "+strings.Join(agentNames(), ", ")+
+		" (los pasos de .wari/pipeline.json eligen la suya con \"agent\")")
 	model := flag.String("model", "", "modelo del agente (vacío: el predeterminado de la CLI)")
 	killAfter := flag.Duration("kill-after", 0, "con -prompt: termina el turno y sus subprocesos después de este tiempo")
 	maxActive := flag.Int("max-active", 2, "agentes activos a la vez; el resto espera en cola")
@@ -51,11 +56,15 @@ func main() {
 		perms = agent.PermissionAcceptEdits
 	}
 
+	newAgent, ok := agentFactories[*agentName]
 	switch {
 	case *showVersion:
 		fmt.Printf("wari %s\n", version)
+	case !ok:
+		fmt.Fprintf(os.Stderr, "wari: -agent %q desconocido (opciones: %s)\n", *agentName, strings.Join(agentNames(), ", "))
+		os.Exit(2)
 	case *prompt != "":
-		os.Exit(runTurn(agent.Task{Prompt: *prompt, Model: *model, Permissions: perms}, *killAfter))
+		os.Exit(runTurn(newAgent(), agent.Task{Prompt: *prompt, Model: *model, Permissions: perms}, *killAfter))
 	case *killAfter > 0:
 		fmt.Fprintln(os.Stderr, "wari: -kill-after solo se usa junto con -prompt")
 		os.Exit(2)
@@ -74,8 +83,26 @@ func main() {
 		}
 		budget := orch.Budget{MaxTurns: *maxTurns, MaxDuration: *maxTime, MaxTokens: *maxTokens}
 		loops := orch.LoopLimits{SameTool: *loopCalls, IdleTurns: *loopTurns}
-		os.Exit(runTUI(agent.Task{Model: *model, Permissions: perms}, root, file, *maxActive, budget, loops))
+		os.Exit(runTUI(newAgent, agent.Task{Model: *model, Permissions: perms}, root, file, *maxActive, budget, loops))
 	}
+}
+
+// agentFactories son los agentes que se pueden elegir por nombre: la opción
+// -agent y el campo "agent" de los pasos de .wari/pipeline.json. Añadir una
+// CLI es añadir una entrada aquí.
+var agentFactories = pipeline.Registry{
+	"claude": func() agent.Agent { return claude.New("") },
+	"agy":    func() agent.Agent { return agy.New("") },
+}
+
+// agentNames devuelve los nombres de agentFactories, ordenados.
+func agentNames() []string {
+	names := make([]string, 0, len(agentFactories))
+	for n := range agentFactories {
+		names = append(names, n)
+	}
+	slices.Sort(names)
+	return names
 }
 
 // resolveTarget interpreta el argumento posicional: vacío es el directorio
@@ -123,7 +150,7 @@ func loadKeymap(root string) config.Keymap {
 // bucle de eventos), no debe quedar ningún agente vivo: el defer cierra el
 // supervisor, que cierra a cada agente y mata su turno en curso con todos sus
 // descendientes.
-func runTUI(task agent.Task, root, file string, maxActive int, budget orch.Budget, loops orch.LoopLimits) int {
+func runTUI(newAgent func() agent.Agent, task agent.Task, root, file string, maxActive int, budget orch.Budget, loops orch.LoopLimits) int {
 	sup := orch.New(maxActive)
 	defer sup.Close()
 	sup.SetLoopLimits(loops)
@@ -139,7 +166,7 @@ func runTUI(task agent.Task, root, file string, maxActive int, budget orch.Budge
 		Keymap: loadKeymap(root),
 		Chat: tui.Config{
 			Supervisor: sup,
-			NewAgent:   func() agent.Agent { return claude.New("") },
+			NewAgent:   newAgent,
 			Task:       task,
 			Budget:     budget,
 			Pipeline:   runner,
@@ -171,9 +198,7 @@ var pipelineFile = filepath.Join(".wari", "pipeline.json")
 // lanzar nada: el usuario lo lanza desde el panel). Si el archivo es
 // inválido, avisa y sigue sin pipeline.
 func loadPipeline(sup *orch.Supervisor, root string, task agent.Task, budget orch.Budget) *pipeline.Runner {
-	p, err := pipeline.Load(filepath.Join(root, pipelineFile), pipeline.Registry{
-		"claude": func() agent.Agent { return claude.New("") },
-	})
+	p, err := pipeline.Load(filepath.Join(root, pipelineFile), agentFactories)
 	if errors.Is(err, os.ErrNotExist) {
 		return nil
 	}
@@ -214,17 +239,19 @@ func attachWorkspace(sup *orch.Supervisor, root string) {
 
 // runTurn ejecuta un turno: la respuesta va a stdout y el resto de los
 // eventos a stderr. Ctrl+C o -kill-after terminan el grupo completo.
-func runTurn(task agent.Task, killAfter time.Duration) int {
+func runTurn(c agent.Agent, task agent.Task, killAfter time.Duration) int {
 	sigs := make(chan os.Signal, 1)
 	signal.Notify(sigs, os.Interrupt, syscall.SIGTERM)
 	defer signal.Stop(sigs)
 
-	c := claude.New("")
 	if err := c.Start(context.Background(), task); err != nil {
 		fmt.Fprintln(os.Stderr, "[wari]", err)
 		return 1
 	}
-	pgid := c.PGID()
+	pgid := 0
+	if p, ok := c.(interface{ PGID() int }); ok {
+		pgid = p.PGID()
+	}
 	fmt.Fprintf(os.Stderr, "[wari] turno lanzado, grupo de procesos %d\n", pgid)
 
 	kill := func(reason string) {

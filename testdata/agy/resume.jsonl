@@ -1,0 +1,6 @@
+{"event":"init","conversation_id":"00000000-0000-0000-0000-000000000001","init":{"model":"gemini-3.8-flash-low","cwd":"/tmp/wari-agy-fixture","tools":[],"permission_mode":"request-review","expanded_commands":[]}}
+{"event":"step_update","step_update":{"conversation_id":"00000000-0000-0000-0000-000000000001","step_index":2,"state":"DONE","step_type":"user_input"}}
+{"event":"step_update","step_update":{"conversation_id":"00000000-0000-0000-0000-000000000001","step_index":3,"state":"DONE","step_type":"system_message","duration_seconds":0.000140872}}
+{"event":"step_update","step_update":{"conversation_id":"00000000-0000-0000-0000-000000000001","step_index":4,"state":"ACTIVE","step_type":"agent_response","text_delta":"hola"}}
+{"event":"step_update","step_update":{"conversation_id":"00000000-0000-0000-0000-000000000001","step_index":4,"state":"DONE","step_type":"agent_response","text_delta":"\n","duration_seconds":1.7662982010000001,"usage":{"input_tokens":13635,"output_tokens":1,"thinking_tokens":0,"cache_read_tokens":0,"total_tokens":13636}}}
+{"event":"result","result":{"conversation_id":"00000000-0000-0000-0000-000000000001","status":"SUCCESS","response":"hola\n","duration_seconds":83.022112202,"num_turns":2,"usage":{"input_tokens":26260,"output_tokens":2,"thinking_tokens":0,"cache_read_tokens":0,"total_tokens":26262}}}

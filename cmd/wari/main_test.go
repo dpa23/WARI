@@ -48,3 +48,16 @@ func TestLoadPipeline(t *testing.T) {
 		t.Fatal("cargar el pipeline no debe lanzar ningún agente")
 	}
 }
+
+func TestAgentFactories(t *testing.T) {
+	if got := agentNames(); len(got) != 2 || got[0] != "agy" || got[1] != "claude" {
+		t.Errorf("agentNames = %v, quiero [agy claude]", got)
+	}
+	for name, newAgent := range agentFactories {
+		a := newAgent()
+		if a == nil || a.Status() != agent.StatusIdle {
+			t.Errorf("la fábrica %q no devuelve un agente inactivo", name)
+		}
+		a.Close()
+	}
+}
