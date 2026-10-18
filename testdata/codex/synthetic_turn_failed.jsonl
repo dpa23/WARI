@@ -1,0 +1,4 @@
+{"type":"thread.started","thread_id":"00000000-0000-0000-0000-000000000001"}
+{"type":"turn.started"}
+{"type":"error","message":"stream disconnected before completion: model overloaded"}
+{"type":"turn.failed","error":{"message":"stream disconnected before completion: model overloaded"}}
