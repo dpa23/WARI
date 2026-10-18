@@ -704,3 +704,133 @@ func TestPanelAccionesExportadas(t *testing.T) {
 		t.Error("RevertAgent retornó modelo inválido")
 	}
 }
+
+func TestStateBadge(t *testing.T) {
+	tests := []struct {
+		state   orch.State
+		hasSnap bool
+		want    string
+	}{
+		{orch.Running, true, "RUN"},
+		{orch.Paused, true, "PAU"},
+		{orch.Queued, true, "Q"},
+		{orch.Idle, true, "IDLE"},
+		{orch.Stopped, true, "STOP"},
+		{orch.Failed, true, "ERR"},
+		{orch.BudgetExceeded, true, "$!"},
+		{orch.State(99), false, "NEW"},
+	}
+	for _, tc := range tests {
+		got, _ := stateBadge(tc.state, tc.hasSnap)
+		if got != tc.want {
+			t.Errorf("stateBadge(%v, %v) = %q, want %q", tc.state, tc.hasSnap, got, tc.want)
+		}
+	}
+}
+
+func TestResponsiveAgentListBadgesAndNoOverflow(t *testing.T) {
+	sup := orch.New(5)
+	defer sup.Close()
+	p := NewPanel(Config{
+		Supervisor: sup,
+		NewAgent:   func() agent.Agent { return newPfake() },
+		Budget: orch.Budget{
+			MaxTurns:    10,
+			MaxTokens:   1000,
+			MaxDuration: time.Minute,
+		},
+	})
+	p.addView()
+	p.addView()
+	p.views[0].id = 1
+	p.views[0].hasSnap = true
+	p.views[0].snap = orch.Snapshot{ID: 1, State: orch.Running, Turns: 3, Tokens: 300, CostUSD: 0.05}
+	p.views[1].id = 2
+	p.views[1].hasSnap = true
+	p.views[1].snap = orch.Snapshot{ID: 2, State: orch.Paused, Turns: 5, Tokens: 500, CostUSD: 0.10}
+
+	// 1. En ancho estrecho (< 50), debe renderizar badges compactos ("RUN", "PAU")
+	pNarrow := p
+	pNarrow.width = 35
+	pNarrow.listH = 5
+	linesNarrow := pNarrow.listRows()
+	if len(linesNarrow) < 2 {
+		t.Fatalf("se esperaban al menos 2 filas, se obtuvieron %d", len(linesNarrow))
+	}
+	if !strings.Contains(linesNarrow[0], "RUN") {
+		t.Errorf("fila 0 en ancho estrecho debe contener el badge 'RUN': %q", linesNarrow[0])
+	}
+	if !strings.Contains(linesNarrow[1], "PAU") {
+		t.Errorf("fila 1 en ancho estrecho debe contener el badge 'PAU': %q", linesNarrow[1])
+	}
+
+	// 2. En ancho amplio (>= 50), debe renderizar el texto completo del estado ("running", "paused")
+	pWide := p
+	pWide.width = 80
+	pWide.listH = 5
+	linesWide := pWide.listRows()
+	if !strings.Contains(linesWide[0], "running") {
+		t.Errorf("fila 0 en ancho amplio debe contener 'running': %q", linesWide[0])
+	}
+	if !strings.Contains(linesWide[1], "paused") {
+		t.Errorf("fila 1 en ancho amplio debe contener 'paused': %q", linesWide[1])
+	}
+
+	// 3. Ningún ancho (de 5 a 120) debe desbordar su ancho
+	for w := 5; w <= 120; w++ {
+		pTest := p
+		pTest.width = w
+		pTest.listH = 5
+		for i, line := range pTest.listRows() {
+			if gotW := lipgloss.Width(line); gotW > w {
+				t.Fatalf("desborde en w=%d fila %d: ancho obtenido %d > %d: %q", w, i, gotW, w, line)
+			}
+		}
+	}
+}
+
+func TestRevertModalInspectionAndKeyNavigation(t *testing.T) {
+	sup := orch.New(2)
+	defer sup.Close()
+	p := NewPanel(Config{
+		Supervisor: sup,
+		NewAgent:   func() agent.Agent { return newPfake() },
+	})
+	p.addView()
+	v := p.views[0]
+	v.id = 1
+	v.hasSnap = true
+	v.snap = orch.Snapshot{ID: 1, State: orch.Paused}
+
+	// Sin ediciones: RevertFile no activa modal
+	p, _ = p.RevertFile()
+	if p.RevertModalActive() {
+		t.Fatal("no debe haber modal activo sin ediciones")
+	}
+
+	// Con modal simulado
+	p.rm = &revertModal{
+		kind:    revertFile,
+		turn:    3,
+		path:    "main.go",
+		files:   []string{"main.go"},
+		agentID: 1,
+		name:    "agente 1",
+	}
+
+	if !p.RevertModalActive() {
+		t.Fatal("RevertModalActive() debe ser true")
+	}
+	if p.RevertModalKind() != revertFile {
+		t.Errorf("RevertModalKind() = %q, want %q", p.RevertModalKind(), revertFile)
+	}
+	if files := p.RevertModalFiles(); len(files) != 1 || files[0] != "main.go" {
+		t.Errorf("RevertModalFiles() = %v", files)
+	}
+
+	// Esc cancela el modal
+	p, _ = p.Handle(tea.KeyPressMsg{Code: tea.KeyEsc})
+	if p.RevertModalActive() {
+		t.Fatal("Esc debía cancelar el modal de reversión")
+	}
+}

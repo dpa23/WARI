@@ -189,21 +189,33 @@ func TestDiffRevertFileWithConfirmationFromCenter(t *testing.T) {
 	if cmd != nil {
 		t.Fatal("la primera pulsación solo pide confirmación")
 	}
-	if !strings.Contains(centerColumn(m), "repite alt+r") {
+	if !strings.Contains(centerColumn(m), "[Enter] Confirmar") {
 		t.Fatalf("la confirmación debía verse en el centro:\n%s", centerColumn(m))
+	}
+	if !strings.Contains(centerColumn(m), "src/Big.txt") {
+		t.Fatalf("la confirmación debía mostrar el archivo afectado:\n%s", centerColumn(m))
 	}
 	if b, _ := os.ReadFile(target); string(b) == original {
 		t.Fatal("no debe revertir sin confirmar")
 	}
-	// Otra tecla desarma la confirmación.
+	// Otra tecla (navegación) NO desarma la confirmación (no volátil).
 	m, _ = send(m, text("n"))
-	if strings.Contains(centerColumn(m), "repite alt+r") {
-		t.Fatal("otra tecla debía desarmar la confirmación")
+	if !strings.Contains(centerColumn(m), "[Enter] Confirmar") {
+		t.Fatal("la navegación en diff no debe desarmar el diálogo de confirmación")
 	}
+	// Esc cancela el modal.
+	m, _ = send(m, press(tea.KeyEsc, 0))
+	if strings.Contains(centerColumn(m), "[Enter] Confirmar") {
+		t.Fatal("Esc debía cancelar el modal")
+	}
+	if b, _ := os.ReadFile(target); string(b) == original {
+		t.Fatal("no debe revertir tras cancelar con Esc")
+	}
+	// Volver a abrir el modal y confirmar con Enter.
 	m, _ = send(m, press('r', tea.ModAlt))
-	m, cmd = send(m, press('r', tea.ModAlt))
+	m, cmd = send(m, press(tea.KeyEnter, 0))
 	if cmd == nil {
-		t.Fatal("la segunda pulsación debía revertir")
+		t.Fatal("Enter debía confirmar y revertir")
 	}
 	m = feed(m, cmd)
 	if b, _ := os.ReadFile(target); string(b) != original {
@@ -221,15 +233,19 @@ func TestDiffRevertTurnAndAgentAskConfirmation(t *testing.T) {
 	for _, tc := range []struct {
 		key  rune
 		want string
-	}{{'t', "repite alt+t"}, {'a', "repite alt+a"}} {
+	}{{'t', "turno 1"}, {'a', "agente"}} {
 		m, _, target, original := diffLayout(t, 140, 30)
 		m, cmd := send(m, press('r', tea.ModCtrl))
 		m = feed(m, cmd)
 		m, _ = send(m, press(tc.key, tea.ModAlt))
-		if !strings.Contains(centerColumn(m), tc.want) {
+		if !strings.Contains(strings.ToLower(centerColumn(m)), tc.want) || !strings.Contains(centerColumn(m), "[Enter] Confirmar") {
 			t.Fatalf("%c: falta la confirmación:\n%s", tc.key, centerColumn(m))
 		}
-		m, cmd = send(m, press(tc.key, tea.ModAlt))
+		// Confirmar con Enter
+		m, cmd = send(m, press(tea.KeyEnter, 0))
+		if cmd == nil {
+			t.Fatalf("%c: Enter debía confirmar y revertir", tc.key)
+		}
 		feed(m, cmd)
 		if b, _ := os.ReadFile(target); string(b) != original {
 			t.Fatalf("%c: no revirtió", tc.key)

@@ -158,3 +158,57 @@ func TestCutCellsWide(t *testing.T) {
 		t.Fatalf("got %q", got)
 	}
 }
+
+func TestDiffViewRevertModalLinesAndFooter(t *testing.T) {
+	d := newTestDiffView(twoHunkDiff(), 60, 15)
+	d.rm = &revertModal{
+		kind:    revertFile,
+		turn:    2,
+		path:    "a/x.go",
+		files:   []string{"a/x.go"},
+		agentID: 1,
+		name:    "agente 1",
+	}
+
+	mls := d.renderModalLines(60)
+	if len(mls) != 4 {
+		t.Fatalf("renderModalLines devolvió %d líneas, quería 4", len(mls))
+	}
+	for i, l := range mls {
+		if gotW := lipgloss.Width(l); gotW != 60 {
+			t.Errorf("línea %d del modal: ancho %d != 60", i, gotW)
+		}
+	}
+
+	// lines con modal activo
+	lines := d.lines(defaultStyles(), DefaultKeyMap(), "", "", 60, 15)
+	if len(lines) != 15 {
+		t.Fatalf("lines devolvió %d líneas, quería 15", len(lines))
+	}
+	joined := strings.Join(plainLines(lines), "\n")
+	if !strings.Contains(joined, "Revertir archivo") {
+		t.Errorf("el diffview debía incluir el título del modal: %s", joined)
+	}
+	if !strings.Contains(joined, "a/x.go") {
+		t.Errorf("el diffview debía incluir el archivo afectado: %s", joined)
+	}
+	if !strings.Contains(joined, "[Enter] Confirmar · [Esc] Cancelar") {
+		t.Errorf("el footer debía incluir la confirmación no volátil: %s", joined)
+	}
+
+	// Verificación de que no desborda con modal en múltiples anchos y alturas
+	for w := 5; w <= 90; w += 3 {
+		for _, h := range []int{2, 5, 10, 20} {
+			d.setArea(w, h)
+			ls := d.lines(defaultStyles(), DefaultKeyMap(), "", "", w, h)
+			if len(ls) != h {
+				t.Fatalf("w=%d h=%d: se esperaban %d líneas, got %d", w, h, h, len(ls))
+			}
+			for i, l := range ls {
+				if gotW := lipgloss.Width(l); gotW != w {
+					t.Fatalf("desborde con modal en w=%d h=%d fila %d: ancho %d != %d", w, h, i, gotW, w)
+				}
+			}
+		}
+	}
+}

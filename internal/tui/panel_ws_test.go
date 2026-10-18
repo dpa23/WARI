@@ -176,19 +176,18 @@ func TestRevertNeedsConfirmationAndRestoresIdentical(t *testing.T) {
 	w.press(keyCtrlO)
 	w.untilState(0, "paused")
 
-	// Una pulsación sola solo pregunta.
+	// Una pulsación sola abre el diálogo modal de confirmación.
 	w.press(keyAltT)
-	w.wantView("¿revertir los archivos que editó agente 1 en el turno 1? repite alt+t")
+	w.wantView("[Enter] Confirmar")
+	w.wantView("a.txt, b.txt")
 	if w.hash("a.txt") == hashA {
 		t.Fatal("la primera pulsación no debe revertir")
 	}
-	// Otra tecla desarma la confirmación.
+	// Otra tecla (no volátil: el diálogo sigue activo).
 	w.typeText("x")
-	w.press(keyAltT)
-	if w.hash("a.txt") == hashA {
-		t.Fatal("tras otra tecla hay que confirmar de nuevo")
-	}
-	w.press(keyAltT)
+	w.wantView("[Enter] Confirmar")
+	// Confirmar con Enter ejecuta la reversión.
+	w.press(keyEnter)
 	w.until("revertido", func() bool { return w.hash("a.txt") == hashA })
 	if w.hash("b.txt") != hashB {
 		t.Fatal("b.txt debe quedar idéntico al checkpoint")

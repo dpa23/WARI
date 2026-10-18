@@ -111,6 +111,16 @@ func (v *agentView) inFlight() bool {
 	return v.hasSnap && (v.snap.State == orch.Running || v.snap.State == orch.Paused || v.snap.State == orch.Queued)
 }
 
+// revertModal almacena el estado del diálogo interactivo de confirmación de reversión.
+type revertModal struct {
+	kind    string // revertFile, revertTurn, revertAgent
+	turn    int
+	path    string
+	files   []string
+	agentID orch.ID
+	name    string
+}
+
 // Panel es el panel multiagente: una lista de agentes supervisados por un
 // orch.Supervisor y, debajo, el chat del seleccionado. Implementa el mismo
 // contrato de embebido que Model (Handle, Body, Cursor, SetSize, Focus...).
@@ -143,6 +153,7 @@ type Panel struct {
 	// para áreas angostas); alert, el último choque.
 	dv             *diffView
 	diffW, diffH   int // área del panel central donde se dibuja el diff
+	rm             *revertModal
 	armed          string
 	armedText      string
 	armedShort     string
@@ -303,9 +314,41 @@ func (m Panel) cur() *agentView { return m.views[m.sel] }
 
 // handleKey procesa las teclas con los bindings de KeyMap.
 func (m Panel) handleKey(msg tea.KeyPressMsg) (Panel, tea.Cmd) {
-	// La confirmación de una reversión se desarma con cualquier otra tecla.
-	armed := m.armed
-	m.armed, m.armedText, m.armedShort = "", "", ""
+	if m.rm != nil {
+		switch {
+		case key.Matches(msg, m.keys.Cancel):
+			m = m.cancelRevert()
+			return m, nil
+		case key.Matches(msg, m.keys.Send) || msg.String() == "enter":
+			return m.confirmRevert()
+		case key.Matches(msg, m.keys.RevertFile):
+			if m.rm.kind == revertFile {
+				return m.confirmRevert()
+			}
+			return m.revert(revertFile)
+		case key.Matches(msg, m.keys.RevertTurn):
+			if m.rm.kind == revertTurn {
+				return m.confirmRevert()
+			}
+			return m.revert(revertTurn)
+		case key.Matches(msg, m.keys.RevertAgent):
+			if m.rm.kind == revertAgent {
+				return m.confirmRevert()
+			}
+			return m.revert(revertAgent)
+		case msg.String() == "tab":
+			next := revertFile
+			switch m.rm.kind {
+			case revertFile:
+				next = revertTurn
+			case revertTurn:
+				next = revertAgent
+			case revertAgent:
+				next = revertFile
+			}
+			return m.revert(next)
+		}
+	}
 	switch {
 	case key.Matches(msg, m.keys.Quit):
 		return m.quit()
@@ -343,11 +386,11 @@ func (m Panel) handleKey(msg tea.KeyPressMsg) (Panel, tea.Cmd) {
 	case key.Matches(msg, m.keys.DiffFile):
 		return m.diff()
 	case key.Matches(msg, m.keys.RevertFile):
-		return m.revert(revertFile, armed)
+		return m.revert(revertFile)
 	case key.Matches(msg, m.keys.RevertTurn):
-		return m.revert(revertTurn, armed)
+		return m.revert(revertTurn)
 	case key.Matches(msg, m.keys.RevertAgent):
-		return m.revert(revertAgent, armed)
+		return m.revert(revertAgent)
 	case key.Matches(msg, m.keys.Cancel), key.Matches(msg, m.keys.AgentStop):
 		m.conflictActive = false
 		return m, m.stopCmd(m.cur())
@@ -566,6 +609,7 @@ func (m Panel) DiffLines(w, h int) []string {
 	if !m.DiffOpen() {
 		return nil
 	}
+	m.dv.rm = m.rm
 	return m.dv.lines(m.styles, m.keys, m.armedText, m.armedShort, w, h)
 }
 
@@ -576,13 +620,47 @@ func (m Panel) DiffKey(msg tea.KeyPressMsg) (Panel, tea.Cmd) {
 	if !m.DiffOpen() {
 		return m, nil
 	}
+	if m.rm != nil {
+		switch {
+		case key.Matches(msg, m.keys.Cancel):
+			m = m.cancelRevert()
+			return m, nil
+		case key.Matches(msg, m.keys.Send) || msg.String() == "enter":
+			return m.confirmRevert()
+		case key.Matches(msg, m.keys.RevertFile):
+			if m.rm.kind == revertFile {
+				return m.confirmRevert()
+			}
+			return m.revert(revertFile)
+		case key.Matches(msg, m.keys.RevertTurn):
+			if m.rm.kind == revertTurn {
+				return m.confirmRevert()
+			}
+			return m.revert(revertTurn)
+		case key.Matches(msg, m.keys.RevertAgent):
+			if m.rm.kind == revertAgent {
+				return m.confirmRevert()
+			}
+			return m.revert(revertAgent)
+		case msg.String() == "tab":
+			next := revertFile
+			switch m.rm.kind {
+			case revertFile:
+				next = revertTurn
+			case revertTurn:
+				next = revertAgent
+			case revertAgent:
+				next = revertFile
+			}
+			return m.revert(next)
+		}
+	}
 	switch {
 	case key.Matches(msg, m.keys.Cancel), key.Matches(msg, m.keys.DiffFile),
 		key.Matches(msg, m.keys.RevertFile), key.Matches(msg, m.keys.RevertTurn),
 		key.Matches(msg, m.keys.RevertAgent):
 		return m.handleKey(msg)
 	}
-	m.armed, m.armedText, m.armedShort = "", "", ""
 	d := m.dv
 	page := max(d.bodyH()-1, 1)
 	switch s := msg.String(); {
@@ -612,17 +690,45 @@ func (m Panel) DiffKey(msg tea.KeyPressMsg) (Panel, tea.Cmd) {
 
 // RevertFile inicia o confirma la reversión del archivo seleccionado.
 func (m Panel) RevertFile() (Panel, tea.Cmd) {
-	return m.revert(revertFile, m.armed)
+	if m.rm != nil && m.rm.kind == revertFile {
+		return m.confirmRevert()
+	}
+	return m.revert(revertFile)
 }
 
 // RevertTurn inicia o confirma la reversión del turno del agente.
 func (m Panel) RevertTurn() (Panel, tea.Cmd) {
-	return m.revert(revertTurn, m.armed)
+	if m.rm != nil && m.rm.kind == revertTurn {
+		return m.confirmRevert()
+	}
+	return m.revert(revertTurn)
 }
 
 // RevertAgent inicia o confirma la reversión total del agente.
 func (m Panel) RevertAgent() (Panel, tea.Cmd) {
-	return m.revert(revertAgent, m.armed)
+	if m.rm != nil && m.rm.kind == revertAgent {
+		return m.confirmRevert()
+	}
+	return m.revert(revertAgent)
+}
+
+// RevertModalActive indica si hay un diálogo de confirmación de reversión activo.
+func (m Panel) RevertModalActive() bool { return m.rm != nil }
+
+// RevertModalFiles devuelve los archivos afectados en la reversión pendiente.
+func (m Panel) RevertModalFiles() []string {
+	if m.rm == nil {
+		return nil
+	}
+	return append([]string(nil), m.rm.files...)
+}
+
+// RevertModalKind devuelve el alcance ("file", "turn", "agent") del diálogo activo.
+func (m Panel) RevertModalKind() string {
+	if m.rm == nil {
+		return ""
+	}
+	return m.rm.kind
 }
 
 // FocusConflict enfoca al agente en conflicto y activa el modo de resolución
@@ -951,6 +1057,34 @@ func budgetStyle(base lipgloss.Style, ratio float64) lipgloss.Style {
 	return base
 }
 
+// stateBadge devuelve el texto corto (RUN, PAU, Q, IDLE, STOP, ERR, $!) y el estilo del badge.
+func stateBadge(st orch.State, hasSnap bool) (string, lipgloss.Style) {
+	if !hasSnap {
+		return "NEW", lipgloss.NewStyle().Faint(true)
+	}
+	switch st {
+	case orch.Running:
+		return "RUN", lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("10"))
+	case orch.Paused:
+		return "PAU", lipgloss.NewStyle().Bold(true).Foreground(compat.AdaptiveColor{
+			Light: lipgloss.Color("#b45309"),
+			Dark:  lipgloss.Color("#fbbf24"),
+		})
+	case orch.Queued:
+		return "Q", lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("6"))
+	case orch.Idle:
+		return "IDLE", lipgloss.NewStyle().Faint(true).Foreground(lipgloss.Color("12"))
+	case orch.Stopped:
+		return "STOP", lipgloss.NewStyle().Faint(true)
+	case orch.Failed:
+		return "ERR", lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("9"))
+	case orch.BudgetExceeded:
+		return "$!", lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("9"))
+	default:
+		return "?", lipgloss.NewStyle().Faint(true)
+	}
+}
+
 // listLine compone la fila del agente i de la lista.
 func (m Panel) listLine(i int) string {
 	v := m.views[i]
@@ -1030,6 +1164,68 @@ func (m Panel) listLine(i int) string {
 	barSt := budgetStyle(st, maxRatio)
 
 	var bldr strings.Builder
+
+	if m.width < 50 {
+		badgeText, badgeSt := stateBadge(v.snap.State, v.hasSnap)
+		if i == m.sel {
+			badgeSt = badgeSt.Reverse(true)
+		}
+
+		nameW := 8
+		if m.width < 34 {
+			nameW = 6
+		}
+		if m.width < 24 {
+			nameW = max(m.width-12, 3)
+		}
+		name := truncate(v.name, nameW)
+
+		hasAlert := m.alert.id != 0 && v.id == m.alert.id
+		alertStr := ""
+		if hasAlert {
+			if m.width >= 35 {
+				alertStr = " ⚠ " + cmp.Or(m.alert.label, "choque")
+			} else {
+				alertStr = " ⚠"
+			}
+		}
+
+		prefix := st.Render(fmt.Sprintf("%s%-*s ", marker, nameW, name)) + badgeSt.Render(badgeText)
+		bldr.WriteString(prefix)
+
+		avail := m.width - lipgloss.Width(prefix) - lipgloss.Width(alertStr)
+
+		turnsPart := ""
+		if avail >= 4 {
+			turnsPart = " " + turnsSt.Render(fmt.Sprintf("t%d", v.snap.Turns))
+			if b.MaxTurns > 0 && avail >= 8 {
+				turnsPart = " " + turnsSt.Render(fmt.Sprintf("t%d/%d", v.snap.Turns, b.MaxTurns))
+			}
+			avail -= lipgloss.Width(turnsPart)
+		}
+
+		costPart := ""
+		if avail >= 8 {
+			costPart = " " + st.Render(fmt.Sprintf("US$%.2f", v.snap.CostUSD))
+			avail -= lipgloss.Width(costPart)
+		}
+
+		barPart := ""
+		if bar != "" && avail >= lipgloss.Width(bar)+1 {
+			barPart = " " + barSt.Render(bar)
+			avail -= lipgloss.Width(barPart)
+		}
+
+		bldr.WriteString(turnsPart)
+		bldr.WriteString(costPart)
+		bldr.WriteString(barPart)
+		if alertStr != "" {
+			bldr.WriteString(st.Render(alertStr))
+		}
+
+		return lipgloss.NewStyle().MaxWidth(max(m.width, 1)).Render(bldr.String())
+	}
+
 	bldr.WriteString(st.Render(fmt.Sprintf("%s%-10s %-15s ", marker, truncate(v.name, 10), v.stateLabel())))
 	bldr.WriteString(turnsSt.Render(turns))
 	bldr.WriteString(st.Render(" · "))
@@ -1093,12 +1289,81 @@ func (m Panel) stateText() string {
 	return "libre"
 }
 
+// renderRevertModal dibuja el diálogo modal de confirmación de reversión para el panel.
+func (m Panel) renderRevertModal(w, h int) []string {
+	if m.rm == nil {
+		return nil
+	}
+	rm := m.rm
+	var title, scopeStr string
+	switch rm.kind {
+	case revertFile:
+		title = "Revertir archivo"
+		scopeStr = fmt.Sprintf("Afecta: %s (t%d)", rm.path, rm.turn)
+	case revertTurn:
+		title = fmt.Sprintf("Revertir turno %d", rm.turn)
+		scopeStr = fmt.Sprintf("Afecta (%d): %s", len(rm.files), strings.Join(rm.files, ", "))
+	default:
+		title = fmt.Sprintf("Revertir agente %s", rm.name)
+		scopeStr = fmt.Sprintf("Afecta (%d): %s", len(rm.files), strings.Join(rm.files, ", "))
+	}
+
+	header := fmt.Sprintf("┌─ %s ", title)
+	if pad := w - lipgloss.Width(header) - 1; pad > 0 {
+		header += strings.Repeat("─", pad) + "┐"
+	} else {
+		header = truncate(header, max(w-1, 1)) + "┐"
+	}
+
+	body := fmt.Sprintf("│ %s", truncate(scopeStr, max(w-3, 0)))
+	if pad := w - lipgloss.Width(body) - 1; pad > 0 {
+		body += strings.Repeat(" ", pad) + "│"
+	} else {
+		body = truncate(body, max(w-1, 1)) + "│"
+	}
+
+	action := "│ [Enter] Confirmar  [Esc] Cancelar"
+	if w < 34 {
+		action = "│ [Enter] ok · [Esc] salir"
+	}
+	if pad := w - lipgloss.Width(action) - 1; pad > 0 {
+		action += strings.Repeat(" ", pad) + "│"
+	} else {
+		action = truncate(action, max(w-1, 1)) + "│"
+	}
+
+	footer := "└" + strings.Repeat("─", max(w-2, 0)) + "┘"
+
+	st := m.styles.warn
+	lines := []string{
+		st.MaxWidth(max(w, 1)).Render(padTo(header, w)),
+		st.MaxWidth(max(w, 1)).Render(padTo(body, w)),
+		st.MaxWidth(max(w, 1)).Render(padTo(action, w)),
+		st.MaxWidth(max(w, 1)).Render(padTo(footer, w)),
+	}
+
+	out := make([]string, 0, max(h, len(lines)))
+	out = append(out, lines...)
+	for len(out) < h {
+		out = append(out, strings.Repeat(" ", w))
+	}
+	if h > 0 && len(out) > h {
+		out = out[:h]
+	}
+	return out
+}
+
 // statusLine compone la línea de estado del agente seleccionado.
 func (m Panel) statusLine() string {
 	v := m.cur()
 	lead := "  "
 	if m.quitting || (v.hasSnap && v.snap.State == orch.Running) {
 		lead = m.spin.View() + " "
+	}
+	if m.rm != nil {
+		parts := []string{"⚠ reversión pendiente: [Enter] confirmar · [Esc] cancelar"}
+		st := m.styles.warn
+		return st.MaxWidth(max(m.width, 1)).Render(lead + strings.Join(parts, " · "))
 	}
 	parts := []string{m.stateText()}
 	if m.armedText != "" {
@@ -1155,7 +1420,11 @@ func (m Panel) Body() string {
 	if m.statH > 0 {
 		rows = append(rows, m.statusLine())
 	}
-	rows = append(rows, m.input.View())
+	if m.rm != nil {
+		rows = append(rows, m.renderRevertModal(m.width, m.inH)...)
+	} else {
+		rows = append(rows, m.input.View())
+	}
 	return lipgloss.JoinVertical(lipgloss.Left, rows...)
 }
 
@@ -1275,10 +1544,10 @@ func (m Panel) diff() (Panel, tea.Cmd) {
 	}
 }
 
-// revert revierte el archivo que se está viendo (o el de la última edición),
-// su turno o todo el agente. Pide confirmación: la primera pulsación solo
-// avisa y repetirla ejecuta.
-func (m Panel) revert(kind, armed string) (Panel, tea.Cmd) {
+// revert inicia el diálogo interactivo de confirmación para revertir el archivo,
+// el turno o todo el agente. Muestra los archivos afectados y requiere [Enter]
+// para confirmar o [Esc] para cancelar (no volátil).
+func (m Panel) revert(kind string) (Panel, tea.Cmd) {
 	v := m.cur()
 	eds := m.savedEdits(v)
 	if len(eds) == 0 {
@@ -1290,43 +1559,108 @@ func (m Panel) revert(kind, armed string) (Panel, tea.Cmd) {
 	if m.dv != nil && m.dv.v == v {
 		ed = m.dv.edit
 	}
-	var what, short, token, keyName string
+
+	var files []string
+	switch kind {
+	case revertFile:
+		files = []string{ed.Path}
+	case revertTurn:
+		seen := make(map[string]bool)
+		for _, e := range eds {
+			if e.Turn == ed.Turn && !seen[e.Path] {
+				seen[e.Path] = true
+				files = append(files, e.Path)
+			}
+		}
+	default: // revertAgent
+		seen := make(map[string]bool)
+		for _, e := range eds {
+			if !seen[e.Path] {
+				seen[e.Path] = true
+				files = append(files, e.Path)
+			}
+		}
+	}
+
+	m.rm = &revertModal{
+		kind:    kind,
+		turn:    ed.Turn,
+		path:    ed.Path,
+		files:   files,
+		agentID: v.id,
+		name:    v.name,
+	}
+
+	var what, short string
 	switch kind {
 	case revertFile:
 		what = fmt.Sprintf("revertir %s al checkpoint del turno %d", ed.Path, ed.Turn)
 		short = "revertir " + ed.Path
-		token = fmt.Sprintf("%s:%d:%s", kind, ed.Turn, ed.Path)
-		keyName = m.keys.RevertFile.Help().Key
 	case revertTurn:
 		what = fmt.Sprintf("revertir los archivos que editó %s en el turno %d", v.name, ed.Turn)
 		short = fmt.Sprintf("revertir el turno %d", ed.Turn)
-		token = fmt.Sprintf("%s:%d", kind, ed.Turn)
-		keyName = m.keys.RevertTurn.Help().Key
 	default:
 		what = fmt.Sprintf("revertir todo lo que editó %s", v.name)
 		short = "revertir todo el agente"
-		token = kind
-		keyName = m.keys.RevertAgent.Help().Key
 	}
-	if armed != token {
-		m.armed = token
-		m.armedText = fmt.Sprintf("¿%s? repite %s para confirmar", what, keyName)
-		m.armedShort = fmt.Sprintf("¿%s? repite %s", short, keyName)
-		v.add(kindWarn, m.armedText+" (cualquier otra tecla cancela)")
+
+	m.armed = kind
+	m.armedText = fmt.Sprintf("¿%s? [Enter] confirmar · [Esc] cancelar", what)
+	m.armedShort = fmt.Sprintf("¿%s? [Enter]/[Esc]", short)
+	v.add(kindWarn, m.armedText)
+	m.refresh()
+	return m, nil
+}
+
+// confirmRevert ejecuta la reversión confirmada por el usuario con Enter.
+func (m Panel) confirmRevert() (Panel, tea.Cmd) {
+	if m.rm == nil {
+		return m, nil
+	}
+	rm := m.rm
+	m.rm = nil
+	m.armed, m.armedText, m.armedShort = "", "", ""
+	m.dv = nil
+
+	v := m.cur()
+	sup, id := m.sup, rm.agentID
+
+	var what string
+	switch rm.kind {
+	case revertFile:
+		what = fmt.Sprintf("revertir %s al checkpoint del turno %d", rm.path, rm.turn)
+	case revertTurn:
+		what = fmt.Sprintf("revertir los archivos que editó %s en el turno %d", rm.name, rm.turn)
+	default:
+		what = fmt.Sprintf("revertir todo lo que editó %s", rm.name)
+	}
+
+	if sup == nil {
+		v.add(kindInfo, "sin supervisor: no se puede revertir")
 		m.refresh()
 		return m, nil
 	}
-	sup, id := m.sup, v.id
+
 	return m, func() tea.Msg {
 		var err error
-		switch kind {
+		switch rm.kind {
 		case revertFile:
-			err = sup.RevertFile(id, ed.Turn, ed.Path)
+			err = sup.RevertFile(id, rm.turn, rm.path)
 		case revertTurn:
-			err = sup.RevertTurn(id, ed.Turn)
+			err = sup.RevertTurn(id, rm.turn)
 		default:
 			err = sup.RevertAgent(id)
 		}
 		return revertMsg{id: id, what: what, err: err}
 	}
+}
+
+// cancelRevert cancela el diálogo modal de confirmación de reversión.
+func (m Panel) cancelRevert() Panel {
+	if m.rm != nil {
+		m.rm = nil
+		m.armed, m.armedText, m.armedShort = "", "", ""
+		m.refresh()
+	}
+	return m
 }

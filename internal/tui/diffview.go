@@ -8,6 +8,7 @@ import (
 
 	"charm.land/bubbles/v2/key"
 	"charm.land/lipgloss/v2"
+	"charm.land/lipgloss/v2/compat"
 
 	"github.com/dpa23/wari/internal/orch"
 )
@@ -115,6 +116,7 @@ type diffView struct {
 	yoff, xoff, cur int
 	// w y h son el área donde se dibuja (la fija el layout).
 	w, h int
+	rm   *revertModal
 }
 
 // setText fija el diff y lo interpreta, volviendo al principio.
@@ -292,10 +294,85 @@ func (d *diffView) lines(st styles, km KeyMap, armedText, armedShort string, w, 
 	for len(out) < d.bodyH() {
 		out = append(out, strings.Repeat(" ", w))
 	}
+	if d.rm != nil {
+		modalLines := d.renderModalLines(w)
+		mH := len(modalLines)
+		if len(out) >= mH {
+			start := len(out) - mH
+			for idx, ml := range modalLines {
+				out[start+idx] = ml
+			}
+		}
+	}
 	if d.footerRows() > 0 {
 		out = append(out, d.footer(st, km, armedText, armedShort, w))
 	}
 	return out[:h]
+}
+
+func (d *diffView) renderModalLines(w int) []string {
+	if d.rm == nil {
+		return nil
+	}
+	rm := d.rm
+	var title, scopeStr string
+	switch rm.kind {
+	case revertFile:
+		title = "Revertir archivo"
+		scopeStr = fmt.Sprintf("Archivo: %s (turno %d)", rm.path, rm.turn)
+	case revertTurn:
+		title = fmt.Sprintf("Revertir turno %d", rm.turn)
+		scopeStr = fmt.Sprintf("Archivos afectados (%d): %s", len(rm.files), strings.Join(rm.files, ", "))
+	default:
+		title = fmt.Sprintf("Revertir agente %s", rm.name)
+		scopeStr = fmt.Sprintf("Archivos afectados (%d): %s", len(rm.files), strings.Join(rm.files, ", "))
+	}
+
+	if w < 8 {
+		return nil
+	}
+	boxW := min(max(w-4, 12), min(70, w))
+	if boxW <= 0 {
+		return nil
+	}
+
+	header := fmt.Sprintf("┌─ %s ", title)
+	if pad := boxW - lipgloss.Width(header) - 1; pad > 0 {
+		header += strings.Repeat("─", pad) + "┐"
+	} else {
+		header = cutCells(header, 0, boxW-1) + "┐"
+	}
+
+	body1 := fmt.Sprintf("│ %s", cutCells(scopeStr, 0, max(boxW-3, 0)))
+	if pad := boxW - lipgloss.Width(body1) - 1; pad > 0 {
+		body1 += strings.Repeat(" ", pad) + "│"
+	} else {
+		body1 = cutCells(body1, 0, boxW-1) + "│"
+	}
+
+	body2 := "│ [Enter] Confirmar    [Esc] Cancelar"
+	if pad := boxW - lipgloss.Width(body2) - 1; pad > 0 {
+		body2 += strings.Repeat(" ", pad) + "│"
+	} else {
+		body2 = cutCells(body2, 0, boxW-1) + "│"
+	}
+
+	footer := "└" + strings.Repeat("─", max(boxW-2, 0)) + "┘"
+
+	style := lipgloss.NewStyle().Bold(true).Foreground(compat.AdaptiveColor{
+		Light: lipgloss.Color("#b45309"),
+		Dark:  lipgloss.Color("#fbbf24"),
+	}).Background(lipgloss.Color("236"))
+
+	leftPad := max((w-boxW)/2, 0)
+	padStr := strings.Repeat(" ", leftPad)
+
+	return []string{
+		padTo(padStr+style.Render(header), w),
+		padTo(padStr+style.Render(body1), w),
+		padTo(padStr+style.Render(body2), w),
+		padTo(padStr+style.Render(footer), w),
+	}
 }
 
 func (d *diffView) renderRow(st styles, r diffRow, idx, w, gutterCols, mode, codeW int) string {
@@ -351,6 +428,10 @@ func (d *diffView) renderRow(st styles, r diffRow, idx, w, gutterCols, mode, cod
 
 // footer es la confirmación pendiente o, si no hay, la ayuda de la vista.
 func (d *diffView) footer(st styles, km KeyMap, armedText, armedShort string, w int) string {
+	if d.rm != nil {
+		s := "¿Confirmar reversión? [Enter] Confirmar · [Esc] Cancelar"
+		return st.warn.Render(padTo(cutCells(s, 0, w), w))
+	}
 	if armedText != "" {
 		s := armedText
 		if lipgloss.Width(s) > w && armedShort != "" {
