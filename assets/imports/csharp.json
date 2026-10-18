@@ -1,0 +1,398 @@
+{
+	"Action": [
+		"System"
+	],
+	"ActionResult": [
+		"Microsoft.AspNetCore.Mvc"
+	],
+	"ApiControllerAttribute": [
+		"Microsoft.AspNetCore.Mvc"
+	],
+	"ArgumentException": [
+		"System"
+	],
+	"ArgumentNullException": [
+		"System"
+	],
+	"ArgumentOutOfRangeException": [
+		"System"
+	],
+	"BadRequestResult": [
+		"Microsoft.AspNetCore.Mvc"
+	],
+	"BinaryReader": [
+		"System.IO"
+	],
+	"BinaryWriter": [
+		"System.IO"
+	],
+	"CancellationToken": [
+		"System.Threading"
+	],
+	"CancellationTokenSource": [
+		"System.Threading"
+	],
+	"CommentAttribute": [
+		"Microsoft.EntityFrameworkCore"
+	],
+	"ConfigurationBuilder": [
+		"Microsoft.Extensions.Configuration"
+	],
+	"Console": [
+		"System"
+	],
+	"Controller": [
+		"Microsoft.AspNetCore.Mvc"
+	],
+	"ControllerBase": [
+		"Microsoft.AspNetCore.Mvc"
+	],
+	"Convert": [
+		"System"
+	],
+	"DateTime": [
+		"System"
+	],
+	"DateTimeOffset": [
+		"System"
+	],
+	"DbContext": [
+		"Microsoft.EntityFrameworkCore"
+	],
+	"DbContextOptions": [
+		"Microsoft.EntityFrameworkCore"
+	],
+	"DbContextOptionsBuilder": [
+		"Microsoft.EntityFrameworkCore"
+	],
+	"DbSet": [
+		"Microsoft.EntityFrameworkCore"
+	],
+	"Dictionary": [
+		"System.Collections.Generic"
+	],
+	"Directory": [
+		"System.IO"
+	],
+	"DirectoryInfo": [
+		"System.IO"
+	],
+	"DirectoryNotFoundException": [
+		"System.IO"
+	],
+	"Encoding": [
+		"System.Text"
+	],
+	"EntityTypeBuilder": [
+		"Microsoft.EntityFrameworkCore.Metadata.Builders"
+	],
+	"Enumerable": [
+		"System.Linq"
+	],
+	"Environment": [
+		"System"
+	],
+	"EqualityComparer": [
+		"System.Collections.Generic"
+	],
+	"EventArgs": [
+		"System"
+	],
+	"EventHandler": [
+		"System"
+	],
+	"Exception": [
+		"System"
+	],
+	"File": [
+		"System.IO"
+	],
+	"FileAccess": [
+		"System.IO"
+	],
+	"FileInfo": [
+		"System.IO"
+	],
+	"FileMode": [
+		"System.IO"
+	],
+	"FileNotFoundException": [
+		"System.IO"
+	],
+	"FileShare": [
+		"System.IO"
+	],
+	"FileStream": [
+		"System.IO"
+	],
+	"FromBodyAttribute": [
+		"Microsoft.AspNetCore.Mvc"
+	],
+	"FromHeaderAttribute": [
+		"Microsoft.AspNetCore.Mvc"
+	],
+	"FromQueryAttribute": [
+		"Microsoft.AspNetCore.Mvc"
+	],
+	"FromRouteAttribute": [
+		"Microsoft.AspNetCore.Mvc"
+	],
+	"FromServicesAttribute": [
+		"Microsoft.AspNetCore.Mvc"
+	],
+	"Func": [
+		"System"
+	],
+	"Guid": [
+		"System"
+	],
+	"HashSet": [
+		"System.Collections.Generic"
+	],
+	"HttpDeleteAttribute": [
+		"Microsoft.AspNetCore.Mvc"
+	],
+	"HttpGetAttribute": [
+		"Microsoft.AspNetCore.Mvc"
+	],
+	"HttpPatchAttribute": [
+		"Microsoft.AspNetCore.Mvc"
+	],
+	"HttpPostAttribute": [
+		"Microsoft.AspNetCore.Mvc"
+	],
+	"HttpPutAttribute": [
+		"Microsoft.AspNetCore.Mvc"
+	],
+	"IAsyncDisposable": [
+		"System"
+	],
+	"IActionResult": [
+		"Microsoft.AspNetCore.Mvc"
+	],
+	"ICollection": [
+		"System.Collections.Generic"
+	],
+	"IConfiguration": [
+		"Microsoft.Extensions.Configuration"
+	],
+	"IConfigurationBuilder": [
+		"Microsoft.Extensions.Configuration"
+	],
+	"IConfigurationRoot": [
+		"Microsoft.Extensions.Configuration"
+	],
+	"IDictionary": [
+		"System.Collections.Generic"
+	],
+	"IDisposable": [
+		"System"
+	],
+	"IEnumerable": [
+		"System.Collections.Generic"
+	],
+	"IEqualityComparer": [
+		"System.Collections.Generic"
+	],
+	"IGrouping": [
+		"System.Linq"
+	],
+	"IList": [
+		"System.Collections.Generic"
+	],
+	"ILogger": [
+		"Microsoft.Extensions.Logging"
+	],
+	"ILoggerFactory": [
+		"Microsoft.Extensions.Logging"
+	],
+	"ILookup": [
+		"System.Linq"
+	],
+	"IOException": [
+		"System.IO"
+	],
+	"IOrderedEnumerable": [
+		"System.Linq"
+	],
+	"IOrderedQueryable": [
+		"System.Linq"
+	],
+	"IQueryable": [
+		"System.Linq"
+	],
+	"IReadOnlyCollection": [
+		"System.Collections.Generic"
+	],
+	"IReadOnlyDictionary": [
+		"System.Collections.Generic"
+	],
+	"IReadOnlyList": [
+		"System.Collections.Generic"
+	],
+	"IReadOnlySet": [
+		"System.Collections.Generic"
+	],
+	"IServiceCollection": [
+		"Microsoft.Extensions.DependencyInjection"
+	],
+	"IServiceProvider": [
+		"System"
+	],
+	"ISet": [
+		"System.Collections.Generic"
+	],
+	"IndexAttribute": [
+		"Microsoft.EntityFrameworkCore"
+	],
+	"InvalidOperationException": [
+		"System"
+	],
+	"JsonDocument": [
+		"System.Text.Json"
+	],
+	"JsonElement": [
+		"System.Text.Json"
+	],
+	"JsonIgnoreAttribute": [
+		"System.Text.Json.Serialization"
+	],
+	"JsonPropertyNameAttribute": [
+		"System.Text.Json.Serialization"
+	],
+	"JsonSerializer": [
+		"System.Text.Json"
+	],
+	"JsonSerializerOptions": [
+		"System.Text.Json"
+	],
+	"KeyValuePair": [
+		"System.Collections.Generic"
+	],
+	"KeylessAttribute": [
+		"Microsoft.EntityFrameworkCore"
+	],
+	"LinkedList": [
+		"System.Collections.Generic"
+	],
+	"List": [
+		"System.Collections.Generic"
+	],
+	"LogLevel": [
+		"Microsoft.Extensions.Logging"
+	],
+	"LoggerExtensions": [
+		"Microsoft.Extensions.Logging"
+	],
+	"LoggerFactory": [
+		"Microsoft.Extensions.Logging"
+	],
+	"Math": [
+		"System"
+	],
+	"MemoryStream": [
+		"System.IO"
+	],
+	"ModelBuilder": [
+		"Microsoft.EntityFrameworkCore"
+	],
+	"NoContentResult": [
+		"Microsoft.AspNetCore.Mvc"
+	],
+	"NotFoundResult": [
+		"Microsoft.AspNetCore.Mvc"
+	],
+	"NotImplementedException": [
+		"System"
+	],
+	"NotSupportedException": [
+		"System"
+	],
+	"OkResult": [
+		"Microsoft.AspNetCore.Mvc"
+	],
+	"Parallel": [
+		"System.Threading.Tasks"
+	],
+	"Path": [
+		"System.IO"
+	],
+	"Predicate": [
+		"System"
+	],
+	"PriorityQueue": [
+		"System.Collections.Generic"
+	],
+	"Queue": [
+		"System.Collections.Generic"
+	],
+	"Random": [
+		"System"
+	],
+	"RouteAttribute": [
+		"Microsoft.AspNetCore.Mvc"
+	],
+	"SearchOption": [
+		"System.IO"
+	],
+	"ServiceCollection": [
+		"Microsoft.Extensions.DependencyInjection"
+	],
+	"ServiceDescriptor": [
+		"Microsoft.Extensions.DependencyInjection"
+	],
+	"ServiceLifetime": [
+		"Microsoft.Extensions.DependencyInjection"
+	],
+	"ServiceProvider": [
+		"Microsoft.Extensions.DependencyInjection"
+	],
+	"SortedDictionary": [
+		"System.Collections.Generic"
+	],
+	"SortedList": [
+		"System.Collections.Generic"
+	],
+	"SortedSet": [
+		"System.Collections.Generic"
+	],
+	"Stack": [
+		"System.Collections.Generic"
+	],
+	"Stream": [
+		"System.IO"
+	],
+	"StreamReader": [
+		"System.IO"
+	],
+	"StreamWriter": [
+		"System.IO"
+	],
+	"StringBuilder": [
+		"System.Text"
+	],
+	"StringComparer": [
+		"System"
+	],
+	"StringComparison": [
+		"System"
+	],
+	"Task": [
+		"System.Threading.Tasks"
+	],
+	"TaskCompletionSource": [
+		"System.Threading.Tasks"
+	],
+	"TimeoutException": [
+		"System"
+	],
+	"TimeSpan": [
+		"System"
+	],
+	"Uri": [
+		"System"
+	],
+	"ValueTask": [
+		"System.Threading.Tasks"
+	]
+}

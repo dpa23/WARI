@@ -1,0 +1,845 @@
+{
+	"AllArgsConstructor": [
+		"lombok.AllArgsConstructor"
+	],
+	"ApplicationRunner": [
+		"org.springframework.boot.ApplicationRunner"
+	],
+	"ArgumentCaptor": [
+		"org.mockito.ArgumentCaptor"
+	],
+	"ArgumentMatchers": [
+		"org.mockito.ArgumentMatchers"
+	],
+	"ArrayBlockingQueue": [
+		"java.util.concurrent.ArrayBlockingQueue"
+	],
+	"ArrayDeque": [
+		"java.util.ArrayDeque"
+	],
+	"ArrayList": [
+		"java.util.ArrayList"
+	],
+	"Arrays": [
+		"java.util.Arrays"
+	],
+	"AssertFalse": [
+		"jakarta.validation.constraints.AssertFalse"
+	],
+	"AssertTrue": [
+		"jakarta.validation.constraints.AssertTrue"
+	],
+	"Assertions": [
+		"org.junit.jupiter.api.Assertions"
+	],
+	"AtomicBoolean": [
+		"java.util.concurrent.atomic.AtomicBoolean"
+	],
+	"AtomicInteger": [
+		"java.util.concurrent.atomic.AtomicInteger"
+	],
+	"AtomicLong": [
+		"java.util.concurrent.atomic.AtomicLong"
+	],
+	"AtomicReference": [
+		"java.util.concurrent.atomic.AtomicReference"
+	],
+	"Autowired": [
+		"org.springframework.beans.factory.annotation.Autowired"
+	],
+	"BDDMockito": [
+		"org.mockito.BDDMockito"
+	],
+	"BaseStream": [
+		"java.util.stream.BaseStream"
+	],
+	"Bean": [
+		"org.springframework.context.annotation.Bean"
+	],
+	"BeforeAll": [
+		"org.junit.jupiter.api.BeforeAll"
+	],
+	"BeforeEach": [
+		"org.junit.jupiter.api.BeforeEach"
+	],
+	"BiConsumer": [
+		"java.util.function.BiConsumer"
+	],
+	"BiFunction": [
+		"java.util.function.BiFunction"
+	],
+	"BiPredicate": [
+		"java.util.function.BiPredicate"
+	],
+	"BigDecimal": [
+		"java.math.BigDecimal"
+	],
+	"BigInteger": [
+		"java.math.BigInteger"
+	],
+	"BinaryOperator": [
+		"java.util.function.BinaryOperator"
+	],
+	"BlockingQueue": [
+		"java.util.concurrent.BlockingQueue"
+	],
+	"BufferedReader": [
+		"java.io.BufferedReader"
+	],
+	"BufferedWriter": [
+		"java.io.BufferedWriter"
+	],
+	"Builder": [
+		"lombok.Builder"
+	],
+	"ByteArrayInputStream": [
+		"java.io.ByteArrayInputStream"
+	],
+	"ByteArrayOutputStream": [
+		"java.io.ByteArrayOutputStream"
+	],
+	"Calendar": [
+		"java.util.Calendar"
+	],
+	"Callable": [
+		"java.util.concurrent.Callable"
+	],
+	"Captor": [
+		"org.mockito.Captor"
+	],
+	"CascadeType": [
+		"jakarta.persistence.CascadeType"
+	],
+	"ChronoUnit": [
+		"java.time.temporal.ChronoUnit"
+	],
+	"Closeable": [
+		"java.io.Closeable"
+	],
+	"Collection": [
+		"java.util.Collection"
+	],
+	"Collections": [
+		"java.util.Collections"
+	],
+	"Column": [
+		"jakarta.persistence.Column"
+	],
+	"CommandLineRunner": [
+		"org.springframework.boot.CommandLineRunner"
+	],
+	"Comparator": [
+		"java.util.Comparator"
+	],
+	"CompletableFuture": [
+		"java.util.concurrent.CompletableFuture"
+	],
+	"Component": [
+		"org.springframework.stereotype.Component"
+	],
+	"ConcurrentHashMap": [
+		"java.util.concurrent.ConcurrentHashMap"
+	],
+	"ConcurrentMap": [
+		"java.util.concurrent.ConcurrentMap"
+	],
+	"Configuration": [
+		"org.springframework.context.annotation.Configuration"
+	],
+	"Consumer": [
+		"java.util.function.Consumer"
+	],
+	"Controller": [
+		"org.springframework.stereotype.Controller"
+	],
+	"ControllerAdvice": [
+		"org.springframework.web.bind.annotation.ControllerAdvice"
+	],
+	"CopyOnWriteArrayList": [
+		"java.util.concurrent.CopyOnWriteArrayList"
+	],
+	"CopyOnWriteArraySet": [
+		"java.util.concurrent.CopyOnWriteArraySet"
+	],
+	"CountDownLatch": [
+		"java.util.concurrent.CountDownLatch"
+	],
+	"CrossOrigin": [
+		"org.springframework.web.bind.annotation.CrossOrigin"
+	],
+	"CsvSource": [
+		"org.junit.jupiter.params.provider.CsvSource"
+	],
+	"CyclicBarrier": [
+		"java.util.concurrent.CyclicBarrier"
+	],
+	"Data": [
+		"lombok.Data"
+	],
+	"Date": [
+		"java.util.Date",
+		"java.sql.Date"
+	],
+	"DateTimeFormatter": [
+		"java.time.format.DateTimeFormatter"
+	],
+	"DayOfWeek": [
+		"java.time.DayOfWeek"
+	],
+	"DeleteMapping": [
+		"org.springframework.web.bind.annotation.DeleteMapping"
+	],
+	"DependsOn": [
+		"org.springframework.context.annotation.DependsOn"
+	],
+	"Deque": [
+		"java.util.Deque"
+	],
+	"Digits": [
+		"jakarta.validation.constraints.Digits"
+	],
+	"Disabled": [
+		"org.junit.jupiter.api.Disabled"
+	],
+	"DisplayName": [
+		"org.junit.jupiter.api.DisplayName"
+	],
+	"DoubleConsumer": [
+		"java.util.function.DoubleConsumer"
+	],
+	"DoubleFunction": [
+		"java.util.function.DoubleFunction"
+	],
+	"DoublePredicate": [
+		"java.util.function.DoublePredicate"
+	],
+	"DoubleStream": [
+		"java.util.stream.DoubleStream"
+	],
+	"DoubleSupplier": [
+		"java.util.function.DoubleSupplier"
+	],
+	"Duration": [
+		"java.time.Duration"
+	],
+	"EOFException": [
+		"java.io.EOFException"
+	],
+	"Email": [
+		"jakarta.validation.constraints.Email"
+	],
+	"Embeddable": [
+		"jakarta.persistence.Embeddable"
+	],
+	"Embedded": [
+		"jakarta.persistence.Embedded"
+	],
+	"Entity": [
+		"jakarta.persistence.Entity"
+	],
+	"EntityManager": [
+		"jakarta.persistence.EntityManager"
+	],
+	"EnumType": [
+		"jakarta.persistence.EnumType"
+	],
+	"Enumerated": [
+		"jakarta.persistence.Enumerated"
+	],
+	"Enumeration": [
+		"java.util.Enumeration"
+	],
+	"EqualsAndHashCode": [
+		"lombok.EqualsAndHashCode"
+	],
+	"ExceptionHandler": [
+		"org.springframework.web.bind.annotation.ExceptionHandler"
+	],
+	"Executor": [
+		"java.util.concurrent.Executor"
+	],
+	"ExecutorService": [
+		"java.util.concurrent.ExecutorService"
+	],
+	"Executors": [
+		"java.util.concurrent.Executors"
+	],
+	"ExtendWith": [
+		"org.junit.jupiter.api.extension.ExtendWith"
+	],
+	"FetchType": [
+		"jakarta.persistence.FetchType"
+	],
+	"File": [
+		"java.io.File"
+	],
+	"FileInputStream": [
+		"java.io.FileInputStream"
+	],
+	"FileNotFoundException": [
+		"java.io.FileNotFoundException"
+	],
+	"FileOutputStream": [
+		"java.io.FileOutputStream"
+	],
+	"FileReader": [
+		"java.io.FileReader"
+	],
+	"FileSystem": [
+		"java.nio.file.FileSystem"
+	],
+	"FileSystems": [
+		"java.nio.file.FileSystems"
+	],
+	"FileVisitResult": [
+		"java.nio.file.FileVisitResult"
+	],
+	"FileWriter": [
+		"java.io.FileWriter"
+	],
+	"Files": [
+		"java.nio.file.Files"
+	],
+	"Flushable": [
+		"java.io.Flushable"
+	],
+	"Function": [
+		"java.util.function.Function"
+	],
+	"Future": [
+		"java.util.concurrent.Future",
+		"jakarta.validation.constraints.Future"
+	],
+	"FutureOrPresent": [
+		"jakarta.validation.constraints.FutureOrPresent"
+	],
+	"GeneratedValue": [
+		"jakarta.persistence.GeneratedValue"
+	],
+	"GenerationType": [
+		"jakarta.persistence.GenerationType"
+	],
+	"GetMapping": [
+		"org.springframework.web.bind.annotation.GetMapping"
+	],
+	"Getter": [
+		"lombok.Getter"
+	],
+	"HashMap": [
+		"java.util.HashMap"
+	],
+	"HashSet": [
+		"java.util.HashSet"
+	],
+	"HttpEntity": [
+		"org.springframework.http.HttpEntity"
+	],
+	"HttpHeaders": [
+		"org.springframework.http.HttpHeaders"
+	],
+	"HttpMethod": [
+		"org.springframework.http.HttpMethod"
+	],
+	"HttpStatus": [
+		"org.springframework.http.HttpStatus"
+	],
+	"HttpStatusCode": [
+		"org.springframework.http.HttpStatusCode"
+	],
+	"HttpURLConnection": [
+		"java.net.HttpURLConnection"
+	],
+	"IOException": [
+		"java.io.IOException"
+	],
+	"Id": [
+		"jakarta.persistence.Id",
+		"org.springframework.data.annotation.Id"
+	],
+	"InetAddress": [
+		"java.net.InetAddress"
+	],
+	"Inheritance": [
+		"jakarta.persistence.Inheritance"
+	],
+	"InheritanceType": [
+		"jakarta.persistence.InheritanceType"
+	],
+	"InjectMocks": [
+		"org.mockito.InjectMocks"
+	],
+	"InputStream": [
+		"java.io.InputStream"
+	],
+	"InputStreamReader": [
+		"java.io.InputStreamReader"
+	],
+	"Instant": [
+		"java.time.Instant"
+	],
+	"IntConsumer": [
+		"java.util.function.IntConsumer"
+	],
+	"IntFunction": [
+		"java.util.function.IntFunction"
+	],
+	"IntPredicate": [
+		"java.util.function.IntPredicate"
+	],
+	"IntStream": [
+		"java.util.stream.IntStream"
+	],
+	"IntSupplier": [
+		"java.util.function.IntSupplier"
+	],
+	"Iterator": [
+		"java.util.Iterator"
+	],
+	"JoinColumn": [
+		"jakarta.persistence.JoinColumn"
+	],
+	"JoinTable": [
+		"jakarta.persistence.JoinTable"
+	],
+	"JpaRepository": [
+		"org.springframework.data.jpa.repository.JpaRepository"
+	],
+	"Lazy": [
+		"org.springframework.context.annotation.Lazy"
+	],
+	"LinkedBlockingQueue": [
+		"java.util.concurrent.LinkedBlockingQueue"
+	],
+	"LinkedHashMap": [
+		"java.util.LinkedHashMap"
+	],
+	"LinkedHashSet": [
+		"java.util.LinkedHashSet"
+	],
+	"LinkedList": [
+		"java.util.LinkedList"
+	],
+	"List": [
+		"java.util.List",
+		"java.awt.List"
+	],
+	"LocalDate": [
+		"java.time.LocalDate"
+	],
+	"LocalDateTime": [
+		"java.time.LocalDateTime"
+	],
+	"LocalTime": [
+		"java.time.LocalTime"
+	],
+	"Locale": [
+		"java.util.Locale"
+	],
+	"Lock": [
+		"java.util.concurrent.locks.Lock"
+	],
+	"LongConsumer": [
+		"java.util.function.LongConsumer"
+	],
+	"LongFunction": [
+		"java.util.function.LongFunction"
+	],
+	"LongPredicate": [
+		"java.util.function.LongPredicate"
+	],
+	"LongStream": [
+		"java.util.stream.LongStream"
+	],
+	"LongSupplier": [
+		"java.util.function.LongSupplier"
+	],
+	"ManyToMany": [
+		"jakarta.persistence.ManyToMany"
+	],
+	"ManyToOne": [
+		"jakarta.persistence.ManyToOne"
+	],
+	"Map": [
+		"java.util.Map"
+	],
+	"MappedSuperclass": [
+		"jakarta.persistence.MappedSuperclass"
+	],
+	"MathContext": [
+		"java.math.MathContext"
+	],
+	"Max": [
+		"jakarta.validation.constraints.Max"
+	],
+	"MediaType": [
+		"org.springframework.http.MediaType"
+	],
+	"MethodSource": [
+		"org.junit.jupiter.params.provider.MethodSource"
+	],
+	"Min": [
+		"jakarta.validation.constraints.Min"
+	],
+	"Mock": [
+		"org.mockito.Mock"
+	],
+	"Mockito": [
+		"org.mockito.Mockito"
+	],
+	"MockitoExtension": [
+		"org.mockito.junit.jupiter.MockitoExtension"
+	],
+	"ModelAttribute": [
+		"org.springframework.web.bind.annotation.ModelAttribute"
+	],
+	"Modifying": [
+		"org.springframework.data.jpa.repository.Modifying"
+	],
+	"Month": [
+		"java.time.Month"
+	],
+	"MonthDay": [
+		"java.time.MonthDay"
+	],
+	"Negative": [
+		"jakarta.validation.constraints.Negative"
+	],
+	"NegativeOrZero": [
+		"jakarta.validation.constraints.NegativeOrZero"
+	],
+	"Nested": [
+		"org.junit.jupiter.api.Nested"
+	],
+	"NoArgsConstructor": [
+		"lombok.NoArgsConstructor"
+	],
+	"NotBlank": [
+		"jakarta.validation.constraints.NotBlank"
+	],
+	"NotEmpty": [
+		"jakarta.validation.constraints.NotEmpty"
+	],
+	"NotNull": [
+		"jakarta.validation.constraints.NotNull"
+	],
+	"ObjectInputStream": [
+		"java.io.ObjectInputStream"
+	],
+	"ObjectOutputStream": [
+		"java.io.ObjectOutputStream"
+	],
+	"Objects": [
+		"java.util.Objects"
+	],
+	"OffsetDateTime": [
+		"java.time.OffsetDateTime"
+	],
+	"OffsetTime": [
+		"java.time.OffsetTime"
+	],
+	"OneToMany": [
+		"jakarta.persistence.OneToMany"
+	],
+	"OneToOne": [
+		"jakarta.persistence.OneToOne"
+	],
+	"Optional": [
+		"java.util.Optional"
+	],
+	"OutputStream": [
+		"java.io.OutputStream"
+	],
+	"OutputStreamWriter": [
+		"java.io.OutputStreamWriter"
+	],
+	"Page": [
+		"org.springframework.data.domain.Page"
+	],
+	"PageRequest": [
+		"org.springframework.data.domain.PageRequest"
+	],
+	"Pageable": [
+		"org.springframework.data.domain.Pageable"
+	],
+	"ParameterizedTest": [
+		"org.junit.jupiter.params.ParameterizedTest"
+	],
+	"Past": [
+		"jakarta.validation.constraints.Past"
+	],
+	"PastOrPresent": [
+		"jakarta.validation.constraints.PastOrPresent"
+	],
+	"PatchMapping": [
+		"org.springframework.web.bind.annotation.PatchMapping"
+	],
+	"Path": [
+		"java.nio.file.Path"
+	],
+	"Paths": [
+		"java.nio.file.Paths"
+	],
+	"PathVariable": [
+		"org.springframework.web.bind.annotation.PathVariable"
+	],
+	"Pattern": [
+		"jakarta.validation.constraints.Pattern",
+		"java.util.regex.Pattern"
+	],
+	"Period": [
+		"java.time.Period"
+	],
+	"PersistenceContext": [
+		"jakarta.persistence.PersistenceContext"
+	],
+	"Positive": [
+		"jakarta.validation.constraints.Positive"
+	],
+	"PositiveOrZero": [
+		"jakarta.validation.constraints.PositiveOrZero"
+	],
+	"PostMapping": [
+		"org.springframework.web.bind.annotation.PostMapping"
+	],
+	"PostLoad": [
+		"jakarta.persistence.PostLoad"
+	],
+	"PrePersist": [
+		"jakarta.persistence.PrePersist"
+	],
+	"PreUpdate": [
+		"jakarta.persistence.PreUpdate"
+	],
+	"Predicate": [
+		"java.util.function.Predicate"
+	],
+	"Primary": [
+		"org.springframework.context.annotation.Primary"
+	],
+	"PrintStream": [
+		"java.io.PrintStream"
+	],
+	"PrintWriter": [
+		"java.io.PrintWriter"
+	],
+	"PriorityQueue": [
+		"java.util.PriorityQueue"
+	],
+	"Profile": [
+		"org.springframework.context.annotation.Profile"
+	],
+	"Properties": [
+		"java.util.Properties"
+	],
+	"PutMapping": [
+		"org.springframework.web.bind.annotation.PutMapping"
+	],
+	"Qualifier": [
+		"org.springframework.beans.factory.annotation.Qualifier"
+	],
+	"Query": [
+		"org.springframework.data.jpa.repository.Query"
+	],
+	"Queue": [
+		"java.util.Queue"
+	],
+	"Random": [
+		"java.util.Random"
+	],
+	"Reader": [
+		"java.io.Reader"
+	],
+	"ReentrantLock": [
+		"java.util.concurrent.locks.ReentrantLock"
+	],
+	"Repository": [
+		"org.springframework.stereotype.Repository"
+	],
+	"RequestBody": [
+		"org.springframework.web.bind.annotation.RequestBody"
+	],
+	"RequestHeader": [
+		"org.springframework.web.bind.annotation.RequestHeader"
+	],
+	"RequestMapping": [
+		"org.springframework.web.bind.annotation.RequestMapping"
+	],
+	"RequestParam": [
+		"org.springframework.web.bind.annotation.RequestParam"
+	],
+	"RequiredArgsConstructor": [
+		"lombok.RequiredArgsConstructor"
+	],
+	"ResponseBody": [
+		"org.springframework.web.bind.annotation.ResponseBody"
+	],
+	"ResponseEntity": [
+		"org.springframework.http.ResponseEntity"
+	],
+	"ResponseStatus": [
+		"org.springframework.web.bind.annotation.ResponseStatus"
+	],
+	"RestController": [
+		"org.springframework.web.bind.annotation.RestController"
+	],
+	"RestControllerAdvice": [
+		"org.springframework.web.bind.annotation.RestControllerAdvice"
+	],
+	"RoundingMode": [
+		"java.math.RoundingMode"
+	],
+	"Scanner": [
+		"java.util.Scanner"
+	],
+	"ScheduledExecutorService": [
+		"java.util.concurrent.ScheduledExecutorService"
+	],
+	"Scope": [
+		"org.springframework.context.annotation.Scope"
+	],
+	"Semaphore": [
+		"java.util.concurrent.Semaphore"
+	],
+	"Serializable": [
+		"java.io.Serializable"
+	],
+	"ServerSocket": [
+		"java.net.ServerSocket"
+	],
+	"Service": [
+		"org.springframework.stereotype.Service"
+	],
+	"Set": [
+		"java.util.Set"
+	],
+	"Setter": [
+		"lombok.Setter"
+	],
+	"SimpleFileVisitor": [
+		"java.nio.file.SimpleFileVisitor"
+	],
+	"Size": [
+		"jakarta.validation.constraints.Size"
+	],
+	"Slf4j": [
+		"lombok.extern.slf4j.Slf4j"
+	],
+	"Socket": [
+		"java.net.Socket"
+	],
+	"Sort": [
+		"org.springframework.data.domain.Sort"
+	],
+	"SpringBootApplication": [
+		"org.springframework.boot.autoconfigure.SpringBootApplication"
+	],
+	"SpringBootTest": [
+		"org.springframework.boot.test.context.SpringBootTest"
+	],
+	"SpringApplication": [
+		"org.springframework.boot.SpringApplication"
+	],
+	"Spy": [
+		"org.mockito.Spy"
+	],
+	"StandardCopyOption": [
+		"java.nio.file.StandardCopyOption"
+	],
+	"StandardOpenOption": [
+		"java.nio.file.StandardOpenOption"
+	],
+	"Stream": [
+		"java.util.stream.Stream"
+	],
+	"Supplier": [
+		"java.util.function.Supplier"
+	],
+	"Table": [
+		"jakarta.persistence.Table"
+	],
+	"Tag": [
+		"org.junit.jupiter.api.Tag"
+	],
+	"TemporalAdjusters": [
+		"java.time.temporal.TemporalAdjusters"
+	],
+	"Test": [
+		"org.junit.jupiter.api.Test"
+	],
+	"ThreadFactory": [
+		"java.util.concurrent.ThreadFactory"
+	],
+	"TimeUnit": [
+		"java.util.concurrent.TimeUnit"
+	],
+	"TimeZone": [
+		"java.util.TimeZone"
+	],
+	"ToString": [
+		"lombok.ToString"
+	],
+	"Transactional": [
+		"org.springframework.transaction.annotation.Transactional",
+		"jakarta.transaction.Transactional"
+	],
+	"Transient": [
+		"jakarta.persistence.Transient",
+		"java.beans.Transient"
+	],
+	"TreeMap": [
+		"java.util.TreeMap"
+	],
+	"TreeSet": [
+		"java.util.TreeSet"
+	],
+	"URI": [
+		"java.net.URI"
+	],
+	"URL": [
+		"java.net.URL"
+	],
+	"URLDecoder": [
+		"java.net.URLDecoder"
+	],
+	"URLEncoder": [
+		"java.net.URLEncoder"
+	],
+	"UUID": [
+		"java.util.UUID"
+	],
+	"UnaryOperator": [
+		"java.util.function.UnaryOperator"
+	],
+	"Valid": [
+		"jakarta.validation.Valid"
+	],
+	"Value": [
+		"org.springframework.beans.factory.annotation.Value",
+		"lombok.Value"
+	],
+	"ValueSource": [
+		"org.junit.jupiter.params.provider.ValueSource"
+	],
+	"Version": [
+		"jakarta.persistence.Version",
+		"org.springframework.data.annotation.Version"
+	],
+	"Writer": [
+		"java.io.Writer"
+	],
+	"Year": [
+		"java.time.Year"
+	],
+	"YearMonth": [
+		"java.time.YearMonth"
+	],
+	"ZoneId": [
+		"java.time.ZoneId"
+	],
+	"ZoneOffset": [
+		"java.time.ZoneOffset"
+	],
+	"ZonedDateTime": [
+		"java.time.ZonedDateTime"
+	]
+}

@@ -1,0 +1,237 @@
+{
+	"AfterEach": [
+		"org.junit.jupiter.api.AfterEach"
+	],
+	"Autowired": [
+		"org.springframework.beans.factory.annotation.Autowired"
+	],
+	"Bean": [
+		"org.springframework.context.annotation.Bean"
+	],
+	"BeforeEach": [
+		"org.junit.jupiter.api.BeforeEach"
+	],
+	"Channel": [
+		"kotlinx.coroutines.channels.Channel"
+	],
+	"Column": [
+		"jakarta.persistence.Column"
+	],
+	"Component": [
+		"org.springframework.stereotype.Component"
+	],
+	"Configuration": [
+		"org.springframework.context.annotation.Configuration"
+	],
+	"Controller": [
+		"org.springframework.stereotype.Controller"
+	],
+	"CoroutineContext": [
+		"kotlin.coroutines.CoroutineContext"
+	],
+	"CoroutineScope": [
+		"kotlinx.coroutines.CoroutineScope"
+	],
+	"DateTimeFormatter": [
+		"java.time.format.DateTimeFormatter"
+	],
+	"Deferred": [
+		"kotlinx.coroutines.Deferred"
+	],
+	"DeleteMapping": [
+		"org.springframework.web.bind.annotation.DeleteMapping"
+	],
+	"Dispatchers": [
+		"kotlinx.coroutines.Dispatchers"
+	],
+	"Duration": [
+		"java.time.Duration"
+	],
+	"Entity": [
+		"jakarta.persistence.Entity"
+	],
+	"ExceptionHandler": [
+		"org.springframework.web.bind.annotation.ExceptionHandler"
+	],
+	"Flow": [
+		"kotlinx.coroutines.flow.Flow"
+	],
+	"GeneratedValue": [
+		"jakarta.persistence.GeneratedValue"
+	],
+	"GenerationType": [
+		"jakarta.persistence.GenerationType"
+	],
+	"GetMapping": [
+		"org.springframework.web.bind.annotation.GetMapping"
+	],
+	"HttpHeaders": [
+		"org.springframework.http.HttpHeaders"
+	],
+	"HttpStatus": [
+		"org.springframework.http.HttpStatus"
+	],
+	"Id": [
+		"jakarta.persistence.Id",
+		"org.springframework.data.annotation.Id"
+	],
+	"Instant": [
+		"java.time.Instant"
+	],
+	"Job": [
+		"kotlinx.coroutines.Job"
+	],
+	"JpaRepository": [
+		"org.springframework.data.jpa.repository.JpaRepository"
+	],
+	"LocalDate": [
+		"java.time.LocalDate"
+	],
+	"LocalDateTime": [
+		"java.time.LocalDateTime"
+	],
+	"LocalTime": [
+		"java.time.LocalTime"
+	],
+	"MutableSharedFlow": [
+		"kotlinx.coroutines.flow.MutableSharedFlow"
+	],
+	"MutableStateFlow": [
+		"kotlinx.coroutines.flow.MutableStateFlow"
+	],
+	"NonCancellable": [
+		"kotlinx.coroutines.NonCancellable"
+	],
+	"OffsetDateTime": [
+		"java.time.OffsetDateTime"
+	],
+	"PatchMapping": [
+		"org.springframework.web.bind.annotation.PatchMapping"
+	],
+	"PathVariable": [
+		"org.springframework.web.bind.annotation.PathVariable"
+	],
+	"Period": [
+		"java.time.Period"
+	],
+	"PostMapping": [
+		"org.springframework.web.bind.annotation.PostMapping"
+	],
+	"PutMapping": [
+		"org.springframework.web.bind.annotation.PutMapping"
+	],
+	"Query": [
+		"org.springframework.data.jpa.repository.Query"
+	],
+	"Repository": [
+		"org.springframework.stereotype.Repository"
+	],
+	"RequestBody": [
+		"org.springframework.web.bind.annotation.RequestBody"
+	],
+	"RequestMapping": [
+		"org.springframework.web.bind.annotation.RequestMapping"
+	],
+	"RequestParam": [
+		"org.springframework.web.bind.annotation.RequestParam"
+	],
+	"ResponseEntity": [
+		"org.springframework.http.ResponseEntity"
+	],
+	"ResponseStatus": [
+		"org.springframework.web.bind.annotation.ResponseStatus"
+	],
+	"RestController": [
+		"org.springframework.web.bind.annotation.RestController"
+	],
+	"RestControllerAdvice": [
+		"org.springframework.web.bind.annotation.RestControllerAdvice"
+	],
+	"Service": [
+		"org.springframework.stereotype.Service"
+	],
+	"SharedFlow": [
+		"kotlinx.coroutines.flow.SharedFlow"
+	],
+	"SpringBootApplication": [
+		"org.springframework.boot.autoconfigure.SpringBootApplication"
+	],
+	"StateFlow": [
+		"kotlinx.coroutines.flow.StateFlow"
+	],
+	"SupervisorJob": [
+		"kotlinx.coroutines.SupervisorJob"
+	],
+	"Table": [
+		"jakarta.persistence.Table"
+	],
+	"Test": [
+		"org.junit.jupiter.api.Test"
+	],
+	"Transactional": [
+		"org.springframework.transaction.annotation.Transactional"
+	],
+	"Value": [
+		"org.springframework.beans.factory.annotation.Value"
+	],
+	"ZonedDateTime": [
+		"java.time.ZonedDateTime"
+	],
+	"ZoneId": [
+		"java.time.ZoneId"
+	],
+	"asSharedFlow": [
+		"kotlinx.coroutines.flow.asSharedFlow"
+	],
+	"asStateFlow": [
+		"kotlinx.coroutines.flow.asStateFlow"
+	],
+	"async": [
+		"kotlinx.coroutines.async"
+	],
+	"catch": [
+		"kotlinx.coroutines.flow.catch"
+	],
+	"collect": [
+		"kotlinx.coroutines.flow.collect"
+	],
+	"delay": [
+		"kotlinx.coroutines.delay"
+	],
+	"filter": [
+		"kotlinx.coroutines.flow.filter"
+	],
+	"first": [
+		"kotlinx.coroutines.flow.first"
+	],
+	"flow": [
+		"kotlinx.coroutines.flow.flow"
+	],
+	"flowOn": [
+		"kotlinx.coroutines.flow.flowOn"
+	],
+	"launch": [
+		"kotlinx.coroutines.launch"
+	],
+	"map": [
+		"kotlinx.coroutines.flow.map"
+	],
+	"onEach": [
+		"kotlinx.coroutines.flow.onEach"
+	],
+	"runApplication": [
+		"org.springframework.boot.runApplication"
+	],
+	"runBlocking": [
+		"kotlinx.coroutines.runBlocking"
+	],
+	"toList": [
+		"kotlinx.coroutines.flow.toList"
+	],
+	"withContext": [
+		"kotlinx.coroutines.withContext"
+	],
+	"yield": [
+		"kotlinx.coroutines.yield"
+	]
+}
