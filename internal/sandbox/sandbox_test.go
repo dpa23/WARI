@@ -1,6 +1,7 @@
 package sandbox
 
 import (
+	"net"
 	"os"
 	"path/filepath"
 	"strings"
@@ -319,5 +320,81 @@ func TestProfileCommands(t *testing.T) {
 		if !imageRe.MatchString(p.Image) {
 			t.Errorf("imagen %q no pasa la validación", p.Image)
 		}
+	}
+}
+
+func TestExtraMountsRejectsSockets(t *testing.T) {
+	temp := t.TempDir()
+
+	// 1. Socket UNIX real
+	sockPath := filepath.Join(temp, "app.sock")
+	l, err := net.Listen("unix", sockPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer l.Close()
+
+	// 2. Symlink a socket UNIX
+	linkToSock := filepath.Join(temp, "link.sock")
+	if err := os.Symlink(sockPath, linkToSock); err != nil {
+		t.Fatal(err)
+	}
+
+	// 3. Archivo que simula docker.sock y podman.sock
+	dockerSock := filepath.Join(temp, "docker.sock")
+	if err := os.WriteFile(dockerSock, []byte("fake"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	podmanSock := filepath.Join(temp, "podman.sock")
+	if err := os.WriteFile(podmanSock, []byte("fake"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	// 4. Symlinks a docker.sock y podman.sock
+	linkToDocker := filepath.Join(temp, "link-to-docker")
+	if err := os.Symlink(dockerSock, linkToDocker); err != nil {
+		t.Fatal(err)
+	}
+	linkToPodman := filepath.Join(temp, "link-to-podman")
+	if err := os.Symlink(podmanSock, linkToPodman); err != nil {
+		t.Fatal(err)
+	}
+
+	// 5. Archivo regular normal
+	regularFile := filepath.Join(temp, "regular.txt")
+	if err := os.WriteFile(regularFile, []byte("ok"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	cases := []struct {
+		name      string
+		mount     Mount
+		wantError bool
+	}{
+		{"socket unix directo", Mount{Host: sockPath, Container: "/mnt/sock"}, true},
+		{"symlink a socket unix", Mount{Host: linkToSock, Container: "/mnt/sock"}, true},
+		{"docker.sock directo", Mount{Host: dockerSock, Container: "/mnt/sock"}, true},
+		{"podman.sock directo", Mount{Host: podmanSock, Container: "/mnt/sock"}, true},
+		{"symlink a docker.sock", Mount{Host: linkToDocker, Container: "/mnt/sock"}, true},
+		{"symlink a podman.sock", Mount{Host: linkToPodman, Container: "/mnt/sock"}, true},
+		{"ruta /var/run/docker.sock inexistente", Mount{Host: "/var/run/docker.sock", Container: "/mnt/sock"}, true},
+		{"ruta podman.sock inexistente", Mount{Host: "/run/user/1000/podman/podman.sock", Container: "/mnt/sock"}, true},
+		{"destino en contenedor docker.sock", Mount{Host: regularFile, Container: "/var/run/docker.sock"}, true},
+		{"destino en contenedor podman.sock", Mount{Host: regularFile, Container: "/run/podman/podman.sock"}, true},
+		{"archivo regular permitido", Mount{Host: regularFile, Container: "/mnt/ok"}, false},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			s := baseSpec()
+			s.ExtraMounts = []Mount{tc.mount}
+			_, err := s.resolve("podman")
+			if tc.wantError && err == nil {
+				t.Fatalf("se esperaba rechazo para %+v", tc.mount)
+			}
+			if !tc.wantError && err != nil {
+				t.Fatalf("no se esperaba error para %+v: %v", tc.mount, err)
+			}
+		})
 	}
 }

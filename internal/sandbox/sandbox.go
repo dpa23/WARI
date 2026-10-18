@@ -41,6 +41,7 @@ import (
 	"errors"
 	"fmt"
 	"math"
+	"os"
 	"path"
 	"path/filepath"
 	"regexp"
@@ -251,6 +252,24 @@ func (s Spec) resolve(rt string) (resolved, error) {
 			underDir(c, WorkspaceDir) || underDir(c, OutDirInContainer) || underDir(c, srcDir) {
 			return r, fmt.Errorf("sandbox: ruta de contenedor no permitida %q", m.Container)
 		}
+		if isContainerSocket(m.Host) || isContainerSocket(c) {
+			return r, fmt.Errorf("sandbox: montaje no permitido para socket de contenedor %q", m.Host)
+		}
+		resolved := m.Host
+		if target, err := filepath.EvalSymlinks(m.Host); err == nil {
+			resolved = target
+		} else if target, err := os.Readlink(m.Host); err == nil {
+			resolved = target
+		}
+		if isContainerSocket(resolved) {
+			return r, fmt.Errorf("sandbox: montaje no permitido para socket de contenedor %q", m.Host)
+		}
+		if fi, err := os.Stat(m.Host); err == nil && fi.Mode()&os.ModeSocket != 0 {
+			return r, fmt.Errorf("sandbox: montaje no permitido para socket UNIX %q", m.Host)
+		}
+		if fi, err := os.Stat(resolved); err == nil && fi.Mode()&os.ModeSocket != 0 {
+			return r, fmt.Errorf("sandbox: montaje no permitido para socket UNIX %q", m.Host)
+		}
 	}
 
 	switch s.Strategy {
@@ -274,6 +293,11 @@ func (s Spec) resolve(rt string) (resolved, error) {
 }
 
 func underDir(p, dir string) bool { return p == dir || strings.HasPrefix(p, dir+"/") }
+
+func isContainerSocket(p string) bool {
+	base := filepath.Base(filepath.Clean(p))
+	return base == "docker.sock" || base == "podman.sock"
+}
 
 // safeMountPath rechaza rutas que alterarían la sintaxis de -v o --mount.
 func safeMountPath(p string) error {

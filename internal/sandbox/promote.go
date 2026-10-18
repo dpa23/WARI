@@ -29,6 +29,9 @@ func Promote(run *Run, rel string) error {
 	if run == nil {
 		return fmt.Errorf("%w: ejecución nula", ErrPromote)
 	}
+	if run.Running() {
+		return fmt.Errorf("%w: la ejecución sigue en marcha", ErrPromote)
+	}
 	if rel == "" || !filepath.IsLocal(rel) || strings.ContainsRune(rel, 0) {
 		return fmt.Errorf("%w: ruta fuera de la raíz: %q", ErrPromote, rel)
 	}

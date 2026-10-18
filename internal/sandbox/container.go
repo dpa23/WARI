@@ -153,6 +153,9 @@ func (c *Container) Run(ctx context.Context, spec Spec) (*Run, error) {
 		case <-ctx.Done():
 			run.Stop()
 		case <-p.Done():
+			if ctx.Err() != nil {
+				run.Stop()
+			}
 		}
 	}()
 	return run, nil
@@ -238,12 +241,23 @@ func (r *Run) rmArgs() []string {
 // Kill es un alias de Stop.
 func (r *Run) Kill() error { return r.Stop() }
 
+// Running indica si la ejecución sigue en marcha.
+func (r *Run) Running() bool {
+	if r == nil || r.p == nil {
+		return false
+	}
+	select {
+	case <-r.p.Done():
+		return false
+	default:
+		return true
+	}
+}
+
 // Cleanup borra la carpeta de salidas. Hay que llamarlo con la ejecución
 // terminada; lo promovido al proyecto ya se copió.
 func (r *Run) Cleanup() error {
-	select {
-	case <-r.p.Done():
-	default:
+	if r.Running() {
 		return errors.New("sandbox: la ejecución sigue en marcha")
 	}
 	if filepath.Base(r.OutDir) != r.ID {
@@ -303,10 +317,16 @@ func (r *Run) pump() {
 func (r *Run) tailStderr() {
 	sp := splitter{emit: func(t string) { r.emit(Stderr, t) }}
 	defer sp.flush()
-	var f *os.File
+	var (
+		root *os.Root
+		f    *os.File
+	)
 	defer func() {
 		if f != nil {
 			f.Close()
+		}
+		if root != nil {
+			root.Close()
 		}
 	}()
 	buf := make([]byte, 32<<10)
@@ -319,8 +339,19 @@ func (r *Run) tailStderr() {
 			finished = true
 		default:
 		}
-		if f == nil {
-			f, _ = os.Open(filepath.Join(r.OutDir, stderrFile))
+		if root == nil {
+			root, _ = os.OpenRoot(r.OutDir)
+		}
+		if root != nil && f == nil {
+			if fi, err := root.Lstat(stderrFile); err == nil && fi.Mode().IsRegular() {
+				if file, err := root.Open(stderrFile); err == nil {
+					if sfi, err := file.Stat(); err == nil && sfi.Mode().IsRegular() {
+						f = file
+					} else {
+						file.Close()
+					}
+				}
+			}
 		}
 		if f != nil {
 			for {

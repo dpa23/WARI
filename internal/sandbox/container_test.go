@@ -39,6 +39,7 @@ run)
 		type=bind,src=*,dst=/out) s=${a#type=bind,src=}; out=${s%,dst=/out} ;;
 		esac
 	done
+	[ -n "$FAKE_SYMLINK_STDERR" ] && ln -s "$FAKE_SYMLINK_STDERR" "$out/.stderr.log"
 	[ -n "$FAKE_STDOUT" ] && printf '%s' "$FAKE_STDOUT"
 	[ -n "$FAKE_STDERR" ] && printf '%s' "$FAKE_STDERR" >> "$out/.stderr.log"
 	[ -n "$FAKE_RUNTIME_ERR" ] && printf '%s\n' "$FAKE_RUNTIME_ERR" >&2
@@ -194,6 +195,28 @@ func TestRunStreamsLogsPerChannel(t *testing.T) {
 	}
 }
 
+func TestTailStderrSymlinkSecretNotRead(t *testing.T) {
+	skipNoSymlinks(t)
+	installFake(t, "podman")
+	secretDir := t.TempDir()
+	secretFile := filepath.Join(secretDir, "secret.txt")
+	write(t, secretFile, "SECRET_TOKEN_12345\n")
+
+	t.Setenv("FAKE_SYMLINK_STDERR", secretFile)
+	c := &Container{RunsDir: t.TempDir()}
+	root := testProject(t)
+	run, err := c.Run(context.Background(), Spec{Root: root, Image: "alpine", Command: []string{"echo", "hi"}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	lines := collect(t, run)
+	for _, l := range lines {
+		if strings.Contains(l.Text, "SECRET_TOKEN_12345") {
+			t.Fatalf("secreto leído a través de symlink en .stderr.log: %v", l)
+		}
+	}
+}
+
 func TestRunExitError(t *testing.T) {
 	installFake(t, "podman")
 	t.Setenv("FAKE_EXIT", "3")
@@ -244,7 +267,7 @@ func TestRunUniqueNamesAndRejectsBadSpecWithoutLaunching(t *testing.T) {
 func rmCalls(t *testing.T, log string) [][]string {
 	var out [][]string
 	for _, c := range calls(t, log) {
-		if c[0] == "rm" {
+		if len(c) > 0 && c[0] == "rm" {
 			out = append(out, c)
 		}
 	}
@@ -301,6 +324,46 @@ func TestContextCancelRunsRm(t *testing.T) {
 	}
 	if rms := rmCalls(t, log); len(rms) != 1 || rms[0][len(rms[0])-1] != run.Name {
 		t.Fatalf("rm = %v", rms)
+	}
+}
+
+func TestContextCancelAlwaysRunsRmEvenIfProcessDone(t *testing.T) {
+	log := installFake(t, "podman")
+	rt, err := DetectRuntime(context.Background(), "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	const runs = 20
+	for i := 0; i < runs; i++ {
+		ctx, cancel := context.WithCancel(context.Background())
+		c := &Container{Runtime: &rt, RunsDir: t.TempDir()}
+		run, err := c.Run(ctx, Spec{Root: testProject(t), Image: "alpine", Command: []string{"true"}})
+		if err != nil {
+			t.Fatal(err)
+		}
+		cancel()
+		select {
+		case <-run.Done():
+		case <-time.After(5 * time.Second):
+			t.Fatal("Done no se cerró")
+		}
+		deadline := time.Now().Add(2 * time.Second)
+		var found bool
+		for time.Now().Before(deadline) {
+			for _, rm := range rmCalls(t, log) {
+				if len(rm) > 0 && rm[len(rm)-1] == run.Name {
+					found = true
+					break
+				}
+			}
+			if found {
+				break
+			}
+			time.Sleep(5 * time.Millisecond)
+		}
+		if !found {
+			t.Fatalf("iteración %d: rm no fue llamado para %s", i, run.Name)
+		}
 	}
 }
 

@@ -1,10 +1,12 @@
 package sandbox
 
 import (
+	"context"
 	"errors"
 	"os"
 	"path/filepath"
 	"runtime"
+	"strings"
 	"testing"
 )
 
@@ -190,5 +192,37 @@ func TestPromoteMissingArtifact(t *testing.T) {
 	run, _, _ := promoteFixture(t)
 	if err := Promote(run, "no/existe"); err == nil {
 		t.Fatal("artefacto inexistente debía fallar")
+	}
+}
+
+func TestPromoteRejectsWhileRunning(t *testing.T) {
+	installFake(t, "podman")
+	t.Setenv("FAKE_HANG", "1")
+	c := &Container{RunsDir: t.TempDir()}
+	root := testProject(t)
+	run, err := c.Run(context.Background(), Spec{Root: root, Image: "alpine", Command: []string{"sleep", "99"}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer run.Stop()
+
+	write(t, filepath.Join(run.OutDir, "artifact.txt"), "nuevo")
+	err = Promote(run, "artifact.txt")
+	if !errors.Is(err, ErrPromote) || !strings.Contains(err.Error(), "la ejecución sigue en marcha") {
+		t.Fatalf("Promote debía rechazar mientras la ejecución sigue en marcha, obtuvo: %v", err)
+	}
+	if _, err := os.Stat(filepath.Join(root, "artifact.txt")); !errors.Is(err, os.ErrNotExist) {
+		t.Fatal("no debía copiarse nada mientras la ejecución sigue en marcha")
+	}
+
+	// Al terminar la ejecución, Promote sí debe permitir la copia
+	if err := run.Stop(); err != nil {
+		t.Fatalf("Stop: %v", err)
+	}
+	if err := Promote(run, "artifact.txt"); err != nil {
+		t.Fatalf("Promote tras terminar: %v", err)
+	}
+	if readFile(t, filepath.Join(root, "artifact.txt")) != "nuevo" {
+		t.Fatal("el archivo no se copió tras terminar la ejecución")
 	}
 }
