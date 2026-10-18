@@ -1,7 +1,7 @@
 # Progreso
 
 ## Fase actual
-Fase 3 — Editor núcleo: **terminada y verificada**. Fase 9 — Snippets y plantillas: **terminada**. Siguiente: fase 10 (imports y Spring Boot). Tier 0 (fases 1–8) completo.
+Fase 3 — Editor núcleo: **terminada y verificada**. Fase 10 — Imports y Spring Boot: **terminada**. Tier 0 y Tier 1 completos. Siguiente: tier 2 (fase 11: estructura e índice).
 
 ## Hecho
 ### Fase 0 — Arranque
@@ -61,6 +61,11 @@ Fase 3 — Editor núcleo: **terminada y verificada**. Fase 9 — Snippets y pla
 - Motores `internal/snippets` y `internal/templates` (Sonnet); datos en `assets/` (34 snippets, 17 plantillas, mapas de imports; Gemini vía herdr), embebidos en el binario.
 - Tab expande snippets con sesión de tabstops; alt+f crea archivos desde plantilla con `package`/`namespace` derivados.
 - UX de Gemini: ayuda de atajos (?/F1), paleta ampliada, alertas de presupuesto (docs/ux-review.md).
+
+### Fase 10 — Imports y Spring Boot
+- `internal/imports`: inserción ordenada y sin duplicar (Java/Kotlin `import`, C# `using`); alt+i con selector si hay varios candidatos (List → java.util primero).
+- Editor: `ReplaceRange` y grupos de undo; `filetree.Refresh`.
+- Seguridad (Gemini): creación de archivos vía os.Root; lectura acotada de datos del proyecto.
 
 ## Pendiente
 
