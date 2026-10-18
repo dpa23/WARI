@@ -48,6 +48,8 @@ func Default() Keymap {
 		"outline":         []string{"alt+o"},
 		"goto_definition": []string{"f12", "alt+d"},
 		"complete":        []string{"alt+/", "ctrl+space"},
+		"toggle_lsp":      []string{"alt+l"},
+		"diagnostics":     []string{"alt+m"},
 		"toggle_tree":     []string{"ctrl+b"},
 		"toggle_agents":   []string{"ctrl+g"},
 		"agent_new":       []string{"ctrl+t"},

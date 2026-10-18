@@ -43,6 +43,12 @@
 // llena en segundo plano y sus tipos se suman a los mapas de imports. Ver
 // index.go. Con el foco en el chat, estas teclas son del chat.
 //
+// LSP opcional (apagado por omisión). toggle_lsp (alt+l, o -lsp al iniciar) lo
+// enciende: complete y goto_definition consultan primero al servidor
+// (jdtls, kotlin-language-server, csharp-ls) y caen al índice propio si no
+// está instalado o no responde a tiempo; los diagnósticos marcan el margen y
+// salen en la barra y en la lista de la acción diagnostics (alt+m). Ver lsp.go.
+//
 // Seguridad de datos: abrir otro archivo con el actual sin guardar, o salir
 // en ese caso (con la tecla o desde la paleta), pide repetir la acción; la
 // confirmación se desarma con cualquier otra tecla. Guardar la confirma.
@@ -67,6 +73,7 @@ import (
 	"github.com/dpa23/wari/internal/editor"
 	"github.com/dpa23/wari/internal/imports"
 	"github.com/dpa23/wari/internal/index"
+	"github.com/dpa23/wari/internal/lsp"
 	"github.com/dpa23/wari/internal/snippets"
 	"github.com/dpa23/wari/internal/templates"
 	"github.com/dpa23/wari/internal/tui"
@@ -109,6 +116,12 @@ type Config struct {
 	// definición, completar y los tipos propios en los imports); nil lo
 	// desactiva. El layout lo llena en segundo plano.
 	Index *index.Index
+	// LSP es el gestor de servidores de lenguaje (fase 12); nil desactiva el
+	// LSP por completo. Nada se lanza hasta que se enciende y se abre un
+	// archivo. Quien lo crea lo cierra al salir (Manager.Shutdown).
+	LSP *lsp.Manager
+	// LSPOn enciende el LSP al iniciar; si no, toggle_lsp lo enciende.
+	LSPOn bool
 	// Templates son las plantillas de "Nuevo archivo desde plantilla"; sin
 	// ellas la acción solo avisa.
 	Templates []templates.Template
@@ -146,6 +159,10 @@ type Model struct {
 	xs      indexState
 	tpls    []templates.Template
 	nf      newFileState
+	// lsp es el estado del LSP opcional; xcmd, lo que openFile (que no
+	// devuelve Cmd) deja para el final del update.
+	lsp  lspState
+	xcmd tea.Cmd
 
 	pal palette
 	// files es la última lista de archivos del proyecto; se refresca en
@@ -190,6 +207,7 @@ func New(cfg Config) Model {
 		km: km, binds: binds, root: root,
 		snips: cfg.Snippets, imps: cfg.Imports, allImps: cfg.Imports, tpls: cfg.Templates,
 		ix:     cfg.Index,
+		lsp:    lspState{mgr: cfg.LSP},
 		tree:   filetree.New(root),
 		chat:   tui.NewPanel(chatCfg),
 		w:      80,
@@ -202,16 +220,44 @@ func New(cfg Config) Model {
 		m.openFile(cfg.File)
 	}
 	m.relayout()
+	m.lsp.on = cfg.LSPOn && cfg.LSP != nil
 	return m
 }
 
 // Init implementa tea.Model.
-func (m Model) Init() tea.Cmd { return tea.Batch(m.chat.Init(), m.refreshIndex()) }
+func (m Model) Init() tea.Cmd {
+	cmds := []tea.Cmd{m.chat.Init(), m.refreshIndex()}
+	if m.lsp.on {
+		// El arranque del servidor es un mensaje más: así lo atiende Update.
+		cmds = append(cmds, func() tea.Msg { return lspBootMsg{} })
+	}
+	return tea.Batch(cmds...)
+}
 
 // Update implementa tea.Model.
 func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) { return m.update(msg) }
 
+// update atiende un mensaje y suma lo que el LSP necesite: el debounce de
+// didChange tras una tecla o un pegado, y los Cmd que dejó openFile.
 func (m Model) update(msg tea.Msg) (Model, tea.Cmd) {
+	m, cmd := m.updateMsg(msg)
+	switch msg.(type) {
+	case tea.KeyPressMsg, tea.PasteMsg:
+		if c := m.lspEdited(); c != nil {
+			cmd = tea.Batch(cmd, c)
+		}
+	}
+	if m.xcmd != nil {
+		cmd = tea.Batch(cmd, m.xcmd)
+		m.xcmd = nil
+	}
+	return m, cmd
+}
+
+func (m Model) updateMsg(msg tea.Msg) (Model, tea.Cmd) {
+	if m2, cmd, ok := m.lspUpdate(msg); ok {
+		return m2, cmd
+	}
 	switch msg := msg.(type) {
 	case tea.WindowSizeMsg:
 		m.w, m.h = msg.Width, msg.Height
@@ -327,9 +373,13 @@ func (m Model) handleKey(k tea.KeyPressMsg) (Model, tea.Cmd) {
 	case m.focus != focusChat && m.is(k, "outline"):
 		return m.showOutline()
 	case m.focus != focusChat && m.is(k, "goto_definition"):
-		return m.gotoDefinition(pending)
+		return m.gotoDef(pending)
 	case m.focus != focusChat && m.is(k, "complete"):
-		return m.completeName()
+		return m.complete()
+	case m.is(k, "toggle_lsp"):
+		return m.toggleLSP()
+	case m.focus != focusChat && m.is(k, "diagnostics"):
+		return m.showDiagnostics()
 	case m.is(k, "stop_all"):
 		return m.stopAll()
 	case m.chat.HasPipeline() && (m.is(k, "pipeline_run") || m.is(k, "gate_approve") ||
@@ -598,6 +648,7 @@ func (m *Model) openFile(path string) {
 		m.msg = "no se pudo abrir: " + err.Error()
 		return
 	}
+	m.later(m.lspCloseDoc())
 	m.ed = editorview.New(buf, fi, path, editorview.KeyMapFrom(m.km))
 	m.ed.SetSnippets(m.snips)
 	m.ed.SetImports(m.allImps)
@@ -605,6 +656,7 @@ func (m *Model) openFile(path string) {
 	m.focus = focusEditor
 	m.tree.Reveal(path)
 	m.relayout()
+	m.later(m.lspOpenDoc())
 }
 
 // notText devuelve por qué path no se puede editar como texto ("" si se
@@ -814,10 +866,16 @@ func (m Model) statusBar() string {
 			}
 		}
 	}
+	if d := m.cursorDiagnostic(); d != "" {
+		left += " │ " + d
+	}
 	if m.msg != "" {
 		left += " │ " + m.msg
 	}
 	var hints []string
+	if info := m.lspInfo(); info != "" {
+		hints = append(hints, info)
+	}
 	for _, h := range []struct{ action, desc string }{
 		{"palette", "paleta"}, {"toggle_tree", "árbol"}, {"toggle_agents", "agentes"}, {"save", "guardar"},
 	} {

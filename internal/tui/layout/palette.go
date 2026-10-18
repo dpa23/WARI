@@ -42,6 +42,8 @@ const (
 	cmdOutline      = "outline"
 	cmdGotoDef      = "goto_definition"
 	cmdComplete     = "complete"
+	cmdToggleLSP    = "toggle_lsp"
+	cmdDiagnostics  = "diagnostics"
 	cmdQuit         = "quit"
 	cmdOpenPrefix   = "open:"
 )
@@ -103,7 +105,9 @@ func (m Model) paletteItems() []item {
 		newItem(cmdImportType, "Importar el tipo bajo el cursor", hint("import_type")),
 		newItem(cmdOutline, "Outline del archivo (clases y métodos)", hint("outline")),
 		newItem(cmdGotoDef, "Ir a la definición", hint("goto_definition")),
-		newItem(cmdComplete, "Completar con nombres del proyecto", hint("complete")),
+		newItem(cmdComplete, "Completar (LSP si está activo; si no, nombres del proyecto)", hint("complete")),
+		newItem(cmdToggleLSP, lspToggleTitle(m.lsp.on), hint("toggle_lsp")),
+		newItem(cmdDiagnostics, "Diagnósticos del LSP del archivo", hint("diagnostics")),
 	}
 	for _, f := range m.files {
 		items = append(items, newItem(cmdOpenPrefix+f, f, "archivo"))
@@ -186,6 +190,12 @@ func (m Model) paletteKey(k tea.KeyPressMsg) (Model, tea.Cmd) {
 			return m.pickDefinition()
 		case palComplete:
 			return m.pickCompletion()
+		case palLSPComplete:
+			return m.pickLSPCompletion()
+		case palLSPDefs:
+			return m.pickLSPDefinition()
+		case palDiags:
+			return m.pickDiagnostic()
 		}
 		if len(p.results) == 0 {
 			return m, nil
@@ -309,9 +319,13 @@ func (m Model) runCommand(id string) (Model, tea.Cmd) {
 	case id == cmdOutline:
 		return m.showOutline()
 	case id == cmdGotoDef:
-		return m.gotoDefinition("")
+		return m.gotoDef("")
 	case id == cmdComplete:
-		return m.completeName()
+		return m.complete()
+	case id == cmdToggleLSP:
+		return m.toggleLSP()
+	case id == cmdDiagnostics:
+		return m.showDiagnostics()
 	case id == cmdQuit:
 		return m.requestQuit(armed)
 	case id == cmdFocusTree:

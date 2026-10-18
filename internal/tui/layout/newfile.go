@@ -25,14 +25,17 @@ import (
 type palMode int
 
 const (
-	palCommands  palMode = iota // acciones y archivos
-	palTemplates                // elegir plantilla
-	palImports                  // elegir entre varios imports (ver imports.go)
-	palOutline                  // saltar a un símbolo del archivo (ver index.go)
-	palDefs                     // elegir entre varias definiciones (ver index.go)
-	palComplete                 // elegir un nombre del proyecto para completar (ver index.go)
-	palPath                     // ruta destino (desde aquí, modos de texto)
-	palVar                      // valor de una variable de la plantilla
+	palCommands    palMode = iota // acciones y archivos
+	palTemplates                  // elegir plantilla
+	palImports                    // elegir entre varios imports (ver imports.go)
+	palOutline                    // saltar a un símbolo del archivo (ver index.go)
+	palDefs                       // elegir entre varias definiciones (ver index.go)
+	palComplete                   // elegir un nombre del proyecto para completar (ver index.go)
+	palLSPComplete                // elegir una sugerencia del LSP (ver lsp.go)
+	palLSPDefs                    // elegir entre varias definiciones del LSP (ver lsp.go)
+	palDiags                      // lista de diagnósticos del LSP (ver lsp.go)
+	palPath                       // ruta destino (desde aquí, modos de texto)
+	palVar                        // valor de una variable de la plantilla
 )
 
 const cmdTemplatePrefix = "tpl:"

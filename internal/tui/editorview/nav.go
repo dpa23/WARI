@@ -68,3 +68,17 @@ func (m *Model) GoTo(line, col int) {
 	m.top, m.xoff = m.scroll()
 	m.suggest = m.computeSuggestion()
 }
+
+// ReplaceText reemplaza el rango [startLine:startCol, endLine:endCol) (base 0,
+// columnas en runas; se ajustan al buffer) por text, como un único paso de
+// deshacer, y deja el cursor al final del texto insertado. Con el rango vacío
+// inserta. Sirve para aplicar una sugerencia del LSP, que indica su rango.
+func (m *Model) ReplaceText(startLine, startCol, endLine, endCol int, text string) {
+	m.snip = nil // los offsets de la sesión dejan de valer
+	m.buf.ReplaceRange(
+		editor.Pos{Line: startLine, Col: max(startCol, 0)},
+		editor.Pos{Line: endLine, Col: max(endCol, 0)}, text)
+	m.edited()
+	m.suggest = m.computeSuggestion()
+	m.top, m.xoff = m.scroll()
+}

@@ -29,6 +29,8 @@ func TestDefault(t *testing.T) {
 		"outline":         {"alt+o"},
 		"goto_definition": {"f12", "alt+d"},
 		"complete":        {"alt+/", "ctrl+space"},
+		"toggle_lsp":      {"alt+l"},
+		"diagnostics":     {"alt+m"},
 		"toggle_tree":     {"ctrl+b"},
 		"toggle_agents":   {"ctrl+g"},
 		"agent_new":       {"ctrl+t"},

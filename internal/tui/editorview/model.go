@@ -85,6 +85,9 @@ type Model struct {
 	// cursor al que le falta el import ("" si no hay).
 	imps    map[string]imports.Map
 	suggest string
+
+	// marks son las marcas del margen por línea (ver SetLineMarks).
+	marks map[int]LineMark
 }
 
 // fingerprint resume el contenido del buffer: líneas y un hash FNV-1a.
@@ -526,7 +529,13 @@ func (m Model) View() string {
 			num := strconv.Itoa(li + 1)
 			sb.WriteString(strings.Repeat(" ", gw-2-len(num)))
 			sb.WriteString(num)
-			sb.WriteString("  ")
+			if len(m.marks) == 0 {
+				sb.WriteString("  ")
+			} else {
+				sb.WriteString(m.markGlyph(li))
+				sb.WriteString(sgrReset)
+				sb.WriteString(" ")
+			}
 			sb.WriteString(sgrReset)
 		}
 		var mk []uint16

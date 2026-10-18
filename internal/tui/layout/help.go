@@ -57,7 +57,7 @@ func helpGroups() []helpGroup {
 				{"import_type", "Importar el tipo bajo el cursor"},
 				{"outline", "Outline: clases y métodos del archivo"},
 				{"goto_definition", "Ir a la definición"},
-				{"complete", "Completar con nombres del proyecto"},
+				{"complete", "Completar (LSP o nombres del proyecto)"},
 			},
 		},
 		{
@@ -92,6 +92,13 @@ func helpGroups() []helpGroup {
 				{"gate_approve", "Aprobar gate"},
 				{"gate_reject", "Rechazar gate"},
 				{"gate_edit", "Editar prompt del gate"},
+			},
+		},
+		{
+			title: "LSP (opcional)",
+			items: []helpItem{
+				{"toggle_lsp", "Encender o apagar el LSP"},
+				{"diagnostics", "Diagnósticos del archivo"},
 			},
 		},
 	}
@@ -207,7 +214,7 @@ func (m Model) helpView(w, h int) []string {
 		}
 
 		col1 := formatCol([]helpGroup{groups[0], groups[1], groups[3]}, col1W)
-		col2 := formatCol([]helpGroup{groups[2], groups[4]}, col2W)
+		col2 := formatCol([]helpGroup{groups[2], groups[4], groups[5]}, col2W)
 
 		n := max(len(col1), len(col2))
 		sep := borderSt.Render("│")

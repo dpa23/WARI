@@ -52,6 +52,9 @@ func main() {
 	noIndex := flag.Bool("no-index", false, "no indexa los símbolos del proyecto (outline aparte, ir a definición, completar y tipos propios en los imports)")
 	useCtags := flag.Bool("ctags", false,
 		"indexa los archivos del proyecto con universal-ctags si está en el PATH (por omisión, el indexador propio, que además da las anotaciones)")
+	lspOn := flag.Bool("lsp", false,
+		"enciende el LSP (jdtls, kotlin-language-server, csharp-ls si están en el PATH) para completar, ir a definición y diagnósticos; "+
+			"por omisión está apagado y se enciende con la acción toggle_lsp (alt+l)")
 	showVersion := flag.Bool("version", false, "muestra la versión y sale")
 	flag.Parse()
 
@@ -87,7 +90,7 @@ func main() {
 		}
 		budget := orch.Budget{MaxTurns: *maxTurns, MaxDuration: *maxTime, MaxTokens: *maxTokens}
 		loops := orch.LoopLimits{SameTool: *loopCalls, IdleTurns: *loopTurns}
-		os.Exit(runTUI(newAgent, agent.Task{Model: *model, Permissions: perms}, root, file, *maxActive, budget, loops, newIndex(root, *noIndex, *useCtags)))
+		os.Exit(runTUI(newAgent, agent.Task{Model: *model, Permissions: perms}, root, file, *maxActive, budget, loops, newIndex(root, *noIndex, *useCtags), *lspOn))
 	}
 }
 
@@ -154,7 +157,7 @@ func loadKeymap(root string) config.Keymap {
 // bucle de eventos), no debe quedar ningún agente vivo: el defer cierra el
 // supervisor, que cierra a cada agente y mata su turno en curso con todos sus
 // descendientes.
-func runTUI(newAgent func() agent.Agent, task agent.Task, root, file string, maxActive int, budget orch.Budget, loops orch.LoopLimits, idx *index.Index) int {
+func runTUI(newAgent func() agent.Agent, task agent.Task, root, file string, maxActive int, budget orch.Budget, loops orch.LoopLimits, idx *index.Index, lspOn bool) int {
 	sup := orch.New(maxActive)
 	defer sup.Close()
 	sup.SetLoopLimits(loops)
@@ -164,6 +167,15 @@ func runTUI(newAgent func() agent.Agent, task agent.Task, root, file string, max
 		defer runner.Close()
 	}
 
+	// Los servidores de lenguaje (si el usuario enciende el LSP) viven en su
+	// propio grupo; al salir, por la vía que sea, se cierran con sus
+	// descendientes. El Shutdown va antes de cancelar ctx, que es la red de
+	// seguridad.
+	lspCtx, cancelLSP := context.WithCancel(context.Background())
+	defer cancelLSP()
+	lspMgr := newLSP(lspCtx)
+	defer closeLSP(lspMgr)
+
 	sets, imps, tpls := loadAssets(root)
 	p := tea.NewProgram(layout.New(layout.Config{
 		Root:      root,
@@ -172,6 +184,8 @@ func runTUI(newAgent func() agent.Agent, task agent.Task, root, file string, max
 		Snippets:  sets,
 		Imports:   imps,
 		Index:     idx,
+		LSP:       lspMgr,
+		LSPOn:     lspOn,
 		Templates: tpls,
 		Chat: tui.Config{
 			Supervisor: sup,
