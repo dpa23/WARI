@@ -1,6 +1,7 @@
 package snippets
 
 import (
+	"io/fs"
 	"reflect"
 	"strings"
 	"testing"
@@ -90,6 +91,34 @@ func TestLoadDir(t *testing.T) {
 	fsys["snippets/malo.json"] = &fstest.MapFile{Data: []byte(`[]`)}
 	if _, err := LoadDir(fsys, "snippets"); err == nil || !strings.Contains(err.Error(), "malo.json") {
 		t.Fatalf("error esperado con el archivo: %v", err)
+	}
+}
+
+func TestLoadDirIgnoresSymlinkAndRejectsBigFile(t *testing.T) {
+	fsys := fstest.MapFS{
+		"snippets/symlink.json": &fstest.MapFile{
+			Mode: fs.ModeSymlink,
+			Data: []byte(`{"link": {"prefix": "link", "body": "link"}}`),
+		},
+	}
+	sets, err := LoadDir(fsys, "snippets")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(sets) != 0 {
+		t.Fatalf("debía ignorar symlinks, pero cargó: %+v", sets)
+	}
+
+	big := make([]byte, 1<<20+10)
+	copy(big, `{"big": {"prefix": "big", "body": ["`)
+	for i := 36; i < len(big)-5; i++ {
+		big[i] = 'a'
+	}
+	copy(big[len(big)-5:], `"]}}`)
+	fsys["snippets/big.json"] = &fstest.MapFile{Data: big}
+
+	if _, err := LoadDir(fsys, "snippets"); err == nil || !strings.Contains(err.Error(), "1 MiB") {
+		t.Fatalf("debía fallar por superar el límite de 1 MiB, obtuve: %v", err)
 	}
 }
 

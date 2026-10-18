@@ -107,3 +107,85 @@ func TestLoadImportsMergesAndValidatesEmbedded(t *testing.T) {
 		t.Error("faltan los embebidos de csharp o kotlin")
 	}
 }
+
+func TestLoadSnippetsIgnoresSymlinks(t *testing.T) {
+	user := t.TempDir()
+	outside := t.TempDir()
+	writeFile(t, filepath.Join(outside, "java.json"), `{"evil": {"prefix": "evil", "body": ["evil"]}}`)
+	if err := os.MkdirAll(filepath.Join(user, "snippets"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Symlink(filepath.Join(outside, "java.json"), filepath.Join(user, "snippets", "java.json")); err != nil {
+		t.Fatal(err)
+	}
+	sets, warns := loadSnippets(user, "")
+	if len(warns) != 0 {
+		t.Errorf("no debía haber avisos por ignorar symlink: %v", warns)
+	}
+	if _, ok := find(sets["java"], "evil"); ok {
+		t.Fatal("vulnerabilidad: se cargó el snippet a través de un symlink")
+	}
+}
+
+func TestLoadSnippetsRejectsFileExceedingLimit(t *testing.T) {
+	user := t.TempDir()
+	big := make([]byte, 1<<20+10)
+	copy(big, `{"big": {"prefix": "big", "body": ["`)
+	for i := 36; i < len(big)-5; i++ {
+		big[i] = 'a'
+	}
+	copy(big[len(big)-5:], `"]}}`)
+	writeFile(t, filepath.Join(user, "snippets", "java.json"), string(big))
+
+	sets, warns := loadSnippets(user, "")
+	if len(warns) == 0 {
+		t.Fatal("debía emitir aviso por exceder el límite de tamaño")
+	}
+	if !strings.Contains(warns[0], "1 MiB") && !strings.Contains(warns[0], "límite") {
+		t.Fatalf("aviso no menciona el límite: %v", warns)
+	}
+	if _, ok := find(sets["java"], "big"); ok {
+		t.Fatal("no debía cargar un snippet que supera el límite de 1 MiB")
+	}
+}
+
+func TestLoadImportsIgnoresSymlinks(t *testing.T) {
+	user := t.TempDir()
+	outside := t.TempDir()
+	writeFile(t, filepath.Join(outside, "java.json"), `{"Evil": ["evil.Evil"]}`)
+	if err := os.MkdirAll(filepath.Join(user, "imports"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Symlink(filepath.Join(outside, "java.json"), filepath.Join(user, "imports", "java.json")); err != nil {
+		t.Fatal(err)
+	}
+	maps, warns := loadImports(user, "")
+	if len(warns) != 0 {
+		t.Errorf("no debía haber avisos por ignorar symlink: %v", warns)
+	}
+	if got := maps["java"].Candidates("Evil"); got != nil {
+		t.Fatal("vulnerabilidad: se cargó el import a través de un symlink")
+	}
+}
+
+func TestLoadImportsRejectsFileExceedingLimit(t *testing.T) {
+	user := t.TempDir()
+	big := make([]byte, 1<<20+10)
+	copy(big, `{"Big": ["`)
+	for i := 10; i < len(big)-4; i++ {
+		big[i] = 'a'
+	}
+	copy(big[len(big)-4:], `"]}`)
+	writeFile(t, filepath.Join(user, "imports", "java.json"), string(big))
+
+	maps, warns := loadImports(user, "")
+	if len(warns) == 0 {
+		t.Fatal("debía emitir aviso por exceder el límite de tamaño")
+	}
+	if !strings.Contains(warns[0], "1 MiB") && !strings.Contains(warns[0], "límite") {
+		t.Fatalf("aviso no menciona el límite: %v", warns)
+	}
+	if got := maps["java"].Candidates("Big"); got != nil {
+		t.Fatal("no debía cargar un import que supera el límite de 1 MiB")
+	}
+}

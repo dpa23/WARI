@@ -4,6 +4,7 @@ import (
 	"encoding/xml"
 	"errors"
 	"fmt"
+	"io"
 	"os"
 	"path/filepath"
 	"sort"
@@ -139,9 +140,15 @@ func findCsproj(dir string) (string, error) {
 	}
 	var found []string
 	for _, e := range entries {
-		if !e.IsDir() && strings.EqualFold(filepath.Ext(e.Name()), ".csproj") {
-			found = append(found, e.Name())
+		if !strings.EqualFold(filepath.Ext(e.Name()), ".csproj") {
+			continue
 		}
+		path := filepath.Join(dir, e.Name())
+		fi, err := os.Lstat(path)
+		if err != nil || !fi.Mode().IsRegular() {
+			continue
+		}
+		found = append(found, e.Name())
 	}
 	if len(found) == 0 {
 		return "", nil
@@ -150,11 +157,31 @@ func findCsproj(dir string) (string, error) {
 	return filepath.Join(dir, found[0]), nil
 }
 
+const maxCsprojSize = 1 << 20 // 1 MiB
+
 func projectNamespace(file string) (string, error) {
-	data, err := os.ReadFile(file)
+	fi, err := os.Lstat(file)
 	if err != nil {
 		return "", err
 	}
+	if !fi.Mode().IsRegular() {
+		return "", fmt.Errorf("%s: no es un archivo regular", filepath.Base(file))
+	}
+	f, err := os.Open(file)
+	if err != nil {
+		return "", err
+	}
+	defer f.Close()
+
+	lr := io.LimitReader(f, maxCsprojSize+1)
+	data, err := io.ReadAll(lr)
+	if err != nil {
+		return "", err
+	}
+	if len(data) > maxCsprojSize {
+		return "", fmt.Errorf("%s: archivo supera el límite de 1 MiB", filepath.Base(file))
+	}
+
 	var p csproj
 	if err := xml.Unmarshal(data, &p); err != nil {
 		return "", fmt.Errorf("%s: %w", filepath.Base(file), err)

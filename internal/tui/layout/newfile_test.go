@@ -224,6 +224,30 @@ func TestNewFileWithoutTemplatesWarns(t *testing.T) {
 	}
 }
 
+func TestNewFileSymlinkIntermediateDirRejectsEscape(t *testing.T) {
+	root := t.TempDir()
+	outside := t.TempDir()
+	if err := os.Symlink(outside, filepath.Join(root, "link")); err != nil {
+		t.Fatal(err)
+	}
+	tpl, err := templates.Parse([]byte("---\nname: Simple\nlang: text\next: txt\n---\ncontenido\n"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	m := newLayout(t, Config{Root: root, Templates: []templates.Template{tpl}}, 120, 30)
+	m, _ = send(m, press('f', tea.ModAlt))
+	m, _ = send(m, enter())
+	m.pal.query = []rune("link/Escaped.txt")
+	m, _ = send(m, enter())
+
+	if _, err := os.Stat(filepath.Join(outside, "Escaped.txt")); err == nil {
+		t.Fatal("vulnerabilidad: se creó el archivo en el directorio externo apuntado por symlink")
+	}
+	if !m.pal.open || m.pal.mode != palPath {
+		t.Fatalf("debía seguir en el paso de ruta con error: open=%v mode=%v nota=%q", m.pal.open, m.pal.mode, m.pal.note)
+	}
+}
+
 func TestSnippetTabKeepsFocusInEditor(t *testing.T) {
 	root := t.TempDir()
 	file := write(t, root, "Foo.java", "foreach\n")

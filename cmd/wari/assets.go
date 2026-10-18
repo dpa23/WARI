@@ -1,7 +1,10 @@
 package main
 
 import (
+	"bytes"
+	"errors"
 	"fmt"
+	"io"
 	"os"
 	"path/filepath"
 	"slices"
@@ -13,6 +16,8 @@ import (
 	"github.com/dpa23/wari/internal/snippets"
 	"github.com/dpa23/wari/internal/templates"
 )
+
+const maxAssetSize = 1 << 20 // 1 MiB
 
 // loadSnippets devuelve los snippets por lenguaje: los embebidos más los de
 // <userDir>/snippets/<lang>.json y <projectDir>/snippets/<lang>.json. Si dos
@@ -36,7 +41,7 @@ func loadSnippets(userDir, projectDir string) (sets map[string]snippets.Set, war
 			continue
 		}
 		for _, e := range entries {
-			if e.IsDir() || filepath.Ext(e.Name()) != ".json" {
+			if !e.Type().IsRegular() || filepath.Ext(e.Name()) != ".json" {
 				continue
 			}
 			path := filepath.Join(dir, e.Name())
@@ -58,7 +63,15 @@ func readSnippets(path string) (snippets.Set, error) {
 		return snippets.Set{}, err
 	}
 	defer f.Close()
-	return snippets.Load(f)
+	lr := io.LimitReader(f, maxAssetSize+1)
+	data, err := io.ReadAll(lr)
+	if err != nil {
+		return snippets.Set{}, err
+	}
+	if len(data) > maxAssetSize {
+		return snippets.Set{}, errors.New("archivo supera el límite de 1 MiB")
+	}
+	return snippets.Load(bytes.NewReader(data))
 }
 
 // mergeSnippets suma over a base; ante el mismo nombre gana over. El
@@ -102,7 +115,7 @@ func loadImports(userDir, projectDir string) (maps map[string]imports.Map, warns
 			continue
 		}
 		for _, e := range entries {
-			if e.IsDir() || filepath.Ext(e.Name()) != ".json" {
+			if !e.Type().IsRegular() || filepath.Ext(e.Name()) != ".json" {
 				continue
 			}
 			path := filepath.Join(dir, e.Name())
@@ -124,7 +137,15 @@ func readImports(path string) (imports.Map, error) {
 		return nil, err
 	}
 	defer f.Close()
-	return imports.Load(f)
+	lr := io.LimitReader(f, maxAssetSize+1)
+	data, err := io.ReadAll(lr)
+	if err != nil {
+		return nil, err
+	}
+	if len(data) > maxAssetSize {
+		return nil, errors.New("archivo supera el límite de 1 MiB")
+	}
+	return imports.Load(bytes.NewReader(data))
 }
 
 // loadTemplates devuelve las plantillas embebidas de nuevo archivo.

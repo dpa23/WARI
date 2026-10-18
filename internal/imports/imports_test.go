@@ -1,6 +1,7 @@
 package imports
 
 import (
+	"io/fs"
 	"strings"
 	"testing"
 	"testing/fstest"
@@ -67,6 +68,34 @@ func TestLoadDir(t *testing.T) {
 	fsys["imports/bad.json"] = &fstest.MapFile{Data: []byte("{")}
 	if _, err := LoadDir(fsys, "imports"); err == nil || !strings.Contains(err.Error(), "bad.json") {
 		t.Errorf("el error debía nombrar el archivo: %v", err)
+	}
+}
+
+func TestLoadDirIgnoresSymlinkAndRejectsBigFile(t *testing.T) {
+	fsys := fstest.MapFS{
+		"imports/symlink.json": &fstest.MapFile{
+			Mode: fs.ModeSymlink,
+			Data: []byte(`{"Link": ["link.Link"]}`),
+		},
+	}
+	got, err := LoadDir(fsys, "imports")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(got) != 0 {
+		t.Fatalf("debía ignorar symlinks, pero cargó: %+v", got)
+	}
+
+	big := make([]byte, 1<<20+10)
+	copy(big, `{"Big": ["`)
+	for i := 10; i < len(big)-4; i++ {
+		big[i] = 'a'
+	}
+	copy(big[len(big)-4:], `"]}`)
+	fsys["imports/big.json"] = &fstest.MapFile{Data: big}
+
+	if _, err := LoadDir(fsys, "imports"); err == nil || !strings.Contains(err.Error(), "1 MiB") {
+		t.Fatalf("debía fallar por superar el límite de 1 MiB, obtuve: %v", err)
 	}
 }
 

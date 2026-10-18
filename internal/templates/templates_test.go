@@ -201,3 +201,37 @@ func TestDeriveNamespace(t *testing.T) {
 		t.Errorf("%q %v", out, err)
 	}
 }
+
+func TestDeriveNamespaceSymlinkIgnored(t *testing.T) {
+	root := t.TempDir()
+	outside := t.TempDir()
+	writeFile(t, filepath.Join(outside, "Outside.csproj"),
+		`<Project><PropertyGroup><RootNamespace>Outside</RootNamespace></PropertyGroup></Project>`)
+	if err := os.MkdirAll(filepath.Join(root, "Api"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Symlink(filepath.Join(outside, "Outside.csproj"), filepath.Join(root, "Api", "Api.csproj")); err != nil {
+		t.Fatal(err)
+	}
+
+	_, err := DeriveNamespace(root, filepath.Join(root, "Api", "Foo.cs"))
+	if !errors.Is(err, ErrNoProject) {
+		t.Fatalf("esperaba ErrNoProject al ser symlink, obtuve: %v", err)
+	}
+}
+
+func TestDeriveNamespaceBigFileRejection(t *testing.T) {
+	root := t.TempDir()
+	big := make([]byte, 1<<20+10)
+	copy(big, `<Project><PropertyGroup><RootNamespace>Big</RootNamespace></PropertyGroup><!-- `)
+	for i := 75; i < len(big)-5; i++ {
+		big[i] = 'x'
+	}
+	copy(big[len(big)-5:], ` --></Project>`)
+	writeFile(t, filepath.Join(root, "Big", "Big.csproj"), string(big))
+
+	_, err := DeriveNamespace(root, filepath.Join(root, "Big", "Foo.cs"))
+	if err == nil || !strings.Contains(err.Error(), "1 MiB") {
+		t.Fatalf("esperaba error por superar 1 MiB, obtuve: %v", err)
+	}
+}

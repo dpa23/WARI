@@ -213,13 +213,23 @@ func (m Model) createFromTemplate() (Model, tea.Cmd) {
 	text = strings.Replace(text, "package ;\n\n", "", 1)
 	text = strings.Replace(text, "package ;\n", "", 1)
 
-	if err := os.MkdirAll(filepath.Dir(nf.abs), 0o755); err != nil {
+	root, err := os.OpenRoot(m.root)
+	if err != nil {
+		return fail(err)
+	}
+	defer root.Close()
+
+	rel, err := filepath.Rel(m.root, nf.abs)
+	if err != nil {
+		return fail(err)
+	}
+	if err := root.MkdirAll(filepath.Dir(rel), 0o755); err != nil {
 		return fail(err)
 	}
 	// El watcher también ve la escritura: se avisa antes para que no se la
 	// atribuya a un agente en marcha.
 	m.chat.NoteUserWrite(nf.abs)
-	f, err := os.OpenFile(nf.abs, os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0o644)
+	f, err := root.OpenFile(rel, os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0o644)
 	if err != nil {
 		if errors.Is(err, fs.ErrExist) {
 			return fail(fmt.Errorf("ya existe %s", m.display(nf.abs)))

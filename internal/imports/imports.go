@@ -105,15 +105,23 @@ func LoadDir(fsys fs.FS, dir string) (map[string]Map, error) {
 	}
 	out := make(map[string]Map)
 	for _, e := range entries {
-		if e.IsDir() || path.Ext(e.Name()) != ".json" {
+		if !e.Type().IsRegular() || path.Ext(e.Name()) != ".json" {
 			continue
 		}
 		f, err := fsys.Open(path.Join(dir, e.Name()))
 		if err != nil {
 			return nil, fmt.Errorf("imports: %w", err)
 		}
-		m, err := Load(f)
+		lr := io.LimitReader(f, 1<<20+1)
+		data, err := io.ReadAll(lr)
 		f.Close()
+		if err != nil {
+			return nil, fmt.Errorf("%s: %w", e.Name(), err)
+		}
+		if len(data) > 1<<20 {
+			return nil, fmt.Errorf("%s: archivo supera el límite de 1 MiB", e.Name())
+		}
+		m, err := Load(bytes.NewReader(data))
 		if err != nil {
 			return nil, fmt.Errorf("%s: %w", e.Name(), err)
 		}
