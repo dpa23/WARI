@@ -35,6 +35,14 @@
 // varios candidatos (List: java.util o java.awt) abre un selector. Ver
 // imports.go.
 //
+// Estructura e índice. outline (alt+o) lista en la paleta los símbolos del
+// archivo con sus anotaciones y salta al elegir; goto_definition (F12, alt+d)
+// busca el identificador bajo el cursor en el mismo archivo, el mismo
+// package, los imports y el resto del proyecto (selector si hay varios);
+// complete (alt+/, ctrl+space) propone nombres del proyecto. El índice se
+// llena en segundo plano y sus tipos se suman a los mapas de imports. Ver
+// index.go. Con el foco en el chat, estas teclas son del chat.
+//
 // Seguridad de datos: abrir otro archivo con el actual sin guardar, o salir
 // en ese caso (con la tecla o desde la paleta), pide repetir la acción; la
 // confirmación se desarma con cualquier otra tecla. Guardar la confirma.
@@ -58,6 +66,7 @@ import (
 	"github.com/dpa23/wari/internal/config"
 	"github.com/dpa23/wari/internal/editor"
 	"github.com/dpa23/wari/internal/imports"
+	"github.com/dpa23/wari/internal/index"
 	"github.com/dpa23/wari/internal/snippets"
 	"github.com/dpa23/wari/internal/templates"
 	"github.com/dpa23/wari/internal/tui"
@@ -96,6 +105,10 @@ type Config struct {
 	// Imports son los mapas tipo→import por lenguaje de import_type y de la
 	// sugerencia de la línea de estado; nil los desactiva.
 	Imports map[string]imports.Map
+	// Index es el índice de símbolos del proyecto (outline aparte, ir a
+	// definición, completar y los tipos propios en los imports); nil lo
+	// desactiva. El layout lo llena en segundo plano.
+	Index *index.Index
 	// Templates son las plantillas de "Nuevo archivo desde plantilla"; sin
 	// ellas la acción solo avisa.
 	Templates []templates.Template
@@ -126,8 +139,13 @@ type Model struct {
 	snips map[string]snippets.Set
 	imps  map[string]imports.Map
 	imp   importState
-	tpls  []templates.Template
-	nf    newFileState
+	// ix es el índice de símbolos; allImps, los mapas de imports más los tipos
+	// del proyecto; xs, las listas de la paleta en los modos de índice.
+	ix      *index.Index
+	allImps map[string]imports.Map
+	xs      indexState
+	tpls    []templates.Template
+	nf      newFileState
 
 	pal palette
 	// files es la última lista de archivos del proyecto; se refresca en
@@ -170,7 +188,8 @@ func New(cfg Config) Model {
 
 	m := Model{
 		km: km, binds: binds, root: root,
-		snips: cfg.Snippets, imps: cfg.Imports, tpls: cfg.Templates,
+		snips: cfg.Snippets, imps: cfg.Imports, allImps: cfg.Imports, tpls: cfg.Templates,
+		ix:     cfg.Index,
 		tree:   filetree.New(root),
 		chat:   tui.NewPanel(chatCfg),
 		w:      80,
@@ -187,7 +206,7 @@ func New(cfg Config) Model {
 }
 
 // Init implementa tea.Model.
-func (m Model) Init() tea.Cmd { return m.chat.Init() }
+func (m Model) Init() tea.Cmd { return tea.Batch(m.chat.Init(), m.refreshIndex()) }
 
 // Update implementa tea.Model.
 func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) { return m.update(msg) }
@@ -229,7 +248,11 @@ func (m Model) update(msg tea.Msg) (Model, tea.Cmd) {
 			m.msg = "no se pudo guardar: " + msg.Err.Error()
 		} else {
 			m.msg = "guardado " + m.display(msg.Path)
+			return m, m.refreshIndex()
 		}
+		return m, nil
+	case indexedMsg:
+		m.onIndexed(msg)
 		return m, nil
 	}
 	// Eventos de agentes, spinner, etc.: son del chat aunque no tenga foco.
@@ -301,6 +324,12 @@ func (m Model) handleKey(k tea.KeyPressMsg) (Model, tea.Cmd) {
 		return m, nil
 	case m.is(k, "import_type"):
 		return m.importType()
+	case m.focus != focusChat && m.is(k, "outline"):
+		return m.showOutline()
+	case m.focus != focusChat && m.is(k, "goto_definition"):
+		return m.gotoDefinition(pending)
+	case m.focus != focusChat && m.is(k, "complete"):
+		return m.completeName()
 	case m.is(k, "stop_all"):
 		return m.stopAll()
 	case m.chat.HasPipeline() && (m.is(k, "pipeline_run") || m.is(k, "gate_approve") ||
@@ -571,7 +600,7 @@ func (m *Model) openFile(path string) {
 	}
 	m.ed = editorview.New(buf, fi, path, editorview.KeyMapFrom(m.km))
 	m.ed.SetSnippets(m.snips)
-	m.ed.SetImports(m.imps)
+	m.ed.SetImports(m.allImps)
 	m.hasEd = true
 	m.focus = focusEditor
 	m.tree.Reveal(path)

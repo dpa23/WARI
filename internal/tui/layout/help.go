@@ -55,6 +55,9 @@ func helpGroups() []helpGroup {
 				{"find", "Buscar en archivo"},
 				{"new_file", "Nuevo archivo desde plantilla"},
 				{"import_type", "Importar el tipo bajo el cursor"},
+				{"outline", "Outline: clases y métodos del archivo"},
+				{"goto_definition", "Ir a la definición"},
+				{"complete", "Completar con nombres del proyecto"},
 			},
 		},
 		{

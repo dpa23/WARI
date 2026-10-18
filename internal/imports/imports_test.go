@@ -354,3 +354,21 @@ func TestCSharpAliasAndStaticAtEnd(t *testing.T) {
 		t.Errorf("%s", got)
 	}
 }
+
+func TestExtend(t *testing.T) {
+	base := Map{"List": {"java.util.List", "java.awt.List"}, "Date": {"java.util.Date"}}
+	extra := Map{"List": {"com.acme.List", "java.util.List"}, "User": {"com.acme.User"}}
+	got := base.Extend(extra)
+	if l := got.Candidates("List"); strings.Join(l, ",") != "com.acme.List,java.util.List,java.awt.List" {
+		t.Errorf("List: %v (los del proyecto van primero, sin repetir)", l)
+	}
+	if got.Candidates("User")[0] != "com.acme.User" || got.Candidates("Date")[0] != "java.util.Date" {
+		t.Errorf("User/Date: %v", got)
+	}
+	if len(base.Candidates("List")) != 2 || base.Candidates("User") != nil {
+		t.Error("Extend no debe modificar el mapa original")
+	}
+	if len(Map(nil).Extend(extra)) != 2 {
+		t.Error("Extend sobre un mapa nil")
+	}
+}

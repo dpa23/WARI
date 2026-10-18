@@ -39,6 +39,9 @@ const (
 	cmdHelp         = "help"
 	cmdNewFile      = "new_file"
 	cmdImportType   = "import_type"
+	cmdOutline      = "outline"
+	cmdGotoDef      = "goto_definition"
+	cmdComplete     = "complete"
 	cmdQuit         = "quit"
 	cmdOpenPrefix   = "open:"
 )
@@ -98,6 +101,9 @@ func (m Model) paletteItems() []item {
 		newItem(cmdRevertAgent, "Revertir agente", hint("revert_agent")),
 		newItem(cmdNewFile, "Nuevo archivo desde plantilla", hint("new_file")),
 		newItem(cmdImportType, "Importar el tipo bajo el cursor", hint("import_type")),
+		newItem(cmdOutline, "Outline del archivo (clases y métodos)", hint("outline")),
+		newItem(cmdGotoDef, "Ir a la definición", hint("goto_definition")),
+		newItem(cmdComplete, "Completar con nombres del proyecto", hint("complete")),
 	}
 	for _, f := range m.files {
 		items = append(items, newItem(cmdOpenPrefix+f, f, "archivo"))
@@ -112,9 +118,9 @@ func (m *Model) openPalette() tea.Cmd {
 	m.pal = palette{open: true}
 	m.pal.setItems(m.paletteItems())
 	root := m.root
-	return func() tea.Msg {
+	return tea.Batch(func() tea.Msg {
 		return filesMsg{files: filetree.ListFiles(root, maxFiles)}
-	}
+	}, m.refreshIndex())
 }
 
 // setItems reemplaza las entradas y vuelve a filtrar con la consulta actual.
@@ -174,6 +180,12 @@ func (m Model) paletteKey(k tea.KeyPressMsg) (Model, tea.Cmd) {
 			return m.submitVar()
 		case palImports:
 			return m.pickImport()
+		case palOutline:
+			return m.pickOutline()
+		case palDefs:
+			return m.pickDefinition()
+		case palComplete:
+			return m.pickCompletion()
 		}
 		if len(p.results) == 0 {
 			return m, nil
@@ -294,6 +306,12 @@ func (m Model) runCommand(id string) (Model, tea.Cmd) {
 		return m, nil
 	case id == cmdImportType:
 		return m.importType()
+	case id == cmdOutline:
+		return m.showOutline()
+	case id == cmdGotoDef:
+		return m.gotoDefinition("")
+	case id == cmdComplete:
+		return m.completeName()
 	case id == cmdQuit:
 		return m.requestQuit(armed)
 	case id == cmdFocusTree:

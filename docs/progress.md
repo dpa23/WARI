@@ -1,7 +1,7 @@
 # Progreso
 
 ## Fase actual
-Fase 3 — Editor núcleo: **terminada y verificada**. Fase 10 — Imports y Spring Boot: **terminada**. Tier 0 y Tier 1 completos. Siguiente: tier 2 (fase 11: estructura e índice).
+Fase 3 — Editor núcleo: **terminada y verificada**. Fase 12 — LSP opcional: **cliente listo** (integración en el TUI pendiente). Fase 13 (sandbox con Podman/Docker) en curso.
 
 ## Hecho
 ### Fase 0 — Arranque
@@ -66,6 +66,13 @@ Fase 3 — Editor núcleo: **terminada y verificada**. Fase 10 — Imports y Spr
 - `internal/imports`: inserción ordenada y sin duplicar (Java/Kotlin `import`, C# `using`); alt+i con selector si hay varios candidatos (List → java.util primero).
 - Editor: `ReplaceRange` y grupos de undo; `filetree.Refresh`.
 - Seguridad (Gemini): creación de archivos vía os.Root; lectura acotada de datos del proyecto.
+
+### Fase 11 — Estructura e índice
+- `internal/index`: indexador en Go puro (Java, Kotlin, C#) consciente de comentarios y cadenas; 5000 líneas en ~1,7 ms; ctags opt-in con `-ctags`.
+- Outline (alt+o), ir a definición (F12/alt+d), completar (alt+/), imports de tipos propios. Revisión de Gemini sin hallazgos nuevos.
+
+### Fase 12 — LSP opcional
+- `internal/lsp`: cliente JSON-RPC (initialize, didOpen/didChange, completion, definition, diagnósticos, cancelación), gestor bajo demanda para jdtls, kotlin-language-server y csharp-ls, RSS por grupo de procesos. `proc.Spec.Stdin` para hablar con el servidor.
 
 ## Pendiente
 

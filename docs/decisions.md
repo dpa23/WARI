@@ -119,6 +119,10 @@ Formato: fecha · decisión · motivo · alternativas descartadas.
 - **Motivo:** tree-sitter exige CGO y compilación nativa pesada en máquinas de 2 núcleos; el PLAN pide un tier 2 opcional y liviano.
 - **Descartado por ahora:** tree-sitter detrás de un build tag (queda como opción futura).
 
+## 2026-10-18 · Sandbox de ejecución (PLAN §10.5, cerrada)
+- **Decisión del autor:** solo Podman/Docker para aislar la ejecución y depuración (fase 13): proyecto montado en solo lectura con capa de escritura efímera, detrás de una interfaz `Sandbox`.
+- **Descartado:** bubblewrap (más liviano, pero el autor prefiere contenedores reproducibles).
+
 ## 2026-10-17 · Orquestación del desarrollo
 - **Decisión:** Claude Code (Opus) lidera y es el único que hace commit; subagentes Sonnet implementan y Haiku hace tareas mecánicas; Antigravity (Gemini 3.8 Flash) revisa los diffs con otra familia de modelos y genera los datos del tier 1. Máximo 2 agentes activos a la vez. Commits locales; push solo a pedido del autor. Detalle en `AGENTS.md` y `CLAUDE.md`.
 - **Motivo:** máquina de 2 núcleos y 5,6 GB; la diversidad de modelos encuentra errores distintos, pero todo hallazgo se verifica (Antigravity adivinó mal flags y nombres de eventos de su propia CLI).

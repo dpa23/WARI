@@ -28,6 +28,9 @@ const (
 	palCommands  palMode = iota // acciones y archivos
 	palTemplates                // elegir plantilla
 	palImports                  // elegir entre varios imports (ver imports.go)
+	palOutline                  // saltar a un símbolo del archivo (ver index.go)
+	palDefs                     // elegir entre varias definiciones (ver index.go)
+	palComplete                 // elegir un nombre del proyecto para completar (ver index.go)
 	palPath                     // ruta destino (desde aquí, modos de texto)
 	palVar                      // valor de una variable de la plantilla
 )

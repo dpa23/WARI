@@ -61,3 +61,19 @@ func TestAgentFactories(t *testing.T) {
 		a.Close()
 	}
 }
+
+func TestNewIndex(t *testing.T) {
+	root := t.TempDir()
+	if newIndex(root, true, false) != nil {
+		t.Error("-no-index debía desactivar el índice")
+	}
+	ix := newIndex(root, false, false)
+	if ix == nil || ix.Root() != root {
+		t.Fatalf("índice = %v", ix)
+	}
+	// Con -ctags y sin ctags en el PATH avisa y sigue con el indexador propio.
+	t.Setenv("PATH", t.TempDir())
+	if newIndex(root, false, true) == nil {
+		t.Error("sin ctags debía seguir con el indexador propio")
+	}
+}

@@ -40,10 +40,14 @@ type Spec struct {
 	// KillGrace es la espera entre la terminación ordenada y la forzada;
 	// 0 usa DefaultKillGrace.
 	KillGrace time.Duration
+	// Stdin crea un pipe para escribir en la entrada del proceso (Process.Stdin);
+	// sin él, stdin es /dev/null.
+	Stdin bool
 }
 
 // Process es un proceso lanzado como líder de su propio grupo. Stdin es
-// /dev/null, stdout se lee con Stdout y de stderr se guarda el final.
+// /dev/null salvo que Spec.Stdin lo pida, stdout se lee con Stdout y de
+// stderr se guarda el final.
 //
 // Cuando el líder termina, lo que quede del grupo (procesos en segundo plano,
 // servidores auxiliares) quedaría huérfano: recibe la terminación ordenada y,
@@ -52,6 +56,7 @@ type Spec struct {
 // seguras; una vez cerrado Done, Pause, Resume y Kill ya no envían señales.
 type Process struct {
 	cmd    *exec.Cmd
+	stdin  *os.File // nil si Spec.Stdin es false
 	stdout *os.File
 	stderr *os.File
 	tail   *tailBuffer
@@ -82,9 +87,23 @@ func Start(ctx context.Context, spec Spec) (*Process, error) {
 		return nil, fmt.Errorf("proc: crear pipe: %w", err)
 	}
 
+	var inR, inW *os.File
+	if spec.Stdin {
+		if inR, inW, err = os.Pipe(); err != nil {
+			outR.Close()
+			outW.Close()
+			errR.Close()
+			errW.Close()
+			return nil, fmt.Errorf("proc: crear pipe: %w", err)
+		}
+	}
+
 	cmd := exec.Command(spec.Path, spec.Args...)
 	cmd.Dir = spec.Dir
 	cmd.Env = spec.Env
+	if inR != nil {
+		cmd.Stdin = inR
+	}
 	cmd.Stdout = outW
 	cmd.Stderr = errW
 	setGroup(cmd)
@@ -93,9 +112,15 @@ func Start(ctx context.Context, spec Spec) (*Process, error) {
 	// El hijo tiene sus copias; las nuestras impedirían llegar a EOF.
 	outW.Close()
 	errW.Close()
+	if inR != nil {
+		inR.Close()
+	}
 	if err != nil {
 		outR.Close()
 		errR.Close()
+		if inW != nil {
+			inW.Close()
+		}
 		return nil, fmt.Errorf("proc: lanzar %s: %w", spec.Path, err)
 	}
 
@@ -105,6 +130,7 @@ func Start(ctx context.Context, spec Spec) (*Process, error) {
 	}
 	p := &Process{
 		cmd:    cmd,
+		stdin:  inW,
 		stdout: outR,
 		stderr: errR,
 		tail:   &tailBuffer{max: stderrTail},
@@ -147,6 +173,15 @@ func (p *Process) PGID() int { return p.cmd.Process.Pid }
 // Stdout devuelve la salida estándar. Llega a EOF cuando todos los procesos
 // que la heredaron la cierran.
 func (p *Process) Stdout() io.Reader { return p.stdout }
+
+// Stdin devuelve la entrada del proceso, o nil si Spec.Stdin era false.
+// Cerrarla envía EOF al proceso.
+func (p *Process) Stdin() io.WriteCloser {
+	if p.stdin == nil {
+		return nil
+	}
+	return p.stdin
+}
 
 // Stderr devuelve los últimos bytes escritos en la salida de error. Después
 // de Wait está completo.

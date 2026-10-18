@@ -288,3 +288,39 @@ func TestStartErrors(t *testing.T) {
 		t.Error("Start de un binario inexistente no devolvió error")
 	}
 }
+
+func TestStdinPipe(t *testing.T) {
+	p, err := Start(context.Background(), Spec{Path: "/bin/cat", Stdin: true})
+	if err != nil {
+		t.Fatalf("Start: %v", err)
+	}
+	defer p.Kill()
+	if p.Stdin() == nil {
+		t.Fatal("Stdin es nil con Spec.Stdin")
+	}
+	if _, err := io.WriteString(p.Stdin(), "hola\n"); err != nil {
+		t.Fatal(err)
+	}
+	p.Stdin().Close()
+	out, err := io.ReadAll(p.Stdout())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(out) != "hola\n" {
+		t.Errorf("salida = %q, quiero \"hola\\n\"", out)
+	}
+	if err := p.Wait(); err != nil {
+		t.Errorf("Wait: %v", err)
+	}
+}
+
+func TestStdinNilByDefault(t *testing.T) {
+	p, err := Start(context.Background(), Spec{Path: "/bin/sh", Args: []string{"-c", "exit 0"}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer p.Kill()
+	if p.Stdin() != nil {
+		t.Error("Stdin no es nil sin Spec.Stdin")
+	}
+}

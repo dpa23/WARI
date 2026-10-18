@@ -20,6 +20,7 @@ import (
 	"github.com/dpa23/wari/internal/agent/agy"
 	"github.com/dpa23/wari/internal/agent/claude"
 	"github.com/dpa23/wari/internal/config"
+	"github.com/dpa23/wari/internal/index"
 	"github.com/dpa23/wari/internal/orch"
 	"github.com/dpa23/wari/internal/orch/pipeline"
 	"github.com/dpa23/wari/internal/tui"
@@ -48,6 +49,9 @@ func main() {
 		"llamadas seguidas a la misma herramienta con los mismos argumentos que cuentan como bucle y pausan al agente (0: 3, negativo: sin detección)")
 	loopTurns := flag.Int("loop-turns", 0,
 		"turnos seguidos sin cambios de archivo que cuentan como bucle (solo con -accept-edits; 0: 3, negativo: sin detección)")
+	noIndex := flag.Bool("no-index", false, "no indexa los símbolos del proyecto (outline aparte, ir a definición, completar y tipos propios en los imports)")
+	useCtags := flag.Bool("ctags", false,
+		"indexa los archivos del proyecto con universal-ctags si está en el PATH (por omisión, el indexador propio, que además da las anotaciones)")
 	showVersion := flag.Bool("version", false, "muestra la versión y sale")
 	flag.Parse()
 
@@ -83,7 +87,7 @@ func main() {
 		}
 		budget := orch.Budget{MaxTurns: *maxTurns, MaxDuration: *maxTime, MaxTokens: *maxTokens}
 		loops := orch.LoopLimits{SameTool: *loopCalls, IdleTurns: *loopTurns}
-		os.Exit(runTUI(newAgent, agent.Task{Model: *model, Permissions: perms}, root, file, *maxActive, budget, loops))
+		os.Exit(runTUI(newAgent, agent.Task{Model: *model, Permissions: perms}, root, file, *maxActive, budget, loops, newIndex(root, *noIndex, *useCtags)))
 	}
 }
 
@@ -150,7 +154,7 @@ func loadKeymap(root string) config.Keymap {
 // bucle de eventos), no debe quedar ningún agente vivo: el defer cierra el
 // supervisor, que cierra a cada agente y mata su turno en curso con todos sus
 // descendientes.
-func runTUI(newAgent func() agent.Agent, task agent.Task, root, file string, maxActive int, budget orch.Budget, loops orch.LoopLimits) int {
+func runTUI(newAgent func() agent.Agent, task agent.Task, root, file string, maxActive int, budget orch.Budget, loops orch.LoopLimits, idx *index.Index) int {
 	sup := orch.New(maxActive)
 	defer sup.Close()
 	sup.SetLoopLimits(loops)
@@ -167,6 +171,7 @@ func runTUI(newAgent func() agent.Agent, task agent.Task, root, file string, max
 		Keymap:    loadKeymap(root),
 		Snippets:  sets,
 		Imports:   imps,
+		Index:     idx,
 		Templates: tpls,
 		Chat: tui.Config{
 			Supervisor: sup,
@@ -193,6 +198,24 @@ func runTUI(newAgent func() agent.Agent, task agent.Task, root, file string, max
 		return 1
 	}
 	return 0
+}
+
+// newIndex crea el índice de símbolos del proyecto (nil con -no-index). El
+// layout lo llena en segundo plano. Con -ctags, si universal-ctags no está en
+// el PATH avisa y usa el indexador propio.
+func newIndex(root string, disabled, useCtags bool) *index.Index {
+	if disabled {
+		return nil
+	}
+	if useCtags {
+		if _, ver, err := index.CtagsVersion(context.Background()); err != nil {
+			fmt.Fprintln(os.Stderr, "wari: aviso: ctags:", err, "(se usa el indexador propio)")
+			useCtags = false
+		} else {
+			fmt.Fprintln(os.Stderr, "wari: indexando con universal-ctags", ver)
+		}
+	}
+	return index.New(index.Options{Root: root, Ignore: filetree.IgnoreFunc(root), Ctags: useCtags})
 }
 
 // pipelineFile es el pipeline de goals del proyecto, relativo a la raíz.

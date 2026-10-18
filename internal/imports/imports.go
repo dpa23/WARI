@@ -40,6 +40,7 @@ import (
 	"io"
 	"io/fs"
 	"path"
+	"slices"
 	"sort"
 	"strings"
 )
@@ -139,6 +140,27 @@ func (m Map) Merge(over Map) Map {
 	}
 	for k, v := range over {
 		out[k] = v
+	}
+	return out
+}
+
+// Extend devuelve m con los candidatos de extra puestos al frente de los de
+// cada tipo, sin repetir; los tipos que solo están en extra se añaden. Sirve
+// para sumar los tipos del proyecto a los de la biblioteca estándar. No
+// modifica ninguno de los dos.
+func (m Map) Extend(extra Map) Map {
+	out := make(Map, len(m)+len(extra))
+	for k, v := range m {
+		out[k] = v
+	}
+	for k, add := range extra {
+		merged := append([]string(nil), add...)
+		for _, c := range m[k] {
+			if !slices.Contains(merged, c) {
+				merged = append(merged, c)
+			}
+		}
+		out[k] = merged
 	}
 	return out
 }
