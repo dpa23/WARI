@@ -43,6 +43,7 @@ func Default() Keymap {
 		"undo":          []string{"ctrl+z"},
 		"redo":          []string{"ctrl+y"},
 		"find":          []string{"ctrl+f"},
+		"new_file":      []string{"alt+f"},
 		"toggle_tree":   []string{"ctrl+b"},
 		"toggle_agents": []string{"ctrl+g"},
 		"agent_new":     []string{"ctrl+t"},

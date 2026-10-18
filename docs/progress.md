@@ -1,7 +1,7 @@
 # Progreso
 
 ## Fase actual
-Fase 3 — Editor núcleo: **terminada y verificada**. Fase 7 — Gates y pipeline: **terminada**. Siguiente: fase 8 (adaptador de agy).
+Fase 3 — Editor núcleo: **terminada y verificada**. Fase 9 — Snippets y plantillas: **terminada**. Siguiente: fase 10 (imports y Spring Boot). Tier 0 (fases 1–8) completo.
 
 ## Hecho
 ### Fase 0 — Arranque
@@ -53,6 +53,14 @@ Fase 3 — Editor núcleo: **terminada y verificada**. Fase 7 — Gates y pipeli
 - Pipeline de pasos con gates de aprobación (resumen y diff), detección de bucles con pausa automática; atajos alt+p/alt+y/alt+n/alt+e.
 - Aceptación (tests): pipeline de 3 pasos que se detiene en el gate y sigue al aprobar; rechazar detiene; agente en bucle se pausa solo.
 - Seguridad de la fase 6: vulnerabilidad de manifest fabricado corregida con os.Root (tests reproducen el ataque).
+
+### Fase 8 — Adaptador agy
+- `internal/agent/agy` sobre el ejecutor genérico; `-agent claude|agy`; pipeline mixto claude → agy. agy no tiene modo de solo lectura (ver decisiones).
+
+### Fase 9 — Snippets y plantillas
+- Motores `internal/snippets` y `internal/templates` (Sonnet); datos en `assets/` (34 snippets, 17 plantillas, mapas de imports; Gemini vía herdr), embebidos en el binario.
+- Tab expande snippets con sesión de tabstops; alt+f crea archivos desde plantilla con `package`/`namespace` derivados.
+- UX de Gemini: ayuda de atajos (?/F1), paleta ampliada, alertas de presupuesto (docs/ux-review.md).
 
 ## Pendiente
 

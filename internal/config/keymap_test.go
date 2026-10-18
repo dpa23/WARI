@@ -24,6 +24,7 @@ func TestDefault(t *testing.T) {
 		"undo":          {"ctrl+z"},
 		"redo":          {"ctrl+y"},
 		"find":          {"ctrl+f"},
+		"new_file":      {"alt+f"},
 		"toggle_tree":   {"ctrl+b"},
 		"toggle_agents": {"ctrl+g"},
 		"agent_new":     {"ctrl+t"},

@@ -37,6 +37,7 @@ const (
 	cmdFocusEditor  = "focus_editor"
 	cmdFocusChat    = "focus_chat"
 	cmdHelp         = "help"
+	cmdNewFile      = "new_file"
 	cmdQuit         = "quit"
 	cmdOpenPrefix   = "open:"
 )
@@ -56,6 +57,9 @@ func newItem(id, title, hint string) item {
 // palette es el estado de la paleta de comandos.
 type palette struct {
 	open    bool
+	mode    palMode
+	prompt  string // vacío: "> "
+	note    string // aviso bajo la entrada en los modos de texto
 	query   []rune
 	items   []item
 	results []int // índices en items, ya filtrados y ordenados
@@ -84,6 +88,7 @@ func (m Model) paletteItems() []item {
 		newItem(cmdFocusTree, "Ir al árbol de archivos", hint("focus_prev")),
 		newItem(cmdFocusEditor, "Ir al editor", hint("focus_next")),
 		newItem(cmdFocusChat, "Ir al panel de agentes", hint("focus_next")),
+		newItem(cmdNewFile, "Nuevo archivo desde plantilla", hint("new_file")),
 		newItem(cmdQuit, "Salir", hint("quit")),
 		newItem(cmdAgentPause, "Pausar o reanudar agente", hint("agent_pause")),
 		newItem(cmdAgentStop, "Detener agente", hint("agent_stop")),
@@ -158,6 +163,14 @@ func (m Model) paletteKey(k tea.KeyPressMsg) (Model, tea.Cmd) {
 		p.open = false
 		m.quitArmed = false
 	case m.is(k, "send"):
+		switch p.mode {
+		case palTemplates:
+			return m.pickTemplate()
+		case palPath:
+			return m.submitPath()
+		case palVar:
+			return m.submitVar()
+		}
 		if len(p.results) == 0 {
 			return m, nil
 		}
@@ -272,6 +285,9 @@ func (m Model) runCommand(id string) (Model, tea.Cmd) {
 		return m, cmd
 	case id == cmdStopAll:
 		return m.stopAll()
+	case id == cmdNewFile:
+		m.openTemplatePicker()
+		return m, nil
 	case id == cmdQuit:
 		return m.requestQuit(armed)
 	case id == cmdFocusTree:
@@ -297,7 +313,19 @@ func (p palette) view(w, maxH int) []string {
 	bar := lipgloss.NewStyle().Background(lipgloss.Color("237")).Foreground(lipgloss.Color("252"))
 	selSt := lipgloss.NewStyle().Reverse(true)
 
-	lines := []string{bar.Bold(true).Render(fit("> "+string(p.query), w))}
+	lines := []string{bar.Bold(true).Render(fit(p.promptText()+string(p.query), w))}
+	if p.mode >= palPath {
+		// Entrada de texto: sin lista, solo la ayuda o el último error.
+		note := p.note
+		if note == "" {
+			note = "enter acepta · esc cancela"
+		}
+		lines = append(lines, bar.Faint(true).Render(fit("  "+note, w)))
+		if len(lines) > maxH {
+			lines = lines[:maxH]
+		}
+		return lines
+	}
 	shown := min(maxShown, maxH-1)
 	if len(p.results) == 0 && shown > 0 {
 		lines = append(lines, bar.Faint(true).Render(fit("  sin coincidencias", w)))

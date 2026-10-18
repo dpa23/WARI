@@ -25,6 +25,11 @@
 // el signo '?' al redactar código o mensajes. F1 abre la ayuda siempre.
 // Esc cierra el overlay; el overlay se adapta sin desbordes a cualquier tamaño.
 //
+// Snippets. En un archivo .java, .kt o .cs, Tab tras un prefijo exacto expande
+// el snippet y Tab / Shift+Tab recorren sus paradas (Esc las termina); ahí
+// Tab y Shift+Tab no mueven el foco. Nuevo archivo desde plantilla: acción
+// new_file (o la paleta); ver newfile.go.
+//
 // Seguridad de datos: abrir otro archivo con el actual sin guardar, o salir
 // en ese caso (con la tecla o desde la paleta), pide repetir la acción; la
 // confirmación se desarma con cualquier otra tecla. Guardar la confirma.
@@ -47,6 +52,8 @@ import (
 
 	"github.com/dpa23/wari/internal/config"
 	"github.com/dpa23/wari/internal/editor"
+	"github.com/dpa23/wari/internal/snippets"
+	"github.com/dpa23/wari/internal/templates"
 	"github.com/dpa23/wari/internal/tui"
 	"github.com/dpa23/wari/internal/tui/editorview"
 	"github.com/dpa23/wari/internal/tui/filetree"
@@ -77,6 +84,12 @@ type Config struct {
 	File string
 	// Keymap son los atajos; nil usa config.Default().
 	Keymap config.Keymap
+	// Snippets son los snippets por lenguaje ("java", "kotlin", "csharp") que
+	// expande Tab en el editor; nil los desactiva.
+	Snippets map[string]snippets.Set
+	// Templates son las plantillas de "Nuevo archivo desde plantilla"; sin
+	// ellas la acción solo avisa.
+	Templates []templates.Template
 	// Chat configura el panel de agentes (Keymap y Task.Dir los completa el
 	// layout).
 	Chat tui.Config
@@ -100,6 +113,10 @@ type Model struct {
 	msg         string // mensaje de la barra de estado
 	pendingOpen string // archivo cuya apertura espera confirmación
 	quitArmed   bool   // la última tecla fue quit con cambios sin guardar
+
+	snips map[string]snippets.Set
+	tpls  []templates.Template
+	nf    newFileState
 
 	pal palette
 	// files es la última lista de archivos del proyecto; se refresca en
@@ -142,6 +159,7 @@ func New(cfg Config) Model {
 
 	m := Model{
 		km: km, binds: binds, root: root,
+		snips: cfg.Snippets, tpls: cfg.Templates,
 		tree:   filetree.New(root),
 		chat:   tui.NewPanel(chatCfg),
 		w:      80,
@@ -187,7 +205,7 @@ func (m Model) update(msg tea.Msg) (Model, tea.Cmd) {
 	case filesMsg:
 		if !slices.Equal(msg.files, m.files) {
 			m.files = msg.files
-			if m.pal.open {
+			if m.pal.open && m.pal.mode == palCommands {
 				m.pal.setItems(m.paletteItems())
 			}
 		}
@@ -267,11 +285,17 @@ func (m Model) handleKey(k tea.KeyPressMsg) (Model, tea.Cmd) {
 		return m, nil
 	case m.is(k, "save"):
 		return m.save()
+	case m.is(k, "new_file"):
+		m.openTemplatePicker()
+		return m, nil
 	case m.is(k, "stop_all"):
 		return m.stopAll()
 	case m.chat.HasPipeline() && (m.is(k, "pipeline_run") || m.is(k, "gate_approve") ||
 		m.is(k, "gate_reject") || m.is(k, "gate_edit")):
 		return m.pipelineKey(k)
+	case m.focus == focusEditor && m.hasEd && m.ed.SnippetActive() &&
+		(m.is(k, "focus_prev") || (m.is(k, "focus_next") && key.Matches(k, m.ed.Keys().Tab))):
+		// En una sesión de snippet, Tab y Shift+Tab recorren las paradas.
 	case m.is(k, "focus_prev"):
 		return m.moveFocus(-1), nil
 	case m.is(k, "focus_next"):
@@ -533,6 +557,7 @@ func (m *Model) openFile(path string) {
 		return
 	}
 	m.ed = editorview.New(buf, fi, path, editorview.KeyMapFrom(m.km))
+	m.ed.SetSnippets(m.snips)
 	m.hasEd = true
 	m.focus = focusEditor
 	m.tree.Reveal(path)
@@ -777,7 +802,7 @@ func (m Model) cursor() *tea.Cursor {
 		return nil
 	}
 	if m.pal.open {
-		x := 2 + lipgloss.Width(string(m.pal.query))
+		x := lipgloss.Width(m.pal.promptText()) + lipgloss.Width(string(m.pal.query))
 		if x >= m.w {
 			return nil
 		}

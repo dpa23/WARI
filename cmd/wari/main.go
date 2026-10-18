@@ -160,10 +160,13 @@ func runTUI(newAgent func() agent.Agent, task agent.Task, root, file string, max
 		defer runner.Close()
 	}
 
+	sets, tpls := loadAssets(root)
 	p := tea.NewProgram(layout.New(layout.Config{
-		Root:   root,
-		File:   file,
-		Keymap: loadKeymap(root),
+		Root:      root,
+		File:      file,
+		Keymap:    loadKeymap(root),
+		Snippets:  sets,
+		Templates: tpls,
 		Chat: tui.Config{
 			Supervisor: sup,
 			NewAgent:   newAgent,

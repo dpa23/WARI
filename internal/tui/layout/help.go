@@ -53,6 +53,7 @@ func helpGroups() []helpGroup {
 				{"undo", "Deshacer cambios"},
 				{"redo", "Rehacer cambios"},
 				{"find", "Buscar en archivo"},
+				{"new_file", "Nuevo archivo desde plantilla"},
 			},
 		},
 		{

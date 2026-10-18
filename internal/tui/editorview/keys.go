@@ -30,8 +30,13 @@ type KeyMap struct {
 	Newline   key.Binding
 	Backspace key.Binding
 	Delete    key.Binding
-	// Tab inserta cuatro espacios.
+	// Tab expande el snippet que precede al cursor o, si no hay, inserta
+	// cuatro espacios; en una sesión de snippet va a la parada siguiente.
 	Tab key.Binding
+	// SnippetPrev vuelve a la parada anterior de una sesión de snippet y
+	// Cancel la termina.
+	SnippetPrev key.Binding
+	Cancel      key.Binding
 
 	// Save guarda en disco; Undo y Redo recorren el historial del buffer.
 	Save key.Binding
@@ -78,15 +83,18 @@ func DefaultKeyMap() KeyMap {
 		Delete:    b("delete"),
 		Tab:       b("tab"),
 
+		SnippetPrev: b("shift+tab"),
+		Cancel:      b("esc"),
+
 		Save: key.NewBinding(key.WithKeys("ctrl+s"), key.WithHelp("ctrl+s", "guardar")),
 		Undo: key.NewBinding(key.WithKeys("ctrl+z"), key.WithHelp("ctrl+z", "deshacer")),
 		Redo: key.NewBinding(key.WithKeys("ctrl+y"), key.WithHelp("ctrl+y", "rehacer")),
 	}
 }
 
-// KeyMapFrom parte de DefaultKeyMap y reemplaza Save, Undo, Redo, PageUp y
-// PageDown con las teclas de las acciones save, undo, redo, page_up y
-// page_down de km. Las acciones ausentes conservan el valor predeterminado.
+// KeyMapFrom parte de DefaultKeyMap y reemplaza Save, Undo, Redo, PageUp,
+// PageDown, SnippetPrev y Cancel con las teclas de las acciones save, undo,
+// redo, page_up, page_down, focus_prev y cancel de km. Las acciones ausentes conservan el valor predeterminado.
 // El resto (movimiento, edición) es propio del componente.
 func KeyMapFrom(km config.Keymap) KeyMap {
 	k := DefaultKeyMap()
@@ -100,5 +108,7 @@ func KeyMapFrom(km config.Keymap) KeyMap {
 	over(&k.Redo, "redo", "rehacer")
 	over(&k.PageUp, "page_up", "subir")
 	over(&k.PageDown, "page_down", "bajar")
+	over(&k.SnippetPrev, "focus_prev", "parada anterior")
+	over(&k.Cancel, "cancel", "terminar snippet")
 	return k
 }

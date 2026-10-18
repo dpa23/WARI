@@ -18,6 +18,7 @@ import (
 	"charm.land/lipgloss/v2"
 
 	"github.com/dpa23/wari/internal/editor"
+	"github.com/dpa23/wari/internal/snippets"
 )
 
 const (
@@ -71,6 +72,13 @@ type Model struct {
 	// próximo guardado lo sobrescribe.
 	disk      diskStamp
 	overwrite bool
+
+	// sets son los snippets por lenguaje; snip, la sesión de tabstops en
+	// curso (nil si no hay); touched marca que la última tecla editó el
+	// buffer.
+	sets    map[string]snippets.Set
+	snip    *snippetState
+	touched bool
 }
 
 // fingerprint resume el contenido del buffer: líneas y un hash FNV-1a.
@@ -184,16 +192,35 @@ func (m Model) Update(msg tea.Msg) (Model, tea.Cmd) {
 		if !key.Matches(msg, m.keys.Save) {
 			m.overwrite = false
 		}
-		cmd = m.handleKey(msg)
+		cmd = m.handleKeyTracked(msg)
 	case tea.PasteMsg:
 		m.overwrite = false
+		pre := m.snapshot()
+		m.touched = false
 		m.buf.Paste(msg.Content)
 		m.edited()
+		m.snippetAfter(pre)
 	default:
 		return m, nil
 	}
 	m.top, m.xoff = m.scroll()
 	return m, cmd
+}
+
+// handleKeyTracked aplica una tecla; con una sesión de snippet abierta,
+// además atiende sus teclas y le informa de la edición que haya hecho.
+func (m *Model) handleKeyTracked(msg tea.KeyPressMsg) tea.Cmd {
+	if m.snip == nil {
+		return m.handleKey(msg)
+	}
+	if m.snippetKey(msg) {
+		return nil
+	}
+	pre := m.snapshot()
+	m.touched = false
+	cmd := m.handleKey(msg)
+	m.snippetAfter(pre)
+	return cmd
 }
 
 // handleKey aplica una tecla al buffer.
@@ -268,8 +295,10 @@ func (m *Model) handleKey(msg tea.KeyPressMsg) tea.Cmd {
 		b.InsertRune('\n')
 		m.edited()
 	case key.Matches(msg, k.Tab):
-		b.InsertText(tabSpaces)
-		m.edited()
+		if !m.expandSnippet() {
+			b.InsertText(tabSpaces)
+			m.edited()
+		}
 	case key.Matches(msg, k.Backspace):
 		if c := b.Cursor(); !selEmpty(b) || c.Line > 0 || c.Col > 0 {
 			b.DeleteBackward()
@@ -300,6 +329,7 @@ func (m *Model) handleKey(msg tea.KeyPressMsg) tea.Cmd {
 // edited marca el buffer como modificado por una edición. Tras una edición
 // ya no se sabe en qué paso de deshacer se vuelve al estado guardado.
 func (m *Model) edited() {
+	m.touched = true
 	m.dirty = true
 	m.off = 0
 	m.cleanKnown = false
