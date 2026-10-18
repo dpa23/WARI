@@ -58,6 +58,7 @@ func main() {
 	lspOn := flag.Bool("lsp", false,
 		"enciende el LSP (jdtls, kotlin-language-server, csharp-ls si están en el PATH) para completar, ir a definición y diagnósticos; "+
 			"por omisión está apagado y se enciende con la acción toggle_lsp (alt+l)")
+	icons := flag.Bool("icons", false, "iconos de archivo en el árbol (requiere una Nerd Font en la terminal)")
 	showVersion := flag.Bool("version", false, "muestra la versión y sale")
 	flag.Parse()
 
@@ -93,7 +94,7 @@ func main() {
 		}
 		budget := orch.Budget{MaxTurns: *maxTurns, MaxDuration: *maxTime, MaxTokens: *maxTokens}
 		loops := orch.LoopLimits{SameTool: *loopCalls, IdleTurns: *loopTurns}
-		os.Exit(runTUI(newAgent, agent.Task{Model: *model, Permissions: perms}, root, file, *maxActive, budget, loops, newIndex(root, *noIndex, *useCtags), *lspOn))
+		os.Exit(runTUI(newAgent, agent.Task{Model: *model, Permissions: perms}, root, file, *maxActive, budget, loops, newIndex(root, *noIndex, *useCtags), *lspOn, *icons))
 	}
 }
 
@@ -162,7 +163,7 @@ func loadKeymap(root string) config.Keymap {
 // bucle de eventos), no debe quedar ningún agente vivo: el defer cierra el
 // supervisor, que cierra a cada agente y mata su turno en curso con todos sus
 // descendientes.
-func runTUI(newAgent func() agent.Agent, task agent.Task, root, file string, maxActive int, budget orch.Budget, loops orch.LoopLimits, idx *index.Index, lspOn bool) int {
+func runTUI(newAgent func() agent.Agent, task agent.Task, root, file string, maxActive int, budget orch.Budget, loops orch.LoopLimits, idx *index.Index, lspOn, icons bool) int {
 	sup := orch.New(maxActive)
 	defer sup.Close()
 	sup.SetLoopLimits(loops)
@@ -186,6 +187,7 @@ func runTUI(newAgent func() agent.Agent, task agent.Task, root, file string, max
 	// fuera del bucle de eventos; el layout los detiene al salir por el atajo y
 	// el Shutdown cubre el resto de vías (señal, pánico) sin dejar huérfanos.
 	lay := layout.New(layout.Config{
+		Icons:     icons,
 		Root:      root,
 		File:      file,
 		Keymap:    loadKeymap(root),

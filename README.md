@@ -314,6 +314,7 @@ Si el argumento posicional es un archivo, WARI toma su directorio contenedor com
 | `-no-index` | `bool` (`false`) | Desactiva el motor interno de indexación de símbolos en segundo plano (árbol de símbolos, ir a definición, autocompletado y tipos de imports). |
 | `-ctags` | `bool` (`false`) | Utiliza la herramienta externa `universal-ctags` (si se encuentra disponible en el PATH) para generar el índice de símbolos, en sustitución del analizador léxico nativo de WARI. |
 | `-lsp` | `bool` (`false`) | Enciende los servidores de lenguaje de fondo (`jdtls`, `kotlin-language-server`, `csharp-ls` si están en PATH) para autocompletado, definiciones y diagnósticos. Por omisión está apagado y puede conmutarse dentro del editor con `alt+l`. |
+| `-icons` | `bool` (`false`) | Dibuja un icono de Nerd Fonts junto a cada archivo y carpeta del árbol. Requiere una Nerd Font en la terminal (p. ej. JetBrainsMono Nerd Font); sin ella los iconos se ven como cuadros. |
 | `-version` | `bool` (`false`) | Imprime la versión compilada de WARI y sale. |
 
 ---

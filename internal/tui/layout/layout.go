@@ -121,6 +121,8 @@ const (
 
 // Config configura el layout.
 type Config struct {
+	// Icons dibuja iconos de Nerd Fonts junto a los archivos del árbol.
+	Icons bool
 	// Root es el directorio de trabajo (vacío: el actual).
 	Root string
 	// File es un archivo a abrir en el editor al iniciar (opcional).
@@ -258,6 +260,7 @@ func New(cfg Config) Model {
 		chatOn: true,
 		focus:  focusTree,
 	}
+	m.tree.SetIcons(cfg.Icons)
 	if cfg.File != "" {
 		m.openFile(cfg.File)
 	}

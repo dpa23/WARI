@@ -448,3 +448,24 @@ func TestFileTreeMarkersClaimEditConflict(t *testing.T) {
 		t.Fatalf("b.txt con choque debía tener ●1 y ⚠: %q", view3)
 	}
 }
+
+func TestIcons(t *testing.T) {
+	if iconFor("Main.java", false, false) != iconJava || iconFor("x.unknown", false, false) != iconFile {
+		t.Fatal("icono de archivo")
+	}
+	if iconFor("src", true, true) != iconDirOpen || iconFor("src", true, false) != iconDir {
+		t.Fatal("icono de carpeta")
+	}
+	if iconFor("Dockerfile", false, false) != iconDocker {
+		t.Fatal("icono por nombre")
+	}
+	m := New(t.TempDir())
+	m.SetSize(30, 3)
+	if strings.Contains(m.View(), iconDirOpen) {
+		t.Fatal("iconos activos por defecto")
+	}
+	m.SetIcons(true)
+	if !strings.Contains(m.View(), iconDirOpen) {
+		t.Fatal("la raíz no muestra icono")
+	}
+}
