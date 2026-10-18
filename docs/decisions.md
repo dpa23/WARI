@@ -114,6 +114,11 @@ Formato: fecha · decisión · motivo · alternativas descartadas.
 - **Planes de agy** (`write_to_file` a `~/.gemini/antigravity-cli/brain/`) no cuentan como edición del proyecto (filtro por ruta, frágil si agy la cambia).
 - **Aceptación**: pipeline mixto claude → agy con `{{prev}}` (test sobre CLIs falsas) y corridas reales de `wari -agent agy -prompt` sin huérfanos.
 
+## 2026-10-17 · Índice de símbolos sin tree-sitter (fase 11)
+- **Decisión:** indexador en Go puro (patrones de declaraciones de Java, Kotlin y C#, consciente de comentarios y cadenas) por defecto, más universal-ctags si está instalado.
+- **Motivo:** tree-sitter exige CGO y compilación nativa pesada en máquinas de 2 núcleos; el PLAN pide un tier 2 opcional y liviano.
+- **Descartado por ahora:** tree-sitter detrás de un build tag (queda como opción futura).
+
 ## 2026-10-17 · Orquestación del desarrollo
 - **Decisión:** Claude Code (Opus) lidera y es el único que hace commit; subagentes Sonnet implementan y Haiku hace tareas mecánicas; Antigravity (Gemini 3.8 Flash) revisa los diffs con otra familia de modelos y genera los datos del tier 1. Máximo 2 agentes activos a la vez. Commits locales; push solo a pedido del autor. Detalle en `AGENTS.md` y `CLAUDE.md`.
 - **Motivo:** máquina de 2 núcleos y 5,6 GB; la diversidad de modelos encuentra errores distintos, pero todo hallazgo se verifica (Antigravity adivinó mal flags y nombres de eventos de su propia CLI).
