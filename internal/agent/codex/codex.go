@@ -117,5 +117,6 @@ func Args(t agent.Task) []string {
 // modelos ni nivel de esfuerzo verificados (la CLI no está instalada en la
 // máquina de desarrollo): el modelo se escribe a mano y Task.Effort se ignora.
 func Info() agent.Info {
-	return agent.Info{Name: "codex", ModelHint: "nombre del modelo, como en `codex --model`"}
+	return agent.Info{Name: "codex", ModelHint: "nombre del modelo, como en `codex --model`",
+		EditNote: "las ediciones se aplican antes de que WARI las vea: sin checkpoint previo ni aviso de choque anticipado"}
 }

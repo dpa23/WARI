@@ -5,9 +5,10 @@ description: Procedimiento del agente orquestador de WARI: leer el proyecto, div
 
 # Orquestador de WARI
 
-Eres un agente de WARI con el rol **orquestador**. WARI te lanzó en modo de solo
-lectura (planear): **no editas archivos ni ejecutas comandos que cambien algo**.
-Tu entrega es un plan; los agentes trabajadores lo ejecutan.
+Eres un agente de WARI con el rol **orquestador**. WARI te lanzó en modo
+planear: **no edites archivos ni ejecutes comandos que cambien algo**, aunque tu
+CLI te lo permita (algunas no hacen cumplir el modo planear). Tu entrega es un
+plan; los agentes trabajadores lo ejecutan.
 
 ## Antes de planear
 1. Lee `AGENTS.md` y, si existen, `README.md`, `docs/PLAN.md` y `docs/progress.md`.

@@ -37,7 +37,7 @@ const (
 var (
 	permLabels = []string{"Preguntar (la CLI sin pantalla niega las ediciones)", "Editar sin preguntar", "Solo planear y leer"}
 	permModes  = []agent.PermissionMode{agent.PermissionAsk, agent.PermissionAcceptEdits, agent.PermissionPlan}
-	roleLabels = []string{"Trabajador", "Orquestador (planifica y reparte; solo lee)"}
+	roleLabels = []string{"Trabajador", "Orquestador (planifica y reparte; en modo planear)"}
 )
 
 type agentForm struct {
@@ -206,6 +206,11 @@ func (m Panel) formConfirm() (Panel, tea.Cmd) {
 		return m, nil
 	}
 	info := f.info()
+	if info.Missing {
+		f.err = info.Name + " no está en el PATH: instálala o elige otra CLI"
+		f.focus = fieldCLI
+		return m, nil
+	}
 	v := f.v
 	if factory := m.cfg.Agents[info.Name]; factory != nil && (v.cli != info.Name || v.ag == nil) {
 		v.ag = factory()
@@ -233,6 +238,14 @@ func (m Panel) formConfirm() (Panel, tea.Cmd) {
 	return m, nil
 }
 
+// cliLabel es el nombre de la CLI con su disponibilidad en el PATH.
+func cliLabel(info agent.Info) string {
+	if info.Missing {
+		return "✗ " + info.Name + " (no instalado)"
+	}
+	return "✓ " + info.Name
+}
+
 // configSummary es la línea que deja el formulario en el historial del agente.
 func (v *agentView) configSummary(p agent.PermissionMode) string {
 	parts := []string{v.cli, v.taskModel}
@@ -241,7 +254,7 @@ func (v *agentView) configSummary(p agent.PermissionMode) string {
 	}
 	switch {
 	case v.role == roleOrchestrator:
-		parts = append(parts, "orquestador (solo lee)")
+		parts = append(parts, "orquestador (modo planear)")
 	case p == agent.PermissionAcceptEdits:
 		parts = append(parts, "edita sin preguntar")
 	case p == agent.PermissionPlan:
@@ -295,11 +308,18 @@ func (m Panel) formRows(w, h int) []string {
 		field        int
 	}
 	fields := []row{
-		{"CLI", info.Name, fieldCLI},
+		{"CLI", cliLabel(info), fieldCLI},
 		{"Modelo", model, fieldModel},
 		{"Potencia", effort, fieldEffort},
 		{"Permisos", perm, fieldPerm},
 		{"Rol", roleLabels[f.role], fieldRole},
+	}
+	note := ""
+	switch {
+	case f.role == 1 || permModes[f.perm] == agent.PermissionPlan:
+		note = info.PlanNote
+	case permModes[f.perm] == agent.PermissionAcceptEdits:
+		note = info.EditNote
 	}
 	lines := []string{"Agente nuevo: elige CLI, modelo y potencia"}
 	for _, r := range fields {
@@ -310,6 +330,9 @@ func (m Panel) formRows(w, h int) []string {
 			line = truncate(line, w)
 		}
 		lines = append(lines, line)
+	}
+	if note != "" && f.err == "" {
+		lines = append(lines, m.styles.warn.Render(truncate("⚠ "+note, w)))
 	}
 	if f.err != "" {
 		lines = append(lines, m.styles.warn.Render(truncate("⚠ "+f.err, w)))

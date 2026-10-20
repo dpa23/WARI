@@ -175,3 +175,58 @@ func TestDetailLineShowsWhatTheAgentRunsWith(t *testing.T) {
 }
 
 func plainText(s string) string { return ansiRe.ReplaceAllString(s, "") }
+
+func TestFormBlocksMissingCLIAndWarnsAboutGuarantees(t *testing.T) {
+	h, _ := formHarness(t, agent.Task{Dir: "/p"})
+	info := h.m.cfg.Infos["claude"]
+	info.Missing = true
+	h.m.cfg.Infos["claude"] = info
+	h.say("hola")
+	h.press(keyRight) // modelo
+	h.press(keyEnter)
+	if h.m.form == nil || !strings.Contains(h.m.form.err, "no está en el PATH") {
+		t.Fatalf("una CLI no instalada no puede crear el agente: %+v", h.m.form)
+	}
+	if rows := strings.Join(h.m.formRows(100, 12), "\n"); !strings.Contains(rows, "✗ claude (no instalado)") {
+		t.Errorf("el formulario debe marcar las CLIs no instaladas:\n%s", rows)
+	}
+
+	// Una nota de la CLI aparece cuando se elige lo que no garantiza.
+	info.Missing = false
+	info.PlanNote = "planear no impide escribir"
+	h.m.cfg.Infos["claude"] = info
+	h.m.form.infos[h.m.form.cli] = info
+	h.m.form.err = ""
+	h.m.form.perm = 2 // solo planear
+	if rows := strings.Join(h.m.formRows(100, 12), "\n"); !strings.Contains(rows, "planear no impide escribir") {
+		t.Errorf("falta la nota de PlanNote:\n%s", rows)
+	}
+}
+
+func TestPromptHistoryWithArrows(t *testing.T) {
+	h := newPharness(t, 2, orch.Budget{})
+	h.say("uno")
+	if got := h.m.promptHist; len(got) != 1 || got[0] != "uno" {
+		t.Fatalf("enviar debe guardar el mensaje: %v", got)
+	}
+	h.m.promptHist = append(h.m.promptHist, "dos")
+	h.press(keyUp)
+	if h.m.input.Value() != "dos" {
+		t.Fatalf("↑ debía traer el último: %q", h.m.input.Value())
+	}
+	h.press(keyUp)
+	if h.m.input.Value() != "uno" {
+		t.Fatalf("↑ otra vez trae el anterior: %q", h.m.input.Value())
+	}
+	h.press(keyDown)
+	h.press(keyDown)
+	if h.m.input.Value() != "" {
+		t.Fatalf("↓ al final vuelve a la entrada vacía: %q", h.m.input.Value())
+	}
+	// Con texto propio, ↑ no pisa lo escrito.
+	h.typeText("borrador")
+	h.press(keyUp)
+	if h.m.input.Value() != "borrador" {
+		t.Errorf("↑ con texto propio lo cambió: %q", h.m.input.Value())
+	}
+}

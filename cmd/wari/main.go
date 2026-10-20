@@ -7,6 +7,7 @@ import (
 	"flag"
 	"fmt"
 	"os"
+	"os/exec"
 	"os/signal"
 	"path/filepath"
 	"runtime"
@@ -131,6 +132,39 @@ var agentInfos = map[string]agent.Info{
 	"opencode": opencode.Info(),
 }
 
+// checkedInfos es agentInfos con Missing marcado según el PATH, para que el
+// formulario muestre qué CLIs están instaladas antes de lanzar nada.
+func checkedInfos() map[string]agent.Info {
+	out := make(map[string]agent.Info, len(agentInfos))
+	for name, info := range agentInfos {
+		_, err := exec.LookPath(name)
+		info.Missing = err != nil
+		out[name] = info
+	}
+	return out
+}
+
+// warnMissingAgent avisa por stderr, antes de abrir el TUI, si la CLI elegida
+// con -agent no está en el PATH, y sugiere las que sí lo están.
+func warnMissingAgent(name string) {
+	infos := checkedInfos()
+	if info, ok := infos[name]; !ok || !info.Missing {
+		return
+	}
+	var present []string
+	for n, info := range infos {
+		if !info.Missing {
+			present = append(present, n)
+		}
+	}
+	slices.Sort(present)
+	hint := "no hay ninguna CLI instalada"
+	if len(present) > 0 {
+		hint = "instaladas: " + strings.Join(present, ", ")
+	}
+	fmt.Fprintf(os.Stderr, "wari: aviso: la CLI %q no está en el PATH (%s); el formulario de agente nuevo deja elegir otra\n", name, hint)
+}
+
 // agentNames devuelve los nombres de agentFactories, ordenados.
 func agentNames() []string {
 	names := make([]string, 0, len(agentFactories))
@@ -187,6 +221,7 @@ func loadKeymap(root string) config.Keymap {
 // supervisor, que cierra a cada agente y mata su turno en curso con todos sus
 // descendientes.
 func runTUI(agentName string, newAgent func() agent.Agent, task agent.Task, root, file string, maxActive int, budget orch.Budget, loops orch.LoopLimits, idx *index.Index, lspOn bool, icons filetree.IconMode) int {
+	warnMissingAgent(agentName)
 	sup := orch.New(maxActive)
 	defer sup.Close()
 	sup.SetLoopLimits(loops)
@@ -226,7 +261,7 @@ func runTUI(agentName string, newAgent func() agent.Agent, task agent.Task, root
 			NewAgent:   newAgent,
 			AgentName:  agentName,
 			Agents:     agentFactories,
-			Infos:      agentInfos,
+			Infos:      checkedInfos(),
 			Task:       task,
 			Budget:     budget,
 			Pipeline:   runner,

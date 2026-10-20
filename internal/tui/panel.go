@@ -179,10 +179,16 @@ type Panel struct {
 	ps    pipeline.Snapshot
 	pipeH int
 	// form es el formulario de agente nuevo, si está abierto.
-	form      *agentForm
-	gate      *gateView
-	gateEdit  bool
-	gateDraft string
+	form *agentForm
+	// promptHist son los mensajes enviados (de cualquier agente) y histPos el
+	// que se muestra al recorrerlos con ↑ y ↓ (-1: ninguno); histDraft guarda
+	// lo escrito antes de empezar a recorrer.
+	promptHist []string
+	histPos    int
+	histDraft  string
+	gate       *gateView
+	gateEdit   bool
+	gateDraft  string
 }
 
 var _ tea.Model = Panel{}
@@ -201,6 +207,7 @@ func NewPanel(cfg Config) Panel {
 		spin:      newSpinner(),
 		byID:      make(map[orch.ID]*agentView),
 		listening: cfg.Supervisor != nil,
+		histPos:   -1,
 		pipe:      cfg.Pipeline,
 	}
 	if m.pipe != nil {
@@ -438,9 +445,41 @@ func (m Panel) handleKey(msg tea.KeyPressMsg) (Panel, tea.Cmd) {
 		m.vp.PageDown()
 		return m, nil
 	}
+	if s := msg.String(); (s == "up" || s == "down") && m.browsePrompts(s == "up") {
+		return m, nil
+	}
 	var cmd tea.Cmd
 	m.input, cmd = m.input.Update(msg)
 	return m, cmd
+}
+
+// browsePrompts recorre los mensajes enviados con ↑ (más viejo) y ↓ (más
+// nuevo) cuando la entrada está vacía o muestra uno del historial sin tocar;
+// con texto propio las flechas siguen moviendo el cursor. Devuelve si las
+// atendió.
+func (m *Panel) browsePrompts(older bool) bool {
+	n := len(m.promptHist)
+	if n == 0 {
+		return false
+	}
+	browsing := m.histPos >= 0 && m.histPos < n && m.input.Value() == m.promptHist[m.histPos]
+	if !browsing {
+		m.histPos = -1
+		if m.input.Value() != "" || !older {
+			return false
+		}
+		m.histDraft = ""
+		m.histPos = n
+	}
+	if older {
+		m.histPos = max(m.histPos-1, 0)
+	} else if m.histPos++; m.histPos >= n {
+		m.histPos = -1
+		m.input.SetValue(m.histDraft)
+		return true
+	}
+	m.input.SetValue(m.promptHist[m.histPos])
+	return true
 }
 
 // addView agrega un agente sin iniciar (con uno nuevo de la fábrica, si hay) y
@@ -553,6 +592,10 @@ func (m Panel) send() (Panel, tea.Cmd) {
 		return m, nil
 	}
 	v.add(kindUser, text)
+	if n := len(m.promptHist); n == 0 || m.promptHist[n-1] != text {
+		m.promptHist = append(m.promptHist, text)
+	}
+	m.histPos = -1
 	m.input.Reset()
 	m.dv = nil
 	m.refreshTo(true)
@@ -1363,7 +1406,7 @@ func (m Panel) detailLine(v *agentView) string {
 	}
 	switch p := m.effectivePermissions(v); {
 	case v.role == roleOrchestrator:
-		parts = append(parts, "ORQUESTADOR · solo lee")
+		parts = append(parts, "ORQUESTADOR · modo planear")
 	case p == agent.PermissionAcceptEdits:
 		parts = append(parts, "edita sin preguntar")
 	case p == agent.PermissionPlan:

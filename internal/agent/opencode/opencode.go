@@ -137,5 +137,6 @@ func Args(t agent.Task) []string {
 // lleva el formato de `opencode run --model` y Task.Effort se ignora (su
 // equivalente es la variante, que va dentro del modelo tras "#").
 func Info() agent.Info {
-	return agent.Info{Name: "opencode", ModelHint: "proveedor/modelo o proveedor/modelo#variante"}
+	return agent.Info{Name: "opencode", ModelHint: "proveedor/modelo o proveedor/modelo#variante",
+		EditNote: "las ediciones se aplican antes de que WARI las vea: sin checkpoint previo ni aviso de choque anticipado"}
 }

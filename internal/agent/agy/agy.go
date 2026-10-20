@@ -116,5 +116,6 @@ func Info() agent.Info {
 		},
 		ModelHint: "ids de `agy models`",
 		Efforts:   []string{"low", "medium", "high", "xhigh", "max"},
+		PlanNote:  "en agy planear es una orden al modelo y no impide escribir en el proyecto (verificado con agy 1.4.2)",
 	}
 }

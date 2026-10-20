@@ -81,6 +81,12 @@ type Info struct {
 	ModelHint string
 	// Efforts son los niveles de esfuerzo que acepta; vacío si la CLI no tiene.
 	Efforts []string
+	// PlanNote y EditNote avisan de lo que la CLI no garantiza al elegir
+	// "solo planear" o "editar sin preguntar"; vacío si cumple lo que dice.
+	PlanNote, EditNote string
+	// Missing indica que el ejecutable no está en el PATH; lo rellena quien
+	// arma el registro, no el adaptador.
+	Missing bool
 }
 
 // PermissionMode es el modo de permisos normalizado. Cada adaptador lo
