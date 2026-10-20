@@ -379,12 +379,26 @@ func TestHerramientasEdicionesYDenegados(t *testing.T) {
 	h.event(agent.FileEditProposed{ToolCallID: "t3", Tool: "Edit", Path: "internal/x.go"})
 	h.event(agent.NeedsApproval{Tool: "Write", Input: json.RawMessage(`{"path":"z"}`), Denied: true})
 	h.wantView("⚙ Bash")
-	h.wantView(`{"command":"xxxx`)
+	h.wantView("xxxx")
 	h.wantView(`⚙ Read {"file":"a.go"}`)
 	h.wantView("✎ internal/x.go")
-	h.wantView(`⛔ denegado: Write {"path":"z"}`)
+	h.wantView("⛔ denegado: Write z")
 	if got := summarize(long); len([]rune(got)) > maxSummary || !strings.HasSuffix(got, "…") {
 		t.Errorf("summarize no trunca: %q", got)
+	}
+}
+
+func TestSummarizeDecodificaEscapes(t *testing.T) {
+	if got := summarize(json.RawMessage(`{"Path":"/a/b.go"}`)); got != "/a/b.go" {
+		t.Errorf("clave con mayúscula: %q", got)
+	}
+	in := json.RawMessage(`{"command":"/bin/zsh -lc \"go build \u0026\u0026 go test\""}`)
+	if got, want := summarize(in), `/bin/zsh -lc "go build && go test"`; got != want {
+		t.Errorf("summarize = %q, quiero %q", got, want)
+	}
+	other := json.RawMessage(`{"a":"x\u0026y","b":1}`)
+	if got := summarize(other); got != `{"a":"x&y","b":1}` {
+		t.Errorf("sin campo principal: %q", got)
 	}
 }
 

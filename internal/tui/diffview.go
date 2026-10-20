@@ -351,6 +351,9 @@ func (d *diffView) renderModalLines(w int) []string {
 	}
 
 	body2 := "│ [Enter] Confirmar    [Esc] Cancelar"
+	if boxW < 38 {
+		body2 = "│ [Enter] ok · [Esc] cancelar"
+	}
 	if pad := boxW - lipgloss.Width(body2) - 1; pad > 0 {
 		body2 += strings.Repeat(" ", pad) + "│"
 	} else {

@@ -134,7 +134,8 @@ Formato: fecha · decisión · motivo · alternativas descartadas.
 - **Iconos**: `-icons` pasa de bool apagado a `auto|nerd|emoji|off`, con `auto` por omisión: Nerd Font solo si la terminal la trae (kitty, WezTerm, Ghostty) o `WARI_NERD_FONT=1`; si no, emoji, que no piden fuente. Antes salía apagado y el árbol parecía no tener iconos.
 - **Instalación**: `scripts/install.sh` deja `wari` en `~/.local/bin` (o `$GOBIN`); no se versiona ni se usa `./wari`.
 - **Uso antes que dinero**: el panel y la línea de estado muestran tokens (abreviados: 12.3k) por agente; el costo en US$ solo aparece si la CLI lo reporta (con suscripción es 0).
-- **LSP**: no hay jdtls, kotlin-language-server ni csharp-ls en esta máquina; solo se verificó contra servidores simulados.
+- **LSP**: no hay jdtls, kotlin-language-server ni csharp-ls en esta máquina. El cliente se verificó contra gopls real (`internal/lsp/real_test.go`, se omite sin gopls): initialize, completar y definición. Los tres servidores propios siguen sin probarse.
+- **Chat** (feedback de Codex y Grok): los resúmenes de herramientas muestran el comando o la ruta decodificados (sin `\u0026`); la línea de estado suelta ayuda, sesión y modelo antes de cortar el uso; el cuadro de reversión del diff tiene texto corto en ancho estrecho. Probado en herdr con `-agent agy`. WARI no toca el tema de la terminal (solo colores adaptativos de primer plano).
 
 ## 2026-10-18 · Lo que reveló el CI de macOS
 - El CI de `main` falló solo en macOS. Los logs exigen sesión, pero las anotaciones son públicas: el CI ahora vuelca los fallos como anotaciones.

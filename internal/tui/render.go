@@ -189,15 +189,48 @@ func summarize(input json.RawMessage) string {
 			raw = raw[:len(raw)-1]
 		}
 	}
-	var buf bytes.Buffer
-	var s string
-	if err := json.Compact(&buf, raw); err == nil {
-		s = buf.String()
+	s := ""
+	var v any
+	if err := json.Unmarshal(raw, &v); err == nil {
+		s = readable(v)
 	} else {
-		s = string(raw)
+		// Cortado ya no es JSON válido: se usa tal cual, con los escapes que
+		// Go mete por HTML decodificados.
+		s = htmlUnescape.Replace(string(raw))
 	}
 	s = strings.Join(strings.Fields(s), " ")
 	return truncate(s, maxSummary)
+}
+
+var htmlUnescape = strings.NewReplacer(`\u0026`, "&", `\u003c`, "<", `\u003e`, ">")
+
+// summaryKeys son los campos que dicen mejor qué hace una herramienta.
+var summaryKeys = []string{"command", "cmd", "file_path", "path", "pattern", "url", "query"}
+
+// readable da el texto de un Input ya decodificado: el valor del campo
+// principal (el comando, la ruta) si lo hay, sin las comillas ni los escapes
+// de JSON, y si no el objeto compacto sin escapes de HTML.
+func readable(v any) string {
+	if obj, ok := v.(map[string]any); ok {
+		lower := make(map[string]string, len(obj))
+		for k, val := range obj {
+			if str, ok := val.(string); ok && str != "" {
+				lower[strings.ToLower(k)] = str
+			}
+		}
+		for _, k := range summaryKeys {
+			if str, ok := lower[k]; ok {
+				return str
+			}
+		}
+	}
+	var buf bytes.Buffer
+	enc := json.NewEncoder(&buf)
+	enc.SetEscapeHTML(false)
+	if err := enc.Encode(v); err != nil {
+		return ""
+	}
+	return strings.TrimSpace(buf.String())
 }
 
 // truncate recorta s a n runas, marcando el corte con "…".

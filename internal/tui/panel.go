@@ -1369,33 +1369,61 @@ func (m Panel) statusLine() string {
 		st := m.styles.warn
 		return st.MaxWidth(max(m.width, 1)).Render(lead + strings.Join(parts, " · "))
 	}
-	parts := []string{m.stateText()}
+	// Cada parte lleva una prioridad de recorte: con poco ancho se sueltan
+	// primero la ayuda, luego la sesión y el modelo, para que el uso (tokens)
+	// no quede cortado a la mitad.
+	type part struct {
+		text string
+		drop int // 0 = no se suelta; mayor = se suelta antes
+	}
+	parts := []part{{m.stateText(), 0}}
 	if m.armedText != "" {
-		parts = []string{m.armedText}
+		parts = []part{{m.armedText, 0}}
 	}
 	if m.dv != nil && m.dv.v == v {
-		parts = append(parts, fmt.Sprintf("diff %s (turno %d)", m.dv.edit.Path, m.dv.edit.Turn))
+		parts = append(parts, part{fmt.Sprintf("diff %s (turno %d)", m.dv.edit.Path, m.dv.edit.Turn), 1})
 	}
 	if m.cfg.Task.Permissions == agent.PermissionAcceptEdits {
-		parts = append(parts, "edita sin preguntar")
+		parts = append(parts, part{"edita sin preguntar", 2})
 	}
 	if v.model != "" {
-		parts = append(parts, v.model)
+		parts = append(parts, part{v.model, 4})
 	}
 	if v.sessionID != "" {
-		parts = append(parts, "sesión "+shortSession(v.sessionID))
+		parts = append(parts, part{"sesión " + shortSession(v.sessionID), 5})
 	}
 	if h := m.pipelineHint(); h != "" {
-		parts = append(parts, h)
+		parts = append(parts, part{h, 3})
 	}
-	parts = append(parts, formatUsage(v.tokensIn, v.tokensOut, v.costUSD))
+	parts = append(parts, part{formatUsage(v.tokensIn, v.tokensOut, v.costUSD), 0})
 	if m.dv != nil && m.dv.v == v {
-		parts = append(parts, joinHelp(m.keys.DiffFile, m.keys.RevertFile, m.keys.RevertTurn, m.keys.Cancel))
+		parts = append(parts, part{joinHelp(m.keys.DiffFile, m.keys.RevertFile, m.keys.RevertTurn, m.keys.Cancel), 6})
 	} else {
 		if v.nEdits > 0 && m.keys.DiffFile.Enabled() {
-			parts = append(parts, joinHelp(m.keys.DiffFile))
+			parts = append(parts, part{joinHelp(m.keys.DiffFile), 6})
 		}
-		parts = append(parts, m.keys.panelHelpLine())
+		parts = append(parts, part{m.keys.panelHelpLine(), 7})
+	}
+	join := func(ps []part) string {
+		texts := make([]string, 0, len(ps))
+		for _, p := range ps {
+			if p.text != "" {
+				texts = append(texts, p.text)
+			}
+		}
+		return lead + strings.Join(texts, " · ")
+	}
+	for lipgloss.Width(join(parts)) > m.width {
+		worst := -1
+		for i, p := range parts {
+			if p.drop > 0 && (worst < 0 || p.drop > parts[worst].drop) {
+				worst = i
+			}
+		}
+		if worst < 0 {
+			break
+		}
+		parts = append(parts[:worst], parts[worst+1:]...)
 	}
 	st := m.styles.status
 	if m.conflictActive && m.alert.id != 0 && v.id == m.alert.id {
@@ -1406,12 +1434,12 @@ func (m Panel) statusLine() string {
 		if m.width < 45 {
 			msg = "⚠ [1] ceder · [2] detener"
 		}
-		parts = []string{msg}
+		parts = []part{{msg, 0}}
 		st = m.styles.warn
 	} else if !m.conflictActive && m.alert.id != 0 && v.id == m.alert.id {
-		parts = append(parts, "⚠ choque: [f6 resolver]")
+		parts = append(parts, part{"⚠ choque: [f6 resolver]", 0})
 	}
-	return st.MaxWidth(max(m.width, 1)).Render(lead + strings.Join(parts, " · "))
+	return st.MaxWidth(max(m.width, 1)).Render(join(parts))
 }
 
 // Body devuelve el contenido del panel sin AltScreen ni título, para
