@@ -113,14 +113,15 @@ cd WARI
 
 ### 4.1. Linux
 
-#### Compilación local
+#### Instalar el comando `wari`
 ```sh
-go build -o wari ./cmd/wari
+scripts/install.sh      # compila e instala en ~/.local/bin; después basta escribir: wari
 ```
+Es el camino recomendado: deja un comando del sistema y ningún `./wari` en el repositorio.
 
-#### Instalación con `go install`
+#### Alternativa con `go install`
 ```sh
-go install ./cmd/wari
+go install ./cmd/wari   # deja el binario en $(go env GOPATH)/bin
 ```
 El binario compilado quedará ubicado en `$(go env GOPATH)/bin` (por defecto `~/go/bin`).
 
@@ -140,22 +141,17 @@ Agregue el directorio de binarios de Go a su intérprete de comandos:
   fish_add_path (go env GOPATH)/bin
   ```
 
-Lo más corto es el script de instalación, que deja el comando `wari` en `~/.local/bin` (o en `$GOBIN`, o en el directorio que le pase) sin ningún `./wari` en el repositorio:
-```sh
-scripts/install.sh
-wari            # desde cualquier carpeta
-```
-
 ### 4.2. macOS
 
-#### Compilación local
+#### Instalar el comando `wari`
 ```sh
-go build -o wari ./cmd/wari
+scripts/install.sh      # compila e instala en ~/.local/bin; después basta escribir: wari
 ```
+Es el camino recomendado: deja un comando del sistema y ningún `./wari` en el repositorio.
 
-#### Instalación con `go install`
+#### Alternativa con `go install`
 ```sh
-go install ./cmd/wari
+go install ./cmd/wari   # deja el binario en $(go env GOPATH)/bin
 ```
 
 #### Incorporación al PATH
@@ -179,15 +175,11 @@ En macOS no hace falta configurar nada: la tecla líder (`ctrl+e`) seguida de la
 
 ### 4.3. Windows
 
-#### Compilación local
+#### Instalar el comando `wari`
 ```powershell
-go build -o wari.exe ./cmd/wari
+go install ./cmd/wari   # deja wari.exe en %GOPATH%\bin; después basta escribir: wari
 ```
-
-#### Instalación con `go install`
-```powershell
-go install ./cmd/wari
-```
+Agregue esa carpeta al PATH (ver más abajo). Así no hace falta `.\wari.exe` en el repositorio.
 
 #### Incorporación al PATH en Windows
 - **PowerShell (para el usuario actual):**
