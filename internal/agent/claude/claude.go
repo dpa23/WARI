@@ -81,5 +81,33 @@ func Info() agent.Info {
 		},
 		ModelHint: "alias (sonnet, opus, fable) o nombre completo",
 		Efforts:   []string{"low", "medium", "high", "xhigh", "max"},
+		Launch:    Launch,
 	}
+}
+
+// Launch arma la línea de `claude` interactivo (su modo por omisión): con
+// "Preguntar" la propia CLI muestra sus diálogos de permiso. Los flags son los
+// de `claude --help`; el mensaje inicial va como argumento posicional.
+func Launch(t agent.Task, prompt string) (string, []string, error) {
+	path, err := exec.LookPath("claude")
+	if err != nil {
+		return "", nil, err
+	}
+	var args []string
+	if t.Model != "" {
+		args = append(args, "--model", t.Model)
+	}
+	if t.Effort != "" {
+		args = append(args, "--effort", t.Effort)
+	}
+	switch t.Permissions {
+	case agent.PermissionAcceptEdits:
+		args = append(args, "--permission-mode", "acceptEdits")
+	case agent.PermissionPlan:
+		args = append(args, "--permission-mode", "plan")
+	}
+	if prompt != "" {
+		args = append(args, "--", prompt)
+	}
+	return path, args, nil
 }

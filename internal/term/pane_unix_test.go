@@ -91,3 +91,9 @@ func TestPaneCloseKillsGroup(t *testing.T) {
 		t.Fatal("Close debe terminar el proceso y su grupo")
 	}
 }
+
+func TestCleanTitle(t *testing.T) {
+	if got := cleanTitle("✳ Claude\x00 Code\xff "); got != "✳ Claude Code" {
+		t.Errorf("cleanTitle = %q", got)
+	}
+}

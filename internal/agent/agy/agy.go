@@ -119,6 +119,7 @@ func Info() agent.Info {
 		ModelHint: "ids de `agy models`",
 		Efforts:   []string{"low", "medium", "high", "xhigh", "max"},
 		Discover:  discoverModels,
+		Launch:    Launch,
 		PlanNote:  "en agy planear es una orden al modelo y no impide escribir en el proyecto (verificado con agy 1.4.2)",
 	}
 }
@@ -150,4 +151,31 @@ func parseModels(lines []string, fallback []agent.ModelOption) []agent.ModelOpti
 		out = append(out, agent.ModelOption{ID: id, Label: strings.TrimSpace(label), Note: notes[id]})
 	}
 	return out
+}
+
+// Launch arma la línea de `agy` interactivo. --prompt-interactive corre el
+// primer mensaje y sigue en la sesión; los modos son los de `agy --help`. Con
+// "Preguntar" la propia CLI pide los permisos.
+func Launch(t agent.Task, prompt string) (string, []string, error) {
+	path, err := exec.LookPath("agy")
+	if err != nil {
+		return "", nil, err
+	}
+	var args []string
+	if t.Model != "" {
+		args = append(args, "--model="+t.Model)
+	}
+	if t.Effort != "" {
+		args = append(args, "--effort="+t.Effort)
+	}
+	switch t.Permissions {
+	case agent.PermissionAcceptEdits:
+		args = append(args, "--mode=accept-edits")
+	case agent.PermissionPlan:
+		args = append(args, "--mode=plan")
+	}
+	if prompt != "" {
+		args = append(args, "--prompt-interactive="+prompt)
+	}
+	return path, args, nil
 }

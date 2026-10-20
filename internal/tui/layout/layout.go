@@ -378,7 +378,11 @@ func (m Model) firstKey(action string) string {
 	return m.km.Label(runtime.GOOS, action)
 }
 
-func (m Model) handleKey(k tea.KeyPressMsg) (Model, tea.Cmd) {
+func (m Model) handleKey(k tea.KeyPressMsg) (Model, tea.Cmd) { return m.handleKeyFrom(k, false) }
+
+// handleKeyFrom atiende una tecla; viaLeader indica que es la que siguió a la
+// tecla líder (ya convertida en alt+tecla).
+func (m Model) handleKeyFrom(k tea.KeyPressMsg, viaLeader bool) (Model, tea.Cmd) {
 	m.msg = ""
 	if m.helpOpen {
 		return m.helpKey(k)
@@ -399,12 +403,21 @@ func (m Model) handleKey(k tea.KeyPressMsg) (Model, tea.Cmd) {
 		}
 		k.Mod |= tea.ModAlt
 		k.Text = ""
-		return m.handleKey(k)
+		return m.handleKeyFrom(k, true)
 	}
 	if m.is(k, "leader") {
 		m.leaderArmed = true
 		m.msg = "líder: pulsa la tecla de la acción (esc cancela)"
 		return m, nil
+	}
+
+	// Con el foco en una CLI real (terminal), todo es de la CLI: Ctrl+C, Esc,
+	// sus atajos y sus comandos "/". Solo se atienden aquí las teclas de pasar
+	// el foco a otro panel y la tecla líder (arriba). Para salir de WARI se
+	// pasa el foco a otro panel y se usa su tecla de salir.
+	if !viaLeader && m.focus == focusChat && m.chat.TerminalActive() &&
+		!(m.is(k, "focus_tree") || m.is(k, "focus_editor") || m.is(k, "focus_agents")) {
+		return m.routeToFocused(k)
 	}
 
 	// Regla de descubribilidad: F1 siempre abre el overlay de ayuda.

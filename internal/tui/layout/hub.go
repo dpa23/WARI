@@ -108,6 +108,7 @@ func (h *hub) shutdown() {
 // marcha, sin dejar procesos huérfanos. Quien crea el layout lo llama al
 // salir, por la vía que sea; es idempotente.
 func (m Model) Shutdown() {
+	m.chat.ClosePanes()
 	if m.hub != nil {
 		m.hub.shutdown()
 	}

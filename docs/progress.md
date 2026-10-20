@@ -94,6 +94,9 @@
 ### Pulido (2026-10-20)
 - Atajos por SO con tecla líder para macOS, iconos `auto|nerd|emoji|off` por omisión, `scripts/install.sh`, uso en tokens por agente. Verificado en herdr (iconos emoji, `ctrl+e f` abre las plantillas). Ver `docs/decisions.md`.
 
+### Giro a terminal real (2026-10-20)
+- Fase 1: `proc.Spec.PTY`, `internal/term.Pane` (x/vt) y el modo terminal del panel de agentes; `claude` real con `/usage` dentro de WARI. Faltan: estado por título/salida (fase 3), uso desde los registros de cada CLI (4), MCP y hooks (5) y orquestación entre paneles (6). Ver `docs/decisions.md`.
+
 ## Pendiente
 
 - CI se ejecuta por primera vez con el primer push que apruebe el autor.

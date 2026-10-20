@@ -87,6 +87,12 @@ type Info struct {
 	// Discover consulta a la CLI qué modelos tiene (p. ej. `agy models`); nil si
 	// no sabe listarlos. Models queda como lista de respaldo si falla.
 	Discover func(ctx context.Context) ([]ModelOption, error)
+	// Launch arma la línea para correr la CLI interactiva de verdad (sin modo
+	// headless) con lo elegido en el formulario y un primer mensaje opcional:
+	// devuelve el ejecutable resuelto y sus argumentos. LaunchNote avisa de lo
+	// que esa CLI no permite fijar al lanzarla.
+	Launch     func(t Task, prompt string) (path string, args []string, err error)
+	LaunchNote string
 	// Missing indica que el ejecutable no está en el PATH; lo rellena quien
 	// arma el registro, no el adaptador.
 	Missing bool

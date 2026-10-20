@@ -32,6 +32,7 @@ const (
 	fieldEffort
 	fieldPerm
 	fieldRole
+	fieldMode
 	numFields
 )
 
@@ -39,6 +40,7 @@ var (
 	permLabels = []string{"Preguntar (la CLI sin pantalla niega las ediciones)", "Editar sin preguntar", "Solo planear y leer"}
 	permModes  = []agent.PermissionMode{agent.PermissionAsk, agent.PermissionAcceptEdits, agent.PermissionPlan}
 	roleLabels = []string{"Trabajador", "Orquestador (planifica y reparte; en modo planear)"}
+	modeLabels = []string{"Terminal: la CLI real, con todo lo suyo", "Chat de WARI sin pantalla (solo eventos)"}
 )
 
 type agentForm struct {
@@ -53,6 +55,7 @@ type agentForm struct {
 	effort int // 0: el de la CLI; i>0: Efforts[i-1]
 	perm   int
 	role   int
+	mode   int // 0 terminal, 1 chat sin pantalla
 	focus  int
 	err    string
 }
@@ -111,8 +114,16 @@ func (f *agentForm) shift(d int) {
 		}
 	case fieldRole:
 		f.role = cycle(f.role, len(roleLabels))
+	case fieldMode:
+		if f.info().Launch != nil {
+			f.mode = cycle(f.mode, len(modeLabels))
+		}
 	}
 }
+
+// terminalMode indica que el agente se lanza como CLI real en un terminal: es
+// el modo por omisión y solo existe si el adaptador sabe armar la línea.
+func (f *agentForm) terminalMode() bool { return f.mode == 0 && f.info().Launch != nil }
 
 // chosenModel devuelve el modelo elegido o "" si falta.
 func (f *agentForm) chosenModel() string {
@@ -292,8 +303,20 @@ func (m Panel) formConfirm() (Panel, tea.Cmd) {
 	if f.role == 1 {
 		v.role = roleOrchestrator
 	}
-	v.add(kindInfo, v.configSummary(m.effectivePermissions(v)))
 	pending := f.pending
+	if f.terminalMode() {
+		v.configured = true
+		cmd, err := m.startTerminal(v, pending)
+		if err != nil {
+			v.configured = false
+			f.err = "no se pudo lanzar " + info.Name + ": " + err.Error()
+			return m, nil
+		}
+		m.form = nil
+		m.layout(m.width, m.height)
+		return m, cmd
+	}
+	v.add(kindInfo, v.configSummary(m.effectivePermissions(v)))
 	m.form = nil
 	m.layout(m.width, m.height)
 	if pending != "" {
@@ -372,8 +395,15 @@ func (m Panel) formRows(w, h int) []string {
 		effort = info.Efforts[f.effort-1]
 	}
 	perm := permLabels[f.perm]
+	if f.perm == 0 && f.terminalMode() {
+		perm = "Preguntar (la CLI te pregunta en su pantalla)"
+	}
 	if f.role == 1 {
 		perm = permLabels[2] + " (orquestador)"
+	}
+	modeText := modeLabels[f.mode]
+	if info.Launch == nil {
+		modeText = "Chat de WARI (esta CLI no tiene modo terminal)"
 	}
 	type row struct {
 		label, value string
@@ -385,6 +415,7 @@ func (m Panel) formRows(w, h int) []string {
 		{"Potencia", effort, fieldEffort},
 		{"Permisos", perm, fieldPerm},
 		{"Rol", roleLabels[f.role], fieldRole},
+		{"Modo", modeText, fieldMode},
 	}
 	note := ""
 	switch {
@@ -402,6 +433,9 @@ func (m Panel) formRows(w, h int) []string {
 			line = truncate(line, w)
 		}
 		lines = append(lines, line)
+	}
+	if f.terminalMode() && info.LaunchNote != "" && f.err == "" && note == "" {
+		note = info.LaunchNote
 	}
 	if note != "" && f.err == "" {
 		lines = append(lines, m.styles.warn.Render(truncate("⚠ "+note, w)))

@@ -330,9 +330,12 @@ Las CLIs conservan el último modelo que se usó, y lanzar un agente sin elegir 
 | Modelo | Uno de la lista o uno escrito a mano. **Obligatorio.** La lista la pide WARI a la propia CLI al abrir el formulario cuando esta sabe listarla (`agy models`, `opencode models`); `claude` y `codex` no tienen ese comando y usan una lista corta de respaldo (alias de `claude --help`). Si la consulta falla, se usa el respaldo y el formulario lo avisa. |
 | Potencia | El esfuerzo (`low` … `max`) en `claude` y `agy`, que lo admiten. En `codex` y `opencode` no hay un flag verificado y se ignora. |
 | Permisos | Preguntar (la CLI sin pantalla niega las ediciones), editar sin preguntar, o solo planear y leer. |
+| Modo | **Terminal** (por omisión): el agente es la CLI real dentro del panel, con todo lo suyo: `/usage`, `/goal`, skills, sus permisos y su modelo. **Chat de WARI**: la CLI sin pantalla, solo eventos (sin comandos propios de la CLI). El formulario solo arma la línea de lanzamiento (modelo, potencia, modo). |
 | Rol | Trabajador, u Orquestador: planifica y reparte, y solo lee. Se le indica que siga la skill `.agents/skills/wari-orquestador`. |
 
-Teclas: `↑↓` cambian de campo, `←→` cambian el valor, `Enter` crea, `Esc` cancela (y devuelve el mensaje a la entrada). Bajo el agente seleccionado, la lista muestra con qué se lanzó (CLI, modelo, potencia, permisos).
+**Con el foco en un terminal, todo es de la CLI**, incluidos `Ctrl+C` y `Esc`: WARI solo atiende `alt+1/2/3` (pasar de panel), la tecla líder (`ctrl+e`) y los atajos de cambiar de agente (`alt+↑/↓`) y crear uno (`ctrl+t`). Para salir de WARI pasa el foco a otro panel (`alt+1`) y usa `Ctrl+C`; al salir se matan las CLIs con todos sus procesos. Limitaciones: `opencode` no tiene flag de modelo ni de modo planear en su TUI (se eligen dentro) y `codex` no está verificado.
+
+Teclas del formulario: `↑↓` cambian de campo, `←→` cambian el valor, `Enter` crea, `Esc` cancela (y devuelve el mensaje a la entrada). Bajo el agente seleccionado, la lista muestra con qué se lanzó (CLI, modelo, potencia, permisos).
 
 Dentro del chat, WARI entiende `/config` (abre el formulario antes del primer mensaje), `/usage` (tokens y turnos por agente), `/theme`, `/keys` (dónde se cambian los atajos) y `/help`. Con la entrada vacía, `↑` y `↓` recorren los mensajes que ya enviaste. Los demás comandos con `/` se envían tal cual al agente, pero las CLIs corren sin pantalla y no procesan los suyos.
 

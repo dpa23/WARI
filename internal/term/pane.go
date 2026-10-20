@@ -11,6 +11,7 @@ import (
 	"strings"
 	"sync"
 	"time"
+	"unicode"
 
 	tea "charm.land/bubbletea/v2"
 	uv "github.com/charmbracelet/ultraviolet"
@@ -176,7 +177,18 @@ func (t *Pane) Cursor() (x, y int, visible bool) {
 func (t *Pane) Title() string {
 	t.mu.Lock()
 	defer t.mu.Unlock()
-	return t.title
+	return cleanTitle(t.title)
+}
+
+// cleanTitle deja solo caracteres imprimibles: el título llega de la CLI y
+// puede traer bytes sueltos o de control que romperían la fila de la lista.
+func cleanTitle(s string) string {
+	return strings.Map(func(r rune) rune {
+		if r == unicode.ReplacementChar || !unicode.IsPrint(r) {
+			return -1
+		}
+		return r
+	}, strings.ToValidUTF8(s, ""))
 }
 
 // AltScreen indica si la CLI usa la pantalla alternativa (interfaz completa).

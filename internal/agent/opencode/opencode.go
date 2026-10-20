@@ -140,8 +140,10 @@ func Args(t agent.Task) []string {
 // equivalente es la variante, que va dentro del modelo tras "#").
 func Info() agent.Info {
 	return agent.Info{Name: "opencode", ModelHint: "proveedor/modelo o proveedor/modelo#variante",
-		Discover: discoverModels,
-		EditNote: "las ediciones se aplican antes de que WARI las vea: sin checkpoint previo ni aviso de choque anticipado"}
+		Discover:   discoverModels,
+		Launch:     Launch,
+		LaunchNote: "el TUI de opencode no tiene flag de modelo ni de modo planear: se eligen dentro (/models) o en su configuración",
+		EditNote:   "las ediciones se aplican antes de que WARI las vea: sin checkpoint previo ni aviso de choque anticipado"}
 }
 
 // discoverModels consulta `opencode models`: una línea "proveedor/modelo" por
@@ -158,4 +160,23 @@ func discoverModels(ctx context.Context) ([]agent.ModelOption, error) {
 		}
 	}
 	return out, nil
+}
+
+// Launch arma la línea del TUI de `opencode`. --standalone lo deja con un
+// servidor propio (sin él se conecta al servicio de fondo, fuera del grupo de
+// procesos de WARI) y --auto aprueba lo que no esté negado. El TUI no tiene
+// flag de modelo ni de modo planear: Task.Model y Plan se ignoran.
+func Launch(t agent.Task, prompt string) (string, []string, error) {
+	path, err := exec.LookPath("opencode")
+	if err != nil {
+		return "", nil, err
+	}
+	args := []string{"--standalone"}
+	if t.Permissions == agent.PermissionAcceptEdits {
+		args = append(args, "--auto")
+	}
+	if prompt != "" {
+		args = append(args, "--prompt", prompt)
+	}
+	return path, args, nil
 }

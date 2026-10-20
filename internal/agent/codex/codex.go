@@ -118,5 +118,28 @@ func Args(t agent.Task) []string {
 // máquina de desarrollo): el modelo se escribe a mano y Task.Effort se ignora.
 func Info() agent.Info {
 	return agent.Info{Name: "codex", ModelHint: "nombre del modelo, como en `codex --model`",
-		EditNote: "las ediciones se aplican antes de que WARI las vea: sin checkpoint previo ni aviso de choque anticipado"}
+		Launch:     Launch,
+		LaunchNote: "sin verificar: codex no está instalado en la máquina de desarrollo",
+		EditNote:   "las ediciones se aplican antes de que WARI las vea: sin checkpoint previo ni aviso de choque anticipado"}
+}
+
+// Launch arma la línea de `codex` interactivo con los mismos flags que usa el
+// adaptador sin pantalla (--model, -s). SIN VERIFICAR contra la CLI real.
+func Launch(t agent.Task, prompt string) (string, []string, error) {
+	path, err := exec.LookPath("codex")
+	if err != nil {
+		return "", nil, err
+	}
+	sandbox := "read-only"
+	if t.Permissions == agent.PermissionAcceptEdits {
+		sandbox = "workspace-write"
+	}
+	args := []string{"-s", sandbox}
+	if t.Model != "" {
+		args = append(args, "--model="+t.Model)
+	}
+	if prompt != "" {
+		args = append(args, "--", prompt)
+	}
+	return path, args, nil
 }
