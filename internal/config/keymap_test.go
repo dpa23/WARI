@@ -1,10 +1,10 @@
 package config
 
 import (
+	"errors"
 	"os"
 	"path/filepath"
 	"reflect"
-	"errors"
 	"strings"
 	"testing"
 )
