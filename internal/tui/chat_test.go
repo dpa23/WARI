@@ -569,7 +569,7 @@ func TestPaginarHistorial(t *testing.T) {
 	h.update(tea.WindowSizeMsg{Width: 40, Height: 10})
 	h.submit("uno")
 	for i := 0; i < 30; i++ {
-		h.event(agent.ToolCall{Name: "Tool", Input: json.RawMessage(`{}`)})
+		h.event(agent.ToolCall{Name: "Tool", Input: json.RawMessage(fmt.Sprintf(`{"n":%d}`, i))})
 	}
 	if !h.m.vp.AtBottom() {
 		t.Fatal("el historial debería estar al final")
@@ -607,7 +607,7 @@ func TestDesplazamientoDelUsuarioSobreviveAlStreaming(t *testing.T) {
 	h.update(tea.WindowSizeMsg{Width: 40, Height: 10})
 	h.submit("uno")
 	for i := 0; i < 30; i++ {
-		h.event(agent.ToolCall{Name: "Tool", Input: json.RawMessage(`{}`)})
+		h.event(agent.ToolCall{Name: "Tool", Input: json.RawMessage(fmt.Sprintf(`{"n":%d}`, i))})
 	}
 	h.press(tea.KeyPressMsg{Code: tea.KeyPgUp})
 	off := h.m.vp.YOffset()

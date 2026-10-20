@@ -1,6 +1,11 @@
 package tui
 
-import "testing"
+import (
+	"encoding/json"
+	"testing"
+
+	"github.com/dpa23/wari/internal/agent"
+)
 
 func TestRelPathsQuitaLaRaiz(t *testing.T) {
 	m := &transcript{root: "/home/u/WARI"}
@@ -11,5 +16,25 @@ func TestRelPathsQuitaLaRaiz(t *testing.T) {
 	}
 	if got := (&transcript{}).relPaths("/home/u/WARI/x"); got != "/home/u/WARI/x" {
 		t.Errorf("sin raíz no cambia: %q", got)
+	}
+}
+
+func TestStripFileLinks(t *testing.T) {
+	in := "En [`internal/orch/orch.go`](internal/orch/orch.go#L192), [Go](https://go.dev) y [x](file:///a/b.go)."
+	want := "En `internal/orch/orch.go`, [Go](https://go.dev) y x."
+	if got := stripFileLinks(in); got != want {
+		t.Errorf("stripFileLinks = %q, quiero %q", got, want)
+	}
+}
+
+func TestToolCallsIdenticasSeColapsan(t *testing.T) {
+	m := &transcript{}
+	call := agent.ToolCall{Name: "read_file", Input: json.RawMessage(`{"path":"a.go"}`)}
+	m.applyEvent(call)
+	m.applyEvent(call)
+	m.applyEvent(call)
+	m.applyEvent(agent.ToolCall{Name: "read_file", Input: json.RawMessage(`{"path":"b.go"}`)})
+	if len(m.entries) != 2 || m.entries[0].text != "⚙ read_file a.go ×3" || m.entries[1].text != "⚙ read_file b.go" {
+		t.Errorf("entradas = %+v", m.entries)
 	}
 }

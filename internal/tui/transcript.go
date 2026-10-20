@@ -2,6 +2,8 @@ package tui
 
 import (
 	"errors"
+	"regexp"
+	"strconv"
 	"strings"
 
 	"github.com/dpa23/wari/internal/agent"
@@ -28,6 +30,10 @@ type transcript struct {
 	// newSessionKey es la tecla que empieza una sesión nueva, para el aviso
 	// de sesión no encontrada.
 	newSessionKey string
+	// lastTool y lastToolN colapsan las llamadas idénticas consecutivas a una
+	// herramienta en una sola línea ("⚙ read_file x ×2").
+	lastTool  string
+	lastToolN int
 	// root es la raíz del proyecto: las rutas editadas dentro de ella se
 	// muestran relativas.
 	root string
@@ -51,9 +57,16 @@ func (m *transcript) applyEvent(ev agent.Event) {
 			m.asstOpen = true
 		}
 		m.asst.WriteString(ev.Text)
-		m.entries[len(m.entries)-1].text = m.relPaths(m.asst.String())
+		m.entries[len(m.entries)-1].text = m.relPaths(stripFileLinks(m.asst.String()))
 	case agent.ToolCall:
-		m.add(kindTool, "⚙ "+m.relPaths(toolSummary(ev.Name, ev.Input)))
+		text := "⚙ " + m.relPaths(toolSummary(ev.Name, ev.Input))
+		if last := len(m.entries) - 1; last >= 0 && m.entries[last].kind == kindTool && m.lastTool == text {
+			m.lastToolN++
+			m.entries[last].text = text + " ×" + strconv.Itoa(m.lastToolN)
+			break
+		}
+		m.add(kindTool, text)
+		m.lastTool, m.lastToolN = text, 1
 	case agent.FileEditProposed:
 		m.add(kindEdit, "✎ "+m.display(ev.Path))
 	case agent.NeedsApproval:
@@ -108,6 +121,21 @@ func (m *transcript) relPaths(s string) string {
 	}
 	root := strings.TrimSuffix(m.root, "/") + "/"
 	return strings.ReplaceAll(strings.ReplaceAll(s, "file://"+root, ""), root, "")
+}
+
+var fileLink = regexp.MustCompile(`\[([^\]\n]+)\]\(([^)\s]+)\)`)
+
+// stripFileLinks deja solo el texto de los enlaces Markdown a archivos locales
+// (`[`a.go`](a.go#L3)` → `a.go`): en una columna estrecha el destino se partía
+// a mitad de la ruta y ocupaba tres líneas. Los enlaces http(s) se conservan.
+func stripFileLinks(s string) string {
+	return fileLink.ReplaceAllStringFunc(s, func(m string) string {
+		sub := fileLink.FindStringSubmatch(m)
+		if strings.HasPrefix(sub[2], "http://") || strings.HasPrefix(sub[2], "https://") {
+			return m
+		}
+		return sub[1]
+	})
 }
 
 // add agrega una entrada y cierra el mensaje del asistente en curso.
