@@ -16,7 +16,7 @@ import (
 	"charm.land/bubbles/v2/key"
 	tea "charm.land/bubbletea/v2"
 	"charm.land/lipgloss/v2"
-	"charm.land/lipgloss/v2/compat"
+	"github.com/dpa23/wari/internal/tui/theme"
 
 	"github.com/dpa23/wari/internal/editor"
 	"github.com/dpa23/wari/internal/imports"
@@ -33,15 +33,15 @@ const (
 )
 
 var (
-	styleGutter = lipgloss.NewStyle().Foreground(compat.AdaptiveColor{
+	styleGutter = lipgloss.NewStyle().Foreground(theme.AdaptiveColor{
 		Light: lipgloss.Color("#57606a"),
 		Dark:  lipgloss.Color("#6e7681"),
 	})
-	styleGutterOn = lipgloss.NewStyle().Foreground(compat.AdaptiveColor{
+	styleGutterOn = lipgloss.NewStyle().Foreground(theme.AdaptiveColor{
 		Light: lipgloss.Color("#24292f"),
 		Dark:  lipgloss.Color("#c9d1d9"),
 	})
-	styleSelect = lipgloss.NewStyle().Background(compat.AdaptiveColor{
+	styleSelect = lipgloss.NewStyle().Background(theme.AdaptiveColor{
 		Light: lipgloss.Color("#b4d5fe"),
 		Dark:  lipgloss.Color("#264f78"),
 	})

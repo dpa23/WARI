@@ -8,7 +8,7 @@ import (
 
 	"charm.land/bubbles/v2/key"
 	"charm.land/lipgloss/v2"
-	"charm.land/lipgloss/v2/compat"
+	"github.com/dpa23/wari/internal/tui/theme"
 
 	"github.com/dpa23/wari/internal/orch"
 )
@@ -362,7 +362,7 @@ func (d *diffView) renderModalLines(w int) []string {
 
 	footer := "└" + strings.Repeat("─", max(boxW-2, 0)) + "┘"
 
-	style := lipgloss.NewStyle().Bold(true).Foreground(compat.AdaptiveColor{
+	style := lipgloss.NewStyle().Bold(true).Foreground(theme.AdaptiveColor{
 		Light: lipgloss.Color("#b45309"),
 		Dark:  lipgloss.Color("#fbbf24"),
 	}).Background(lipgloss.Color("236"))

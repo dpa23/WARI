@@ -10,7 +10,7 @@ import (
 
 	tea "charm.land/bubbletea/v2"
 	"charm.land/lipgloss/v2"
-	"charm.land/lipgloss/v2/compat"
+	"github.com/dpa23/wari/internal/tui/theme"
 
 	"github.com/dpa23/wari/internal/editor"
 )
@@ -671,11 +671,11 @@ func TestUndoRedoDoesNotRebuildBufferString(t *testing.T) {
 }
 
 func TestAdaptiveColorsGutterAndSelect(t *testing.T) {
-	origDark := compat.HasDarkBackground
-	defer func() { compat.HasDarkBackground = origDark }()
+	origDark := theme.Dark()
+	defer func() { theme.SetDark(origDark) }()
 
 	// Modo oscuro
-	compat.HasDarkBackground = true
+	theme.SetDark(true)
 	gDark := sgrGutterSeq()
 	gOnDark := sgrGutterOnSeq()
 	selDark := sgrSelectSeq()
@@ -684,7 +684,7 @@ func TestAdaptiveColorsGutterAndSelect(t *testing.T) {
 	}
 
 	// Modo claro
-	compat.HasDarkBackground = false
+	theme.SetDark(false)
 	gLight := sgrGutterSeq()
 	gOnLight := sgrGutterOnSeq()
 	selLight := sgrSelectSeq()
@@ -695,7 +695,7 @@ func TestAdaptiveColorsGutterAndSelect(t *testing.T) {
 	// Verificar renderizado en el editor
 	m, _ := newFile(t, "test.txt", "linea 1\nlinea 2\n", 40, 5)
 	viewDark := m.View()
-	compat.HasDarkBackground = false
+	theme.SetDark(false)
 	viewLight := m.View()
 
 	if !strings.Contains(viewDark, "linea 1") || !strings.Contains(viewLight, "linea 1") {

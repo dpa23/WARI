@@ -12,7 +12,7 @@ import (
 	"charm.land/bubbles/v2/key"
 	tea "charm.land/bubbletea/v2"
 	"charm.land/lipgloss/v2"
-	"charm.land/lipgloss/v2/compat"
+	"github.com/dpa23/wari/internal/tui/theme"
 )
 
 // Marker describe el estado de un archivo respecto a los agentes.
@@ -24,15 +24,15 @@ type Marker struct {
 }
 
 var (
-	badgeClaim = lipgloss.NewStyle().Foreground(compat.AdaptiveColor{
+	badgeClaim = lipgloss.NewStyle().Foreground(theme.AdaptiveColor{
 		Light: lipgloss.Color("#0969da"),
 		Dark:  lipgloss.Color("#58a6ff"),
 	})
-	badgeEdit = lipgloss.NewStyle().Foreground(compat.AdaptiveColor{
+	badgeEdit = lipgloss.NewStyle().Foreground(theme.AdaptiveColor{
 		Light: lipgloss.Color("#92400e"),
 		Dark:  lipgloss.Color("#fcd34d"),
 	})
-	badgeConflict = lipgloss.NewStyle().Bold(true).Foreground(compat.AdaptiveColor{
+	badgeConflict = lipgloss.NewStyle().Bold(true).Foreground(theme.AdaptiveColor{
 		Light: lipgloss.Color("#b45309"),
 		Dark:  lipgloss.Color("#fbbf24"),
 	})

@@ -8,7 +8,7 @@ import (
 	"unicode/utf8"
 
 	"charm.land/lipgloss/v2"
-	"charm.land/lipgloss/v2/compat"
+	"github.com/dpa23/wari/internal/tui/theme"
 )
 
 // entryKind distingue las líneas del historial para darles estilo.
@@ -63,17 +63,17 @@ func defaultStyles() styles {
 			PaddingLeft(1),
 		assistant: lipgloss.NewStyle(),
 		tool:      lipgloss.NewStyle().Faint(true),
-		edit: lipgloss.NewStyle().Foreground(compat.AdaptiveColor{
+		edit: lipgloss.NewStyle().Foreground(theme.AdaptiveColor{
 			Light: lipgloss.Color("#92400e"),
 			Dark:  lipgloss.Color("#fcd34d"),
 		}).Faint(true),
-		denied: lipgloss.NewStyle().Foreground(compat.AdaptiveColor{
+		denied: lipgloss.NewStyle().Foreground(theme.AdaptiveColor{
 			Light: lipgloss.Color("#b45309"),
 			Dark:  lipgloss.Color("#f59e0b"),
 		}),
 		err:  lipgloss.NewStyle().Foreground(lipgloss.Color("9")),
 		info: lipgloss.NewStyle().Faint(true).Italic(true),
-		warn: lipgloss.NewStyle().Foreground(compat.AdaptiveColor{
+		warn: lipgloss.NewStyle().Foreground(theme.AdaptiveColor{
 			Light: lipgloss.Color("#b45309"),
 			Dark:  lipgloss.Color("#fbbf24"),
 		}).Bold(true),

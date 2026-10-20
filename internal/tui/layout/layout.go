@@ -86,7 +86,7 @@ import (
 	"charm.land/bubbles/v2/key"
 	tea "charm.land/bubbletea/v2"
 	"charm.land/lipgloss/v2"
-	"charm.land/lipgloss/v2/compat"
+	"github.com/dpa23/wari/internal/tui/theme"
 
 	"github.com/dpa23/wari/internal/config"
 	"github.com/dpa23/wari/internal/editor"
@@ -905,7 +905,7 @@ var (
 			Foreground(lipgloss.Color("252")).Background(lipgloss.Color("238"))
 	// alertStyle pinta la barra mientras hay un choque de archivos sin resolver.
 	alertStyle = lipgloss.NewStyle().Bold(true).
-			Foreground(lipgloss.Color("0")).Background(compat.AdaptiveColor{
+			Foreground(lipgloss.Color("0")).Background(theme.AdaptiveColor{
 		Light: lipgloss.Color("#f59e0b"),
 		Dark:  lipgloss.Color("#fbbf24"),
 	})

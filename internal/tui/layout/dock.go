@@ -10,7 +10,7 @@ import (
 	"charm.land/bubbles/v2/key"
 	tea "charm.land/bubbletea/v2"
 	"charm.land/lipgloss/v2"
-	"charm.land/lipgloss/v2/compat"
+	"github.com/dpa23/wari/internal/tui/theme"
 )
 
 // El dock es la franja bajo el editor con lo de ejecutar y depurar: la salida
@@ -64,7 +64,7 @@ var (
 	boldStyle     = lipgloss.NewStyle().Bold(true)
 	faintStyle    = lipgloss.NewStyle().Faint(true)
 	askStyle      = lipgloss.NewStyle().Bold(true).
-			Foreground(lipgloss.Color("0")).Background(compat.AdaptiveColor{
+			Foreground(lipgloss.Color("0")).Background(theme.AdaptiveColor{
 		Light: lipgloss.Color("#f59e0b"),
 		Dark:  lipgloss.Color("#fbbf24"),
 	})

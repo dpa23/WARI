@@ -4,18 +4,18 @@ import (
 	"strings"
 	"testing"
 
-	"charm.land/lipgloss/v2/compat"
+	"github.com/dpa23/wari/internal/tui/theme"
 )
 
 func TestAdaptiveColorsRender(t *testing.T) {
 	st := defaultStyles()
 
 	// Guardar estado original
-	origDark := compat.HasDarkBackground
-	defer func() { compat.HasDarkBackground = origDark }()
+	origDark := theme.Dark()
+	defer func() { theme.SetDark(origDark) }()
 
 	// Probar en modo oscuro
-	compat.HasDarkBackground = true
+	theme.SetDark(true)
 	editDark := st.edit.Render("edición")
 	deniedDark := st.denied.Render("denegado")
 	warnDark := st.warn.Render("aviso")
@@ -25,7 +25,7 @@ func TestAdaptiveColorsRender(t *testing.T) {
 	}
 
 	// Probar en modo claro
-	compat.HasDarkBackground = false
+	theme.SetDark(false)
 	editLight := st.edit.Render("edición")
 	deniedLight := st.denied.Render("denegado")
 	warnLight := st.warn.Render("aviso")

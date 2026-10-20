@@ -13,7 +13,7 @@ import (
 	"charm.land/bubbles/v2/viewport"
 	tea "charm.land/bubbletea/v2"
 	"charm.land/lipgloss/v2"
-	"charm.land/lipgloss/v2/compat"
+	"github.com/dpa23/wari/internal/tui/theme"
 
 	"github.com/dpa23/wari/internal/agent"
 	"github.com/dpa23/wari/internal/orch"
@@ -1066,7 +1066,7 @@ func stateBadge(st orch.State, hasSnap bool) (string, lipgloss.Style) {
 	case orch.Running:
 		return "RUN", lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("10"))
 	case orch.Paused:
-		return "PAU", lipgloss.NewStyle().Bold(true).Foreground(compat.AdaptiveColor{
+		return "PAU", lipgloss.NewStyle().Bold(true).Foreground(theme.AdaptiveColor{
 			Light: lipgloss.Color("#b45309"),
 			Dark:  lipgloss.Color("#fbbf24"),
 		})
@@ -1142,7 +1142,7 @@ func (m Panel) listLine(i int) string {
 		case orch.Running:
 			st = st.Foreground(lipgloss.Color("10"))
 		case orch.Paused:
-			st = st.Foreground(compat.AdaptiveColor{
+			st = st.Foreground(theme.AdaptiveColor{
 				Light: lipgloss.Color("#b45309"),
 				Dark:  lipgloss.Color("#fbbf24"),
 			})
