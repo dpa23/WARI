@@ -62,6 +62,7 @@ func TestDefault(t *testing.T) {
 		"debug_step_in":     {"f11", "alt+k"},
 		"debug_step_out":    {"shift+f11", "alt+u"},
 		"debug_stop":        {"shift+f5", "alt+q"},
+		"leader":            {"ctrl+e"},
 	}
 
 	got := Default()
@@ -279,5 +280,33 @@ func TestUserDir(t *testing.T) {
 	}
 	if filepath.Base(dir) != "wari" {
 		t.Errorf("UserDir() debe terminar en 'wari', se obtuvo %q", dir)
+	}
+}
+
+func TestDefaultForDarwinLabels(t *testing.T) {
+	km := DefaultFor("darwin")
+	if got := km["leader"]; len(got) != 1 || got[0] != "ctrl+e" {
+		t.Fatalf("leader = %v", got)
+	}
+	cases := map[string]string{
+		"new_file":        "ctrl+e f", // solo alt+: secuencia con líder
+		"focus_tree":      "ctrl+e 1",
+		"goto_definition": "ctrl+e d", // f12 lo captura el sistema
+		"save":            "ctrl+s",   // sin alt: igual
+		"toggle_lsp":      "ctrl+e l",
+	}
+	for action, want := range cases {
+		if got := km.Label("darwin", action); got != want {
+			t.Errorf("Label(darwin, %s) = %q, quiero %q", action, got, want)
+		}
+	}
+	if got := km.Label("linux", "new_file"); got != "alt+f" {
+		t.Errorf("Label(linux, new_file) = %q", got)
+	}
+	if got := km.Label("linux", "goto_definition"); got != "f12" {
+		t.Errorf("Label(linux, goto_definition) = %q", got)
+	}
+	if c := km.Conflicts(); len(c) != 0 {
+		t.Errorf("conflictos en los valores predeterminados: %v", c)
 	}
 }

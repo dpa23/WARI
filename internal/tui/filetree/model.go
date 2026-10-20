@@ -106,11 +106,11 @@ type Model struct {
 	w, h    int
 	focused bool
 	markers map[string]Marker
-	icons   bool
+	icons   IconMode
 }
 
-// SetIcons activa los iconos de Nerd Fonts junto a cada nombre.
-func (m *Model) SetIcons(on bool) { m.icons = on }
+// SetIcons elige los iconos que se dibujan junto a cada nombre.
+func (m *Model) SetIcons(mode IconMode) { m.icons = mode }
 
 // SetMarkers actualiza los marcadores de los archivos (por ruta relativa o absoluta).
 func (m *Model) SetMarkers(markers map[string]Marker) {
@@ -417,8 +417,8 @@ func (m Model) View() string {
 			name += "/"
 		}
 		icon := ""
-		if m.icons {
-			icon = iconFor(n.name, n.dir, n.expanded) + " "
+		if m.icons != IconsOff {
+			icon = iconFor(n.name, n.dir, n.expanded).in(m.icons) + " "
 		}
 		text := strings.Repeat("  ", max(n.depth-1, 0)) + marker + icon + name
 		if n == m.root {

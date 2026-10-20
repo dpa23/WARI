@@ -129,6 +129,13 @@ Formato: fecha · decisión · motivo · alternativas descartadas.
 - **Edición ya ejecutada**: con codex y opencode el evento de la herramienta llega cuando la edición ya ocurrió. WARI no emite `FileEditProposed` para ellos: ni checkpoint previo ni detección de choques antes de editar (el watcher la ve después).
 - **Autenticación**: WARI no maneja credenciales con ninguna CLI; cada una usa su propia sesión.
 
+## 2026-10-20 · Atajos por SO, iconos por omisión, instalación y uso
+- **macOS sin alt ni win**: `config.DefaultFor(goos)` añade la acción `leader` (`ctrl+e`). Tras la líder, la tecla siguiente se despacha como si llevara alt (`layout.handleKey`); no depende de la terminal ni de la distribución del teclado (descartado: mapear los caracteres que Option escribe, que varían por layout y tienen teclas muertas). En macOS la ayuda y la barra muestran `ctrl+e f` en vez de `alt+f` (`Keymap.Label`/`KeyLabel`) y prefieren una tecla sin alt ni F. En Linux y Windows no cambia nada. Se pierde `ctrl+e` en la entrada del chat (fin de línea).
+- **Iconos**: `-icons` pasa de bool apagado a `auto|nerd|emoji|off`, con `auto` por omisión: Nerd Font solo si la terminal la trae (kitty, WezTerm, Ghostty) o `WARI_NERD_FONT=1`; si no, emoji, que no piden fuente. Antes salía apagado y el árbol parecía no tener iconos.
+- **Instalación**: `scripts/install.sh` deja `wari` en `~/.local/bin` (o `$GOBIN`); no se versiona ni se usa `./wari`.
+- **Uso antes que dinero**: el panel y la línea de estado muestran tokens (abreviados: 12.3k) por agente; el costo en US$ solo aparece si la CLI lo reporta (con suscripción es 0).
+- **LSP**: no hay jdtls, kotlin-language-server ni csharp-ls en esta máquina; solo se verificó contra servidores simulados.
+
 ## 2026-10-18 · Lo que reveló el CI de macOS
 - El CI de `main` falló solo en macOS. Los logs exigen sesión, pero las anotaciones son públicas: el CI ahora vuelca los fallos como anotaciones.
 - **proc**: en macOS, señalar un grupo con solo zombis da `EPERM` (no `ESRCH`); `Kill` y `Cancel` devolvían error. **owner.Rel** y el test del sandbox: el directorio temporal vive bajo `/var → /private/var`. **watch**: kqueue entrega algún evento tarde. Corregidos en `newclis`.

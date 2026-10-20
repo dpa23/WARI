@@ -2,6 +2,7 @@ package layout
 
 import (
 	"fmt"
+	"runtime"
 	"strings"
 
 	"charm.land/bubbles/v2/key"
@@ -129,7 +130,11 @@ func formatKeys(km config.Keymap, action string) string {
 	if len(keys) == 0 {
 		return "—"
 	}
-	return strings.Join(keys, ", ")
+	labels := make([]string, len(keys))
+	for i, key := range keys {
+		labels[i] = km.KeyLabel(runtime.GOOS, key)
+	}
+	return strings.Join(labels, ", ")
 }
 
 // truncate recorta s a n runas, marcando el corte con "…" si excede.

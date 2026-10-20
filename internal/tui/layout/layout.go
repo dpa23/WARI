@@ -78,6 +78,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"runtime"
 	"slices"
 	"strings"
 	"unicode/utf8"
@@ -121,8 +122,8 @@ const (
 
 // Config configura el layout.
 type Config struct {
-	// Icons dibuja iconos de Nerd Fonts junto a los archivos del árbol.
-	Icons bool
+	// Icons elige los iconos junto a los archivos del árbol (apagados si es el cero).
+	Icons filetree.IconMode
 	// Root es el directorio de trabajo (vacío: el actual).
 	Root string
 	// File es un archivo a abrir en el editor al iniciar (opcional).
@@ -176,6 +177,7 @@ type Model struct {
 
 	msg         string // mensaje de la barra de estado
 	pendingOpen string // archivo cuya apertura espera confirmación
+	leaderArmed bool   // la última tecla fue la líder: la siguiente lleva alt
 	quitArmed   bool   // la última tecla fue quit con cambios sin guardar
 
 	snips map[string]snippets.Set
@@ -365,11 +367,9 @@ func (m Model) is(k tea.KeyPressMsg, action string) bool {
 }
 
 // firstKey devuelve la primera tecla de una acción ("" si no tiene).
+// En macOS (sin alt ni win) devuelve la forma sin alt+ o la secuencia con líder.
 func (m Model) firstKey(action string) string {
-	if keys := m.km[action]; len(keys) > 0 {
-		return keys[0]
-	}
-	return ""
+	return m.km.Label(runtime.GOOS, action)
 }
 
 func (m Model) handleKey(k tea.KeyPressMsg) (Model, tea.Cmd) {
@@ -382,6 +382,23 @@ func (m Model) handleKey(k tea.KeyPressMsg) (Model, tea.Cmd) {
 	}
 	if m.run.confirm != nil {
 		return m.runConfirmKey(k)
+	}
+
+	// Tecla líder: la tecla siguiente se trata como si llevara alt, para los
+	// teclados sin alt utilizable (macOS) y las terminales que se comen Option.
+	if m.leaderArmed {
+		m.leaderArmed = false
+		if k.String() == "esc" {
+			return m, nil
+		}
+		k.Mod |= tea.ModAlt
+		k.Text = ""
+		return m.handleKey(k)
+	}
+	if m.is(k, "leader") {
+		m.leaderArmed = true
+		m.msg = "líder: pulsa la tecla de la acción (esc cancela)"
+		return m, nil
 	}
 
 	// Regla de descubribilidad: F1 siempre abre el overlay de ayuda.

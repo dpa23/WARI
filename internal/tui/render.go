@@ -227,6 +227,23 @@ func shortSession(id string) string {
 }
 
 // formatUsage da el resumen de consumo de la línea de estado.
+// El costo solo aparece si la CLI lo reporta: con suscripción es 0 y lo que
+// cuenta es el uso.
 func formatUsage(in, out int64, cost float64) string {
-	return fmt.Sprintf("↑%d ↓%d · US$%.4f", in, out, cost)
+	s := fmt.Sprintf("↑%s ↓%s tok", compactTokens(in), compactTokens(out))
+	if cost > 0 {
+		s += fmt.Sprintf(" · US$%.4f", cost)
+	}
+	return s
+}
+
+// compactTokens abrevia un conteo de tokens: 950, 12.3k, 1.2M.
+func compactTokens(n int64) string {
+	switch {
+	case n >= 1_000_000:
+		return fmt.Sprintf("%.1fM", float64(n)/1_000_000)
+	case n >= 10_000:
+		return fmt.Sprintf("%.1fk", float64(n)/1000)
+	}
+	return fmt.Sprintf("%d", n)
 }

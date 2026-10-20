@@ -255,7 +255,7 @@ func TestConflictShowsAlertAndPausesSecondAgent(t *testing.T) {
 	}
 	w.wantView("⚠ choque: agente 2 quiere editar x.txt, reclamado por agente 1")
 	w.wantView("ctrl+o reanuda y le da el archivo")
-	w.wantView("US$0.0000 ⚠ choque") // la fila de la lista
+	w.wantView("0 tok ⚠ choque") // la fila de la lista
 
 	// El dueño ve que alguien quiso su archivo.
 	w.press(keyAltUp)

@@ -91,6 +91,9 @@
 - Adaptadores de `codex` y `opencode` (`-agent codex|opencode`, pasos de pipeline), `turn.Finisher`, README reescrito, arreglos de macOS y de SIGPIPE. CI en verde en Linux, macOS y Windows.
 - Sin verificar con la CLI real: el parser de codex salvo errores (sin sesión iniciada; ver `testdata/codex/SYNTHETIC.md`).
 
+### Pulido (2026-10-20)
+- Atajos por SO con tecla líder para macOS, iconos `auto|nerd|emoji|off` por omisión, `scripts/install.sh`, uso en tokens por agente. Verificado en herdr (iconos emoji, `ctrl+e f` abre las plantillas). Ver `docs/decisions.md`.
+
 ## Pendiente
 
 - CI se ejecuta por primera vez con el primer push que apruebe el autor.

@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"runtime"
 	"sort"
 	"strings"
 )
@@ -26,8 +27,72 @@ func (k Keymap) Clone() Keymap {
 	return cp
 }
 
-// Default devuelve el mapa de teclas predeterminado con las acciones núcleo de WARI.
-func Default() Keymap {
+// Default devuelve el mapa de teclas predeterminado del sistema donde corre WARI.
+func Default() Keymap { return DefaultFor(runtime.GOOS) }
+
+// DefaultFor devuelve el mapa predeterminado para un sistema operativo (valor
+// de runtime.GOOS). En macOS no existe la tecla Win y Option escribe
+// caracteres tipográficos salvo que la terminal la use como Meta, así que las
+// acciones con alt+ también se alcanzan con la tecla líder ("leader", ctrl+e
+// por omisión) seguida de la letra, y la ayuda las muestra de esa forma.
+// Eso no depende de la terminal ni de la distribución del teclado.
+func DefaultFor(goos string) Keymap {
+	km := baseKeymap()
+	km["leader"] = []string{"ctrl+e"}
+	return km
+}
+
+// Label devuelve cómo se escribe la acción en goos para mostrarla al usuario:
+// la primera tecla utilizable. En macOS prefiere una tecla sin alt+ ni F (el
+// sistema captura las F) y, si no la hay, la secuencia con líder ("ctrl+e f").
+func (k Keymap) Label(goos, action string) string {
+	keys := k[action]
+	if len(keys) == 0 {
+		return ""
+	}
+	if goos != "darwin" {
+		return keys[0]
+	}
+	for _, key := range keys {
+		if !strings.HasPrefix(key, "alt+") && !isFunctionKey(key) {
+			return key
+		}
+	}
+	for _, key := range keys {
+		if strings.HasPrefix(key, "alt+") {
+			return k.KeyLabel(goos, key)
+		}
+	}
+	return keys[0]
+}
+
+// KeyLabel escribe una tecla como se pulsa en goos: en macOS "alt+f" es la
+// secuencia con líder ("ctrl+e f"); en el resto no cambia.
+func (k Keymap) KeyLabel(goos, key string) string {
+	if goos != "darwin" || !strings.HasPrefix(key, "alt+") {
+		return key
+	}
+	leader := "ctrl+e"
+	if l := k["leader"]; len(l) > 0 {
+		leader = l[0]
+	}
+	return leader + " " + strings.TrimPrefix(key, "alt+")
+}
+
+func isFunctionKey(key string) bool {
+	key = key[strings.LastIndex(key, "+")+1:]
+	if len(key) < 2 || key[0] != 'f' {
+		return false
+	}
+	for _, r := range key[1:] {
+		if r < '0' || r > '9' {
+			return false
+		}
+	}
+	return true
+}
+
+func baseKeymap() Keymap {
 	return Keymap{
 		"send":            []string{"enter"},
 		"newline":         []string{"alt+enter", "ctrl+j"},

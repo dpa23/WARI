@@ -134,11 +134,10 @@ Agregue el directorio de binarios de Go a su intérprete de comandos:
   fish_add_path (go env GOPATH)/bin
   ```
 
-Alternativamente, puede copiar el binario compilado a una ruta global del sistema:
+Lo más corto es el script de instalación, que deja el comando `wari` en `~/.local/bin` (o en `$GOBIN`, o en el directorio que le pase) sin ningún `./wari` en el repositorio:
 ```sh
-sudo cp wari /usr/local/bin/
-# o para su usuario local:
-cp wari ~/.local/bin/
+scripts/install.sh
+wari            # desde cualquier carpeta
 ```
 
 ### 4.2. macOS
@@ -168,7 +167,7 @@ go install ./cmd/wari
   ```
 
 #### Configuración de la tecla Alt / Option en macOS
-Por defecto, en macOS la tecla Option produce caracteres tipográficos especiales en lugar de secuencias de escape de terminal (`Meta`). Para utilizar los atajos con `Alt` (`Alt+1`, `Alt+2`, `Alt+3`, `Alt+f`, etc.), debe habilitar el modo Meta en su emulador de terminal:
+En macOS no hace falta configurar nada: la tecla líder (`ctrl+e`) seguida de la letra reemplaza a `alt+` (ver «La tecla Alt no responde en macOS» más abajo). Lo que sigue es opcional, solo si prefiere `alt+` directo. Por defecto, en macOS la tecla Option produce caracteres tipográficos especiales en lugar de secuencias de escape de terminal (`Meta`). Para utilizar los atajos con `Alt` (`Alt+1`, `Alt+2`, `Alt+3`, `Alt+f`, etc.), debe habilitar el modo Meta en su emulador de terminal:
 - **Terminal.app:** Vaya a *Ajustes* > *Perfiles* > pestaña *Teclado* > active la casilla **"Usar opción como tecla meta"** (*Use Option as Meta key*).
 - **iTerm2:** Vaya a *Preferences* / *Settings* > *Profiles* > pestaña *Keys* > en **"Left Option key"**, seleccione la opción **`Esc+`**.
 
@@ -314,7 +313,7 @@ Si el argumento posicional es un archivo, WARI toma su directorio contenedor com
 | `-no-index` | `bool` (`false`) | Desactiva el motor interno de indexación de símbolos en segundo plano (árbol de símbolos, ir a definición, autocompletado y tipos de imports). |
 | `-ctags` | `bool` (`false`) | Utiliza la herramienta externa `universal-ctags` (si se encuentra disponible en el PATH) para generar el índice de símbolos, en sustitución del analizador léxico nativo de WARI. |
 | `-lsp` | `bool` (`false`) | Enciende los servidores de lenguaje de fondo (`jdtls`, `kotlin-language-server`, `csharp-ls` si están en PATH) para autocompletado, definiciones y diagnósticos. Por omisión está apagado y puede conmutarse dentro del editor con `alt+l`. |
-| `-icons` | `bool` (`false`) | Dibuja un icono de Nerd Fonts junto a cada archivo y carpeta del árbol. Requiere una Nerd Font en la terminal (p. ej. JetBrainsMono Nerd Font); sin ella los iconos se ven como cuadros. |
+| `-icons` | `string` (`auto`) | Iconos junto a cada archivo y carpeta del árbol: `auto` (Nerd Font si la terminal la trae de serie —kitty, WezTerm, Ghostty— y si no emoji, que no necesitan fuente), `nerd` (requiere una Nerd Font; sin ella se ven cuadros), `emoji` u `off`. También `WARI_ICONS` y `WARI_NERD_FONT=1`. |
 | `-version` | `bool` (`false`) | Imprime la versión compilada de WARI y sale. |
 
 ---
@@ -442,8 +441,9 @@ Para depurar con `F5` (`alt+s`), WARI lee `.wari/launch.json`. El bloque `args` 
   - Asegúrese de contar con la imagen base del contenedor configurada en su entorno.
 
 ### La tecla Alt no responde en macOS
-- En macOS, los atajos con `Alt` no son detectados si la terminal envía caracteres extendidos.
-- Active *"Usar opción como tecla meta"* en Terminal.app o configure *"Left Option key = Esc+"* en iTerm2 (vea la sección 4.2).
+- macOS no tiene Win y Option escribe caracteres tipográficos. No hace falta tocar la terminal: pulse la **tecla líder** (`ctrl+e`) y después la letra del atajo. `ctrl+e` `f` equivale a `alt+f`; `ctrl+e` `1` a `alt+1`; `esc` cancela. La ayuda (`F1` o `?`) y la barra de estado muestran los atajos de esa forma en macOS.
+- Si prefiere `alt+`, active *"Usar opción como tecla meta"* en Terminal.app o configure *"Left Option key = Esc+"* en iTerm2 (vea la sección 4.2).
+- La tecla líder se cambia en `keys.json` con la acción `leader`.
 
 ### Comprobación de procesos huérfanos
 WARI aísla a cada agente y proceso hijo en un grupo de procesos independiente (`Setpgid` en sistemas Unix). Si desea verificar en Linux o macOS que no hayan quedado procesos residuales activos tras una salida imprevista:

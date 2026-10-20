@@ -461,11 +461,56 @@ func TestIcons(t *testing.T) {
 	}
 	m := New(t.TempDir())
 	m.SetSize(30, 3)
-	if strings.Contains(m.View(), iconDirOpen) {
+	if strings.Contains(m.View(), iconDirOpen.nerd) {
 		t.Fatal("iconos activos por defecto")
 	}
-	m.SetIcons(true)
-	if !strings.Contains(m.View(), iconDirOpen) {
+	m.SetIcons(IconsNerd)
+	if !strings.Contains(m.View(), iconDirOpen.nerd) {
 		t.Fatal("la raíz no muestra icono")
+	}
+}
+
+func TestParseIconMode(t *testing.T) {
+	env := func(m map[string]string) func(string) string { return func(k string) string { return m[k] } }
+	cases := []struct {
+		v    string
+		env  map[string]string
+		want IconMode
+		err  bool
+	}{
+		{"off", nil, IconsOff, false},
+		{"nerd", nil, IconsNerd, false},
+		{"emoji", nil, IconsEmoji, false},
+		{"auto", nil, IconsEmoji, false},
+		{"", map[string]string{"TERM": "xterm-256color"}, IconsEmoji, false},
+		{"auto", map[string]string{"TERM": "xterm-kitty"}, IconsNerd, false},
+		{"auto", map[string]string{"TERM_PROGRAM": "WezTerm"}, IconsNerd, false},
+		{"auto", map[string]string{"WARI_NERD_FONT": "1"}, IconsNerd, false},
+		{"raro", nil, IconsOff, true},
+	}
+	for _, c := range cases {
+		got, err := ParseIconMode(c.v, env(c.env))
+		if (err != nil) != c.err || got != c.want {
+			t.Errorf("ParseIconMode(%q, %v) = %v, %v", c.v, c.env, got, err)
+		}
+	}
+}
+
+func TestEmojiIconsKeepWidth(t *testing.T) {
+	root := t.TempDir()
+	if err := os.WriteFile(filepath.Join(root, "Main.java"), nil, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	m := New(root)
+	m.SetSize(30, 4)
+	m.SetIcons(IconsEmoji)
+	view := m.View()
+	if !strings.Contains(view, iconJava.emoji) {
+		t.Fatalf("falta el emoji de Java: %q", view)
+	}
+	for i, l := range strings.Split(view, "\n") {
+		if w := lipgloss.Width(l); w != 30 {
+			t.Errorf("fila %d mide %d celdas, quiero 30", i, w)
+		}
 	}
 }

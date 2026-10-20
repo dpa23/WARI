@@ -1204,9 +1204,11 @@ func (m Panel) listLine(i int) string {
 			avail -= lipgloss.Width(turnsPart)
 		}
 
+		// El uso (tokens) importa más que el dinero: con suscripción el costo
+		// es 0 o no se reporta, y la cuota se gasta en tokens.
 		costPart := ""
-		if avail >= 8 {
-			costPart = " " + st.Render(fmt.Sprintf("US$%.2f", v.snap.CostUSD))
+		if tok := compactTokens(v.snap.Tokens) + " tok"; avail >= lipgloss.Width(tok)+1 {
+			costPart = " " + st.Render(tok)
 			avail -= lipgloss.Width(costPart)
 		}
 
@@ -1238,7 +1240,9 @@ func (m Panel) listLine(i int) string {
 		bldr.WriteString(st.Render(" "))
 		bldr.WriteString(barSt.Render(bar))
 	}
-	bldr.WriteString(st.Render(fmt.Sprintf(" · US$%.4f", v.snap.CostUSD)))
+	if v.snap.CostUSD > 0 {
+		bldr.WriteString(st.Render(fmt.Sprintf(" · US$%.4f", v.snap.CostUSD)))
+	}
 	if m.alert.id != 0 && v.id == m.alert.id {
 		bldr.WriteString(st.Render(" ⚠ " + cmp.Or(m.alert.label, "choque")))
 	}

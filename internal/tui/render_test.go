@@ -57,3 +57,12 @@ func TestAdaptiveColorsRender(t *testing.T) {
 		}
 	}
 }
+
+func TestFormatUsageShowsTokensFirst(t *testing.T) {
+	if got := formatUsage(950, 12_345, 0); got != "↑950 ↓12.3k tok" {
+		t.Errorf("sin costo: %q", got)
+	}
+	if got := formatUsage(1_500_000, 2, 0.01); got != "↑1.5M ↓2 tok · US$0.0100" {
+		t.Errorf("con costo: %q", got)
+	}
+}

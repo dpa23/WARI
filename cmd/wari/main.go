@@ -58,9 +58,16 @@ func main() {
 	lspOn := flag.Bool("lsp", false,
 		"enciende el LSP (jdtls, kotlin-language-server, csharp-ls si están en el PATH) para completar, ir a definición y diagnósticos; "+
 			"por omisión está apagado y se enciende con la acción toggle_lsp (alt+l)")
-	icons := flag.Bool("icons", false, "iconos de archivo en el árbol (requiere una Nerd Font en la terminal)")
+	iconsFlag := flag.String("icons", envOr("WARI_ICONS", "auto"),
+		"iconos de archivo en el árbol: auto (Nerd Font si la terminal la trae, si no emoji), nerd (requiere una Nerd Font), emoji u off; también WARI_ICONS")
 	showVersion := flag.Bool("version", false, "muestra la versión y sale")
 	flag.Parse()
+
+	icons, err := filetree.ParseIconMode(*iconsFlag, os.Getenv)
+	if err != nil {
+		fmt.Fprintln(os.Stderr, "wari:", err)
+		os.Exit(2)
+	}
 
 	perms := agent.PermissionAsk
 	if *acceptEdits {
@@ -94,7 +101,7 @@ func main() {
 		}
 		budget := orch.Budget{MaxTurns: *maxTurns, MaxDuration: *maxTime, MaxTokens: *maxTokens}
 		loops := orch.LoopLimits{SameTool: *loopCalls, IdleTurns: *loopTurns}
-		os.Exit(runTUI(newAgent, agent.Task{Model: *model, Permissions: perms}, root, file, *maxActive, budget, loops, newIndex(root, *noIndex, *useCtags), *lspOn, *icons))
+		os.Exit(runTUI(newAgent, agent.Task{Model: *model, Permissions: perms}, root, file, *maxActive, budget, loops, newIndex(root, *noIndex, *useCtags), *lspOn, icons))
 	}
 }
 
@@ -163,7 +170,7 @@ func loadKeymap(root string) config.Keymap {
 // bucle de eventos), no debe quedar ningún agente vivo: el defer cierra el
 // supervisor, que cierra a cada agente y mata su turno en curso con todos sus
 // descendientes.
-func runTUI(newAgent func() agent.Agent, task agent.Task, root, file string, maxActive int, budget orch.Budget, loops orch.LoopLimits, idx *index.Index, lspOn, icons bool) int {
+func runTUI(newAgent func() agent.Agent, task agent.Task, root, file string, maxActive int, budget orch.Budget, loops orch.LoopLimits, idx *index.Index, lspOn bool, icons filetree.IconMode) int {
 	sup := orch.New(maxActive)
 	defer sup.Close()
 	sup.SetLoopLimits(loops)
@@ -355,4 +362,12 @@ func runTurn(c agent.Agent, task agent.Task, killAfter time.Duration) int {
 	}
 	// El canal se cerró sin Done: el turno fue terminado.
 	return 2
+}
+
+// envOr devuelve la variable de entorno name o def si está vacía.
+func envOr(name, def string) string {
+	if v := os.Getenv(name); v != "" {
+		return v
+	}
+	return def
 }

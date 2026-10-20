@@ -851,3 +851,24 @@ func TestStatusBarShowsAgentsAndGlobalStop(t *testing.T) {
 		t.Error("falta el aviso de la parada global")
 	}
 }
+
+func TestLeaderKeyActsAsAlt(t *testing.T) {
+	root := project(t)
+	m := newLayout(t, Config{Root: root, File: filepath.Join(root, "notes.txt")}, 120, 30)
+	m, _ = send(m, press('e', tea.ModCtrl))
+	if !m.leaderArmed {
+		t.Fatal("ctrl+e debía armar la tecla líder")
+	}
+	m, _ = send(m, text("1")) // equivale a alt+1: foco en el árbol
+	if m.leaderArmed || m.focus != focusTree {
+		t.Errorf("líder+1: armada=%v foco=%v", m.leaderArmed, m.focus)
+	}
+	m, _ = send(m, press('e', tea.ModCtrl), press(tea.KeyEscape, 0))
+	if m.leaderArmed {
+		t.Error("esc debía desarmar la tecla líder")
+	}
+	m, _ = send(m, text("2")) // sin líder: no cambia el foco
+	if m.focus == focusEditor {
+		t.Error("'2' sin líder no debía mover el foco")
+	}
+}
