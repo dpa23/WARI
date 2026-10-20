@@ -134,7 +134,7 @@ func newInput(km KeyMap) textarea.Model {
 	ta := textarea.New()
 	ta.ShowLineNumbers = false
 	ta.Prompt = "│ "
-	ta.Placeholder = "Escribe un mensaje…"
+	ta.Placeholder = " Escribe un mensaje…" // el cursor cae sobre el espacio, no sobre la "E"
 	ta.SetVirtualCursor(false)
 	ta.KeyMap.InsertNewline = km.Newline
 	st := textarea.DefaultDarkStyles()

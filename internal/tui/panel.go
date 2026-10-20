@@ -1364,7 +1364,7 @@ func (m Panel) statusLine() string {
 	if m.quitting || (v.hasSnap && v.snap.State == orch.Running) {
 		lead = m.spin.View() + " "
 	}
-	if m.rm != nil {
+	if m.rm != nil && !m.DiffOpen() && m.inH == 0 {
 		parts := []string{"⚠ reversión pendiente: [Enter] confirmar · [Esc] cancelar"}
 		st := m.styles.warn
 		return st.MaxWidth(max(m.width, 1)).Render(lead + strings.Join(parts, " · "))
@@ -1452,7 +1452,7 @@ func (m Panel) Body() string {
 	if m.statH > 0 {
 		rows = append(rows, m.statusLine())
 	}
-	if m.rm != nil {
+	if m.panelModal() {
 		rows = append(rows, m.renderRevertModal(m.width, m.inH)...)
 	} else {
 		rows = append(rows, m.input.View())
@@ -1472,7 +1472,7 @@ func (m Panel) View() tea.View {
 // Cursor devuelve la posición del cursor relativa a la esquina superior
 // izquierda del panel, o nil si no tiene foco.
 func (m Panel) Cursor() *tea.Cursor {
-	if m.blurred {
+	if m.blurred || m.panelModal() {
 		return nil
 	}
 	c := m.input.Cursor()
@@ -1639,10 +1639,15 @@ func (m Panel) revert(kind string) (Panel, tea.Cmd) {
 	m.armed = kind
 	m.armedText = fmt.Sprintf("¿%s? [Enter] confirmar · [Esc] cancelar", what)
 	m.armedShort = fmt.Sprintf("¿%s? [Enter]/[Esc]", short)
-	v.add(kindWarn, m.armedText)
 	m.refresh()
 	return m, nil
 }
+
+// panelModal indica si el cuadro de confirmación de reversión se dibuja en el
+// panel de agentes. Con el diff abierto en el editor lo dibuja la vista del
+// diff: dos cuadros a la vez, más el aviso en la línea de estado y en el
+// historial, eran cuatro avisos para una sola acción.
+func (m Panel) panelModal() bool { return m.rm != nil && !m.DiffOpen() }
 
 // confirmRevert ejecuta la reversión confirmada por el usuario con Enter.
 func (m Panel) confirmRevert() (Panel, tea.Cmd) {

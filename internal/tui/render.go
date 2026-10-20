@@ -32,10 +32,10 @@ type entry struct {
 }
 
 // maxSummary es el largo máximo, en runas, del resumen de una herramienta.
-const maxSummary = 80
+const maxSummary = 240
 
 // summaryPrefix es cuántos bytes del Input se miran para resumirlo.
-const summaryPrefix = 512
+const summaryPrefix = 1024
 
 // styles agrupa los estilos de lipgloss del panel.
 type styles struct {

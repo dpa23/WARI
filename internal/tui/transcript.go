@@ -51,14 +51,14 @@ func (m *transcript) applyEvent(ev agent.Event) {
 			m.asstOpen = true
 		}
 		m.asst.WriteString(ev.Text)
-		m.entries[len(m.entries)-1].text = m.asst.String()
+		m.entries[len(m.entries)-1].text = m.relPaths(m.asst.String())
 	case agent.ToolCall:
-		m.add(kindTool, "⚙ "+toolSummary(ev.Name, ev.Input))
+		m.add(kindTool, "⚙ "+m.relPaths(toolSummary(ev.Name, ev.Input)))
 	case agent.FileEditProposed:
 		m.add(kindEdit, "✎ "+m.display(ev.Path))
 	case agent.NeedsApproval:
 		if ev.Denied {
-			m.add(kindDenied, "⛔ denegado: "+toolSummary(ev.Tool, ev.Input))
+			m.add(kindDenied, "⛔ denegado: "+m.relPaths(toolSummary(ev.Tool, ev.Input)))
 		}
 	case agent.Usage:
 		m.tokensIn += ev.InputTokens
@@ -98,6 +98,16 @@ func (m *transcript) display(p string) string {
 		return rel
 	}
 	return p
+}
+
+// relPaths quita el prefijo de la raíz del proyecto de las rutas que aparecen
+// en un texto (también en enlaces file://), porque ocupaban dos o tres líneas.
+func (m *transcript) relPaths(s string) string {
+	if m.root == "" || m.root == "/" {
+		return s
+	}
+	root := strings.TrimSuffix(m.root, "/") + "/"
+	return strings.ReplaceAll(strings.ReplaceAll(s, "file://"+root, ""), root, "")
 }
 
 // add agrega una entrada y cierra el mensaje del asistente en curso.
