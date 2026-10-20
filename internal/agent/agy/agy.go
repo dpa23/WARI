@@ -16,7 +16,9 @@
 package agy
 
 import (
+	"context"
 	"os/exec"
+	"strings"
 	"sync"
 
 	"github.com/dpa23/wari/internal/agent"
@@ -116,6 +118,36 @@ func Info() agent.Info {
 		},
 		ModelHint: "ids de `agy models`",
 		Efforts:   []string{"low", "medium", "high", "xhigh", "max"},
+		Discover:  discoverModels,
 		PlanNote:  "en agy planear es una orden al modelo y no impide escribir en el proyecto (verificado con agy 1.4.2)",
 	}
+}
+
+// discoverModels consulta `agy models` (la lista depende de la cuenta).
+func discoverModels(ctx context.Context) ([]agent.ModelOption, error) {
+	lines, err := turn.Lines(ctx, "agy", "models")
+	if err != nil {
+		return nil, err
+	}
+	return parseModels(lines, Info().Models), nil
+}
+
+// parseModels interpreta las líneas "id<TAB>nombre" de `agy models` (las demás,
+// como "Fetching available models...", se ignoran). Las notas de potencia y
+// cuota se toman de fallback cuando el id es conocido.
+func parseModels(lines []string, fallback []agent.ModelOption) []agent.ModelOption {
+	notes := make(map[string]string, len(fallback))
+	for _, o := range fallback {
+		notes[o.ID] = o.Note
+	}
+	var out []agent.ModelOption
+	for _, line := range lines {
+		id, label, ok := strings.Cut(line, "\t")
+		if !ok || strings.TrimSpace(id) == "" {
+			continue
+		}
+		id = strings.TrimSpace(id)
+		out = append(out, agent.ModelOption{ID: id, Label: strings.TrimSpace(label), Note: notes[id]})
+	}
+	return out
 }

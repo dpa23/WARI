@@ -54,6 +54,12 @@ type (
 		// git indica que la base es git HEAD y no un checkpoint.
 		git bool
 	}
+	// modelsMsg es el resultado de consultar los modelos de una CLI.
+	modelsMsg struct {
+		name string
+		opts []agent.ModelOption
+		err  error
+	}
 	// revertMsg es el resultado de revertir (archivo, turno o agente).
 	revertMsg struct {
 		id   orch.ID
@@ -186,9 +192,15 @@ type Panel struct {
 	promptHist []string
 	histPos    int
 	histDraft  string
-	gate       *gateView
-	gateEdit   bool
-	gateDraft  string
+	// discovered guarda los modelos que cada CLI dijo tener; discovering marca
+	// las consultas en curso y discoverErr las que fallaron (se usa la lista
+	// de respaldo del adaptador).
+	discovered  map[string][]agent.ModelOption
+	discovering map[string]bool
+	discoverErr map[string]string
+	gate        *gateView
+	gateEdit    bool
+	gateDraft   string
 }
 
 var _ tea.Model = Panel{}
@@ -198,17 +210,20 @@ var _ tea.Model = Panel{}
 func NewPanel(cfg Config) Panel {
 	km := NewKeyMap(cfg.Keymap)
 	m := Panel{
-		cfg:       cfg,
-		keys:      km,
-		styles:    defaultStyles(),
-		sup:       cfg.Supervisor,
-		vp:        newViewport(),
-		input:     newInput(km),
-		spin:      newSpinner(),
-		byID:      make(map[orch.ID]*agentView),
-		listening: cfg.Supervisor != nil,
-		histPos:   -1,
-		pipe:      cfg.Pipeline,
+		cfg:         cfg,
+		keys:        km,
+		styles:      defaultStyles(),
+		sup:         cfg.Supervisor,
+		vp:          newViewport(),
+		input:       newInput(km),
+		spin:        newSpinner(),
+		byID:        make(map[orch.ID]*agentView),
+		listening:   cfg.Supervisor != nil,
+		histPos:     -1,
+		discovered:  make(map[string][]agent.ModelOption),
+		discovering: make(map[string]bool),
+		discoverErr: make(map[string]string),
+		pipe:        cfg.Pipeline,
 	}
 	if m.pipe != nil {
 		m.ps = m.pipe.Snapshot()
@@ -282,6 +297,9 @@ func (m Panel) dispatch(msg tea.Msg) (Panel, tea.Cmd) {
 			m.refresh()
 		}
 		return m, nil
+
+	case modelsMsg:
+		return m.onModels(msg), nil
 
 	case diffMsg:
 		if m.dv != nil && m.dv.v.id == msg.id && m.dv.edit == msg.edit {
@@ -512,7 +530,9 @@ func (m Panel) newAgent() (Panel, tea.Cmd) {
 	m.layout(m.width, m.height)
 	m.selectView(len(m.views) - 1)
 	if !v.configured {
-		m = m.openForm(v, "", true)
+		var cmd tea.Cmd
+		m, cmd = m.openForm(v, "", true)
+		return m, cmd
 	}
 	return m, nil
 }
@@ -552,8 +572,8 @@ func (m Panel) send() (Panel, tea.Cmd) {
 	text := strings.TrimSpace(m.input.Value())
 	v := m.cur()
 	if strings.HasPrefix(text, "/") {
-		if m2, handled := m.slash(text); handled {
-			return m2, nil
+		if m2, cmd, handled := m.slash(text); handled {
+			return m2, cmd
 		}
 	}
 	if text == "" || m.sup == nil || v.inFlight() {
@@ -561,7 +581,7 @@ func (m Panel) send() (Panel, tea.Cmd) {
 	}
 	if v.id == 0 && !v.configured {
 		m.input.Reset()
-		return m.openForm(v, text, false), nil
+		return m.openForm(v, text, false)
 	}
 	if v.id == 0 {
 		if v.ag == nil {

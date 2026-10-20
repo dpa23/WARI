@@ -102,3 +102,22 @@ func TestArgsEffort(t *testing.T) {
 		t.Error("sin Effort no debe haber --effort")
 	}
 }
+
+func TestParseModels(t *testing.T) {
+	lines := []string{
+		"Fetching available models...",
+		"gemini-3.8-flash-low\tGemini 3.8 Flash (Low)",
+		"modelo-nuevo\tModelo Nuevo",
+		"sin-tab",
+	}
+	got := parseModels(lines, Info().Models)
+	if len(got) != 2 {
+		t.Fatalf("parseModels = %+v", got)
+	}
+	if got[0].ID != "gemini-3.8-flash-low" || got[0].Label != "Gemini 3.8 Flash (Low)" || got[0].Note == "" {
+		t.Errorf("un id conocido conserva su nota: %+v", got[0])
+	}
+	if got[1].ID != "modelo-nuevo" || got[1].Note != "" {
+		t.Errorf("un modelo nuevo aparece sin nota: %+v", got[1])
+	}
+}

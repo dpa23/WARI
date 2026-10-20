@@ -84,6 +84,9 @@ type Info struct {
 	// PlanNote y EditNote avisan de lo que la CLI no garantiza al elegir
 	// "solo planear" o "editar sin preguntar"; vacío si cumple lo que dice.
 	PlanNote, EditNote string
+	// Discover consulta a la CLI qué modelos tiene (p. ej. `agy models`); nil si
+	// no sabe listarlos. Models queda como lista de respaldo si falla.
+	Discover func(ctx context.Context) ([]ModelOption, error)
 	// Missing indica que el ejecutable no está en el PATH; lo rellena quien
 	// arma el registro, no el adaptador.
 	Missing bool

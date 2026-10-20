@@ -1,6 +1,7 @@
 package tui
 
 import (
+	"context"
 	"fmt"
 	"sort"
 	"strings"
@@ -126,7 +127,7 @@ func (f *agentForm) chosenModel() string {
 
 // openForm abre el formulario para v. created indica que la vista es nueva (Esc
 // la descarta); pending es el mensaje que se envía al confirmar.
-func (m Panel) openForm(v *agentView, pending string, created bool) Panel {
+func (m Panel) openForm(v *agentView, pending string, created bool) (Panel, tea.Cmd) {
 	names := make([]string, 0, len(m.cfg.Infos))
 	for n := range m.cfg.Infos {
 		names = append(names, n)
@@ -134,7 +135,11 @@ func (m Panel) openForm(v *agentView, pending string, created bool) Panel {
 	sort.Strings(names)
 	f := &agentForm{v: v, created: created, pending: pending, focus: fieldModel}
 	for i, n := range names {
-		f.infos = append(f.infos, m.cfg.Infos[n])
+		info := m.cfg.Infos[n]
+		if opts := m.discovered[n]; len(opts) > 0 {
+			info.Models = opts
+		}
+		f.infos = append(f.infos, info)
 		if n == v.cli {
 			f.cli = i
 		}
@@ -146,6 +151,57 @@ func (m Panel) openForm(v *agentView, pending string, created bool) Panel {
 		}
 	}
 	m.form = f
+	return m, m.discoverCmd(f.info())
+}
+
+// discoverCmd consulta los modelos de la CLI si sabe listarlos y aún no se
+// consultaron. Los resultados llegan como modelsMsg.
+func (m Panel) discoverCmd(info agent.Info) tea.Cmd {
+	if info.Discover == nil || info.Missing || m.discovering[info.Name] || len(m.discovered[info.Name]) > 0 {
+		return nil
+	}
+	m.discovering[info.Name] = true
+	discover, name := info.Discover, info.Name
+	return func() tea.Msg {
+		opts, err := discover(context.Background())
+		return modelsMsg{name: name, opts: opts, err: err}
+	}
+}
+
+// onModels guarda los modelos que dijo una CLI y, con el formulario abierto,
+// los pone en la lista conservando el modelo ya elegido si sigue existiendo.
+func (m Panel) onModels(msg modelsMsg) Panel {
+	delete(m.discovering, msg.name)
+	if msg.err != nil || len(msg.opts) == 0 {
+		reason := "sin modelos"
+		if msg.err != nil {
+			reason = msg.err.Error()
+		}
+		m.discoverErr[msg.name] = reason
+		return m
+	}
+	delete(m.discoverErr, msg.name)
+	m.discovered[msg.name] = msg.opts
+	if f := m.form; f != nil {
+		for i := range f.infos {
+			if f.infos[i].Name != msg.name {
+				continue
+			}
+			prev := ""
+			if i == f.cli && f.model >= 0 && f.model < len(f.infos[i].Models) {
+				prev = f.infos[i].Models[f.model].ID
+			}
+			f.infos[i].Models = msg.opts
+			if i == f.cli && prev != "" {
+				f.model = -1
+				for j, o := range msg.opts {
+					if o.ID == prev {
+						f.model = j
+					}
+				}
+			}
+		}
+	}
 	return m
 }
 
@@ -162,10 +218,20 @@ func (m Panel) formKey(msg tea.KeyPressMsg) (Panel, tea.Cmd) {
 		f.focus = (f.focus + numFields - 1) % numFields
 	case "down", "tab":
 		f.focus = (f.focus + 1) % numFields
-	case "left":
-		f.shift(-1)
-	case "right":
-		f.shift(1)
+	case "left", "right":
+		before := f.cli
+		if s == "left" {
+			f.shift(-1)
+		} else {
+			f.shift(1)
+		}
+		if f.focus == fieldCLI && f.cli != before {
+			if opts := m.discovered[f.info().Name]; len(opts) > 0 {
+				f.infos[f.cli].Models = opts
+				f.resetModel()
+			}
+			return m, m.discoverCmd(f.info())
+		}
 	case "backspace":
 		if f.focus == fieldModel && f.customActive() && len(f.custom) > 0 {
 			f.custom = f.custom[:len(f.custom)-1]
@@ -276,6 +342,9 @@ func (m Panel) formRows(w, h int) []string {
 		return "  " + text
 	}
 	model := "— elige un modelo —"
+	if m.discovering[info.Name] {
+		model = "— buscando los modelos de " + info.Name + "… —"
+	}
 	switch {
 	case f.customActive():
 		model = "otro: " + string(f.custom)
@@ -285,12 +354,15 @@ func (m Panel) formRows(w, h int) []string {
 		if info.ModelHint != "" {
 			model += "  (" + info.ModelHint + ")"
 		}
-	case f.model >= 0:
+	case f.model >= 0 && f.model < len(info.Models):
 		o := info.Models[f.model]
 		model = o.Label
 		if o.Note != "" {
 			model += " · " + o.Note
 		}
+	}
+	if e := m.discoverErr[info.Name]; e != "" && !m.discovering[info.Name] {
+		model += "  [lista de respaldo]"
 	}
 	effort := "predeterminada de la CLI"
 	switch {

@@ -31,7 +31,9 @@
 package opencode
 
 import (
+	"context"
 	"os/exec"
+	"strings"
 	"sync"
 
 	"github.com/dpa23/wari/internal/agent"
@@ -138,5 +140,22 @@ func Args(t agent.Task) []string {
 // equivalente es la variante, que va dentro del modelo tras "#").
 func Info() agent.Info {
 	return agent.Info{Name: "opencode", ModelHint: "proveedor/modelo o proveedor/modelo#variante",
+		Discover: discoverModels,
 		EditNote: "las ediciones se aplican antes de que WARI las vea: sin checkpoint previo ni aviso de choque anticipado"}
+}
+
+// discoverModels consulta `opencode models`: una línea "proveedor/modelo" por
+// modelo disponible con la configuración del usuario.
+func discoverModels(ctx context.Context) ([]agent.ModelOption, error) {
+	lines, err := turn.Lines(ctx, "opencode", "models")
+	if err != nil {
+		return nil, err
+	}
+	var out []agent.ModelOption
+	for _, line := range lines {
+		if strings.Contains(line, "/") && !strings.ContainsAny(line, " \t") {
+			out = append(out, agent.ModelOption{ID: line, Label: line})
+		}
+	}
+	return out, nil
 }

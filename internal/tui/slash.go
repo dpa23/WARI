@@ -5,6 +5,8 @@ import (
 	"path/filepath"
 	"strings"
 
+	tea "charm.land/bubbletea/v2"
+
 	"github.com/dpa23/wari/internal/agent"
 	"github.com/dpa23/wari/internal/config"
 	"github.com/dpa23/wari/internal/tui/theme"
@@ -23,7 +25,7 @@ const slashHelp = "/config (CLI, modelo, potencia) Â· /theme [auto|dark|light] Â
 
 // slash atiende un comando "/" del chat. handled es false si text no es uno de
 // los comandos de WARI.
-func (m Panel) slash(text string) (Panel, bool) {
+func (m Panel) slash(text string) (Panel, tea.Cmd, bool) {
 	v := m.cur()
 	switch strings.Fields(text)[0] {
 	case "/help":
@@ -49,13 +51,14 @@ func (m Panel) slash(text string) (Panel, bool) {
 			break
 		}
 		m.input.Reset()
-		return m.openForm(v, "", false), true
+		m, cmd := m.openForm(v, "", false)
+		return m, cmd, true
 	default:
-		return m, false
+		return m, nil, false
 	}
 	m.input.Reset()
 	m.refreshTo(true)
-	return m, true
+	return m, nil, true
 }
 
 // slashTheme atiende /theme: sin argumento muestra el tema vigente; con

@@ -1,6 +1,8 @@
 package tui
 
 import (
+	"context"
+	"errors"
 	"strings"
 	"testing"
 
@@ -268,4 +270,65 @@ func entryTexts(v *agentView) []string {
 		out = append(out, e.text)
 	}
 	return out
+}
+
+func TestDiscoveredModelsReplaceFallbackAndKeepChoice(t *testing.T) {
+	h, _ := formHarness(t, agent.Task{Dir: "/p"})
+	calls := 0
+	info := h.m.cfg.Infos["claude"]
+	info.Discover = func(context.Context) ([]agent.ModelOption, error) {
+		calls++
+		return []agent.ModelOption{{ID: "nuevo-1", Label: "Nuevo 1"}, {ID: "opus", Label: "Opus real"}}, nil
+	}
+	h.m.cfg.Infos["claude"] = info
+
+	cmd := h.update(tea.KeyPressMsg{Code: tea.KeyEnter}) // sin texto: nada
+	_ = cmd
+	h.m.input.SetValue("hola")
+	m, cmd := h.m.send()
+	h.m = m
+	if h.m.form == nil || cmd == nil {
+		t.Fatalf("abrir el formulario debe lanzar la consulta de modelos: form=%v cmd=%v", h.m.form, cmd != nil)
+	}
+	if rows := strings.Join(h.m.formRows(100, 12), "\n"); !strings.Contains(rows, "buscando los modelos de claude") {
+		t.Errorf("debe avisar que busca:\n%s", rows)
+	}
+	h.press(keyRight) // Sonnet (respaldo) -> índice 0
+	h.press(keyRight) // Opus (respaldo) -> índice 1
+	h.update(cmd())
+	if calls != 1 {
+		t.Fatalf("Discover llamado %d veces", calls)
+	}
+	f := h.m.form
+	if len(f.info().Models) != 2 || f.info().Models[0].ID != "nuevo-1" {
+		t.Fatalf("la lista descubierta debe reemplazar la de respaldo: %+v", f.info().Models)
+	}
+	if f.chosenModel() != "opus" {
+		t.Errorf("el modelo elegido (opus) sigue existiendo y se conserva: %q", f.chosenModel())
+	}
+	// Una segunda apertura usa la lista guardada y no vuelve a consultar.
+	h.press(keyEsc)
+	m, cmd = h.m.openForm(h.m.cur(), "", false)
+	h.m = m
+	if cmd != nil || h.m.form.info().Models[0].ID != "nuevo-1" {
+		t.Errorf("la segunda apertura debe usar la caché: cmd=%v", cmd != nil)
+	}
+}
+
+func TestDiscoverFailureKeepsFallback(t *testing.T) {
+	h, _ := formHarness(t, agent.Task{Dir: "/p"})
+	info := h.m.cfg.Infos["claude"]
+	info.Discover = func(context.Context) ([]agent.ModelOption, error) { return nil, errors.New("sin red") }
+	h.m.cfg.Infos["claude"] = info
+	h.m.input.SetValue("hola")
+	m, cmd := h.m.send()
+	h.m = m
+	h.update(cmd())
+	f := h.m.form
+	if len(f.info().Models) != 2 || f.info().Models[0].ID != "sonnet" {
+		t.Errorf("con error se queda la lista de respaldo: %+v", f.info().Models)
+	}
+	if rows := strings.Join(h.m.formRows(100, 12), "\n"); !strings.Contains(rows, "lista de respaldo") {
+		t.Errorf("debe avisar del respaldo:\n%s", rows)
+	}
 }

@@ -327,7 +327,7 @@ Las CLIs conservan el último modelo que se usó, y lanzar un agente sin elegir 
 | Campo | Qué elige |
 |---|---|
 | CLI | `claude`, `agy`, `codex` u `opencode`. |
-| Modelo | Uno de los sugeridos (con una nota de potencia o cuota) o uno escrito a mano. **Obligatorio.** |
+| Modelo | Uno de la lista o uno escrito a mano. **Obligatorio.** La lista la pide WARI a la propia CLI al abrir el formulario cuando esta sabe listarla (`agy models`, `opencode models`); `claude` y `codex` no tienen ese comando y usan una lista corta de respaldo (alias de `claude --help`). Si la consulta falla, se usa el respaldo y el formulario lo avisa. |
 | Potencia | El esfuerzo (`low` … `max`) en `claude` y `agy`, que lo admiten. En `codex` y `opencode` no hay un flag verificado y se ignora. |
 | Permisos | Preguntar (la CLI sin pantalla niega las ediciones), editar sin preguntar, o solo planear y leer. |
 | Rol | Trabajador, u Orquestador: planifica y reparte, y solo lee. Se le indica que siga la skill `.agents/skills/wari-orquestador`. |

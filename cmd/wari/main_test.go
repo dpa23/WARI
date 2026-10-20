@@ -79,3 +79,20 @@ func TestNewIndex(t *testing.T) {
 		t.Error("sin ctags debía seguir con el indexador propio")
 	}
 }
+
+// Cada CLI que sabe listar sus modelos debe tener Discover conectado en su Info;
+// agy y opencode lo tienen, claude y codex no (no hay comando que los liste).
+func TestAgentInfosDiscoverWiring(t *testing.T) {
+	for name, wantDiscover := range map[string]bool{"agy": true, "opencode": true, "claude": false, "codex": false} {
+		info, ok := agentInfos[name]
+		if !ok {
+			t.Fatalf("falta la Info de %s", name)
+		}
+		if got := info.Discover != nil; got != wantDiscover {
+			t.Errorf("%s: Discover conectado = %v, quería %v", name, got, wantDiscover)
+		}
+		if info.Name != name {
+			t.Errorf("%s: Info.Name = %q", name, info.Name)
+		}
+	}
+}
