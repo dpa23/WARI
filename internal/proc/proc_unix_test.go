@@ -6,6 +6,7 @@ import (
 	"bufio"
 	"context"
 	"errors"
+	"fmt"
 	"io"
 	"os/exec"
 	"strings"
@@ -343,4 +344,87 @@ func TestNoSignalableMembers(t *testing.T) {
 			t.Errorf("%s: noSignalableMembers = %v, quiero %v", tt.name, got, tt.want)
 		}
 	}
+}
+
+// readUntil lee del PTY hasta ver want o vencer el plazo.
+func readUntil(t *testing.T, r io.Reader, want string) string {
+	t.Helper()
+	var sb strings.Builder
+	buf := make([]byte, 1024)
+	done := make(chan struct{})
+	go func() {
+		defer close(done)
+		for !strings.Contains(sb.String(), want) {
+			n, err := r.Read(buf)
+			sb.Write(buf[:n])
+			if err != nil {
+				return
+			}
+		}
+	}()
+	select {
+	case <-done:
+	case <-time.After(5 * time.Second):
+	}
+	return sb.String()
+}
+
+func TestPTYInteractiveAndResize(t *testing.T) {
+	p, err := Start(context.Background(), Spec{
+		Path: "sh", Args: []string{"-c", "echo listo; read x; echo \"eco:$x\"; stty size"},
+		PTY: &PTYSize{Cols: 80, Rows: 24},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer p.Kill()
+	if out := readUntil(t, p.Stdout(), "listo"); !strings.Contains(out, "listo") {
+		t.Fatalf("salida = %q", out)
+	}
+	if err := p.Resize(100, 30); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := p.Stdin().Write([]byte("hola\n")); err != nil {
+		t.Fatal(err)
+	}
+	out := readUntil(t, p.Stdout(), "30 100")
+	if !strings.Contains(out, "eco:hola") || !strings.Contains(out, "30 100") {
+		t.Fatalf("el programa debe recibir la entrada y el tamaño nuevo (filas columnas): %q", out)
+	}
+	if err := p.Wait(); err != nil {
+		t.Errorf("Wait = %v", err)
+	}
+	plain, _ := Start(context.Background(), Spec{Path: "sh", Args: []string{"-c", "true"}})
+	if err := plain.Resize(10, 10); !errors.Is(err, ErrNoPTY) {
+		t.Errorf("Resize sin PTY = %v", err)
+	}
+}
+
+func TestPTYKillTakesDescendantsToo(t *testing.T) {
+	p, err := Start(context.Background(), Spec{
+		Path: "sh", Args: []string{"-c", "sleep 60 & echo hijo:$!; wait"},
+		PTY: &PTYSize{Cols: 80, Rows: 24}, KillGrace: 200 * time.Millisecond,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	out := readUntil(t, p.Stdout(), "\n")
+	for i := 0; i < 20 && !strings.Contains(out, "hijo:"); i++ {
+		out += readUntil(t, p.Stdout(), "hijo:")
+	}
+	var pid int
+	if _, err := fmt.Sscanf(out[strings.Index(out, "hijo:"):], "hijo:%d", &pid); err != nil || pid == 0 {
+		t.Fatalf("pid del descendiente no leído de %q: %v", out, err)
+	}
+	if err := p.Kill(); err != nil {
+		t.Fatal(err)
+	}
+	deadline := time.Now().Add(3 * time.Second)
+	for time.Now().Before(deadline) {
+		if err := syscall.Kill(pid, 0); errors.Is(err, syscall.ESRCH) {
+			return
+		}
+		time.Sleep(50 * time.Millisecond)
+	}
+	t.Fatalf("el descendiente %d sigue vivo tras Kill", pid)
 }

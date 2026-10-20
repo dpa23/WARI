@@ -29,6 +29,9 @@ const stderrTail = 8 << 10
 // ErrNotRunning indica que el grupo ya no tiene procesos.
 var ErrNotRunning = errors.New("proc: el grupo ya terminó")
 
+// ErrNoPTY indica que el proceso no se lanzó con Spec.PTY.
+var ErrNoPTY = errors.New("proc: el proceso no usa un PTY")
+
 // Spec describe el comando a lanzar.
 type Spec struct {
 	Path string
@@ -43,7 +46,15 @@ type Spec struct {
 	// Stdin crea un pipe para escribir en la entrada del proceso (Process.Stdin);
 	// sin él, stdin es /dev/null.
 	Stdin bool
+	// PTY lanza el comando en un terminal virtual (para correr una CLI
+	// interactiva de verdad): Stdout es el lado maestro, de donde sale lo que
+	// el programa dibuja, y Stdin escribe en él; no hay stderr aparte. El hijo
+	// sigue siendo líder de su propio grupo (la sesión nueva del PTY).
+	PTY *PTYSize
 }
+
+// PTYSize es el tamaño inicial del terminal virtual, en celdas.
+type PTYSize struct{ Cols, Rows uint16 }
 
 // Process es un proceso lanzado como líder de su propio grupo. Stdin es
 // /dev/null salvo que Spec.Stdin lo pida, stdout se lee con Stdout y de
@@ -61,6 +72,7 @@ type Process struct {
 	stderr *os.File
 	tail   *tailBuffer
 	grace  time.Duration
+	pty    *os.File // lado maestro si se lanzó con Spec.PTY
 
 	done    chan struct{}
 	waitErr error
@@ -73,6 +85,9 @@ type Process struct {
 func Start(ctx context.Context, spec Spec) (*Process, error) {
 	if spec.Path == "" {
 		return nil, errors.New("proc: falta Path")
+	}
+	if spec.PTY != nil {
+		return startPTY(ctx, spec)
 	}
 	// Pipes propios en lugar de StdoutPipe o un io.Writer: así Wait vuelve
 	// en cuanto el líder sale, sin esperar a lectores ni a restos del grupo.
@@ -247,7 +262,9 @@ func (p *Process) Kill() error {
 // desbloquear a un lector cuando un descendiente que escapó del grupo
 // mantiene el pipe abierto.
 func (p *Process) Close() error {
-	p.stderr.Close()
+	if p.stderr != nil {
+		p.stderr.Close()
+	}
 	return p.stdout.Close()
 }
 
