@@ -41,6 +41,20 @@ func NeedsQuery() bool {
 	return !resolved
 }
 
+// Apply aplica la preferencia de los ajustes ("dark" o "light"); "auto" y lo
+// desconocido dejan la detección. WARI_THEME, si existe, manda sobre ella.
+func Apply(pref string) {
+	if os.Getenv("WARI_THEME") != "" {
+		return
+	}
+	switch strings.ToLower(pref) {
+	case "dark":
+		SetDark(true)
+	case "light":
+		SetDark(false)
+	}
+}
+
 // SetDark fija el valor (respuesta de la terminal, pruebas).
 func SetDark(v bool) {
 	mu.Lock()

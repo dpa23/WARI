@@ -143,6 +143,10 @@ Formato: fecha · decisión · motivo · alternativas descartadas.
 - **Orquestador**: es un rol por agente en el formulario. Corre en modo planear (solo lee) y su primer mensaje lleva una instrucción para seguir `.agents/skills/wari-orquestador/SKILL.md`, que entrega un plan de reparto con un prompt por trabajador. WARI no reparte solo: el usuario crea los trabajadores con sus prompts. `.agents/` es de los agentes y no mezcla la configuración de Claude Code (`.claude/`).
 - **Panel**: bajo el agente seleccionado hay una fila de detalle (CLI, modelo, potencia, permisos, rol). Comandos del chat: `/config`, `/usage`, `/help`.
 
+## 2026-10-20 · Ajustes de tema y teclas, y revisión de las propuestas de agy
+- **settings.json** (usuario y `.wari/` del proyecto): `theme` (auto|dark|light) e `icons`. Prioridad del tema: `WARI_THEME` > proyecto > usuario > `COLORFGBG` > consulta a la terminal. `/theme` en el chat lo cambia y lo guarda. Las teclas siguen en `keys.json` (`wari -keys`, `wari -keys-init`, `/keys`).
+- **Propuestas de agy verificadas**: alt+1/2/3, el diff en el panel central y las marcas ✎ del árbol ya existían (la propuesta estaba desactualizada). Eran ciertas y se hicieron: historial de prompts con ↑/↓, aviso de CLI no instalada (stderr y ✓/✗ en el formulario) y notas de garantías en el formulario (agy no impide escribir en modo planear; codex y opencode editan antes de que WARI lo vea), que además corrigió una afirmación mía ("solo lee") que no era cierta para agy. **Pendiente**: comprobar programáticamente la versión mínima de cada CLI (hoy solo está en comentarios) y plegar a demanda los bloques de herramientas.
+
 ## 2026-10-20 · Segunda pasada sobre el feedback de Codex y Grok
 - **Diff sin checkpoint**: `ctrl+r` sobre un agente cuyas ediciones no tienen checkpoint (codex, opencode, comandos de shell) muestra el archivo contra git HEAD (`Supervisor.GitDiff`, `git show` por `internal/proc` con `LC_ALL=C`, lectura acotada con `os.Root`). Solo se ve; no se puede revertir.
 - **Barra inferior**: con un choque, la información de agentes se abrevia entera (`act 0/2 · cola 0`) en vez de cortarse a mitad de palabra.

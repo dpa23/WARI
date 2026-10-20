@@ -33,3 +33,26 @@ func TestSetDarkMarcaComoResuelto(t *testing.T) {
 		t.Error("SetDark(true)")
 	}
 }
+
+func TestApplyPreferenceAndEnvPrecedence(t *testing.T) {
+	defer SetDark(true)
+	t.Setenv("WARI_THEME", "")
+	Apply("light")
+	if Dark() {
+		t.Error("Apply(light) debía dejar el tema claro")
+	}
+	Apply("dark")
+	if !Dark() {
+		t.Error("Apply(dark) debía dejar el tema oscuro")
+	}
+	Apply("auto") // no cambia nada
+	if !Dark() {
+		t.Error("auto no debe tocar el valor")
+	}
+	t.Setenv("WARI_THEME", "dark")
+	SetDark(true)
+	Apply("light") // WARI_THEME manda
+	if !Dark() {
+		t.Error("WARI_THEME debe ganar a los ajustes")
+	}
+}

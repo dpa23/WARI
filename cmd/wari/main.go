@@ -31,6 +31,7 @@ import (
 	"github.com/dpa23/wari/internal/tui"
 	"github.com/dpa23/wari/internal/tui/filetree"
 	"github.com/dpa23/wari/internal/tui/layout"
+	"github.com/dpa23/wari/internal/tui/theme"
 	"github.com/dpa23/wari/internal/workspace/checkpoint"
 )
 
@@ -107,10 +108,37 @@ func main() {
 			fmt.Fprintln(os.Stderr, "wari: -max-active debe ser al menos 1 y los presupuestos no pueden ser negativos")
 			os.Exit(2)
 		}
+		icons = applySettings(root, icons, flagGiven("icons"))
 		budget := orch.Budget{MaxTurns: *maxTurns, MaxDuration: *maxTime, MaxTokens: *maxTokens}
 		loops := orch.LoopLimits{SameTool: *loopCalls, IdleTurns: *loopTurns}
 		os.Exit(runTUI(*agentName, newAgent, agent.Task{Model: *model, Permissions: perms}, root, file, *maxActive, budget, loops, newIndex(root, *noIndex, *useCtags), *lspOn, icons))
 	}
+}
+
+// flagGiven indica que el usuario pasó la opción name en la línea de comandos.
+func flagGiven(name string) bool {
+	given := false
+	flag.Visit(func(f *flag.Flag) { given = given || f.Name == name })
+	return given
+}
+
+// applySettings aplica settings.json (usuario y proyecto): el tema, y los
+// iconos si ni la opción -icons ni WARI_ICONS los fijaron. Un archivo roto se
+// avisa por stderr y se ignora.
+func applySettings(root string, icons filetree.IconMode, iconsFromUser bool) filetree.IconMode {
+	userDir, _ := config.UserDir()
+	set, err := config.LoadSettings(userDir, filepath.Join(root, ".wari"))
+	if err != nil {
+		fmt.Fprintln(os.Stderr, "wari: aviso: ajustes:", err, "(se ignoran)")
+		return icons
+	}
+	theme.Apply(set.Theme)
+	if set.Icons != "" && !iconsFromUser && os.Getenv("WARI_ICONS") == "" {
+		if mode, err := filetree.ParseIconMode(set.Icons, os.Getenv); err == nil {
+			return mode
+		}
+	}
+	return icons
 }
 
 // agentFactories son los agentes que se pueden elegir por nombre: la opción

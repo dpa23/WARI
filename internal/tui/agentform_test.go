@@ -7,7 +7,9 @@ import (
 	tea "charm.land/bubbletea/v2"
 
 	"github.com/dpa23/wari/internal/agent"
+	"github.com/dpa23/wari/internal/config"
 	"github.com/dpa23/wari/internal/orch"
+	"github.com/dpa23/wari/internal/tui/theme"
 )
 
 var (
@@ -229,4 +231,41 @@ func TestPromptHistoryWithArrows(t *testing.T) {
 	if h.m.input.Value() != "borrador" {
 		t.Errorf("↑ con texto propio lo cambió: %q", h.m.input.Value())
 	}
+}
+
+func TestSlashThemeAppliesAndPersists(t *testing.T) {
+	cfg := t.TempDir()
+	t.Setenv("XDG_CONFIG_HOME", cfg)
+	t.Setenv("HOME", cfg)
+	defer theme.SetDark(true)
+	theme.SetDark(true)
+
+	h := newPharness(t, 2, orch.Budget{})
+	h.say("/theme light")
+	if theme.Dark() {
+		t.Error("/theme light debía dejar el tema claro")
+	}
+	dir, _ := config.UserDir()
+	if got, err := config.LoadSettings(dir, ""); err != nil || got.Theme != "light" {
+		t.Errorf("settings guardados = %+v, %v", got, err)
+	}
+	if h.m.cur().id != 0 {
+		t.Error("un comando / de WARI no se envía al agente")
+	}
+	h.say("/theme rojo")
+	if !strings.Contains(strings.Join(entryTexts(h.m.cur()), "\n"), "no es auto, dark ni light") {
+		t.Error("un valor inválido debe avisar")
+	}
+	h.say("/keys")
+	if !strings.Contains(strings.Join(entryTexts(h.m.cur()), "\n"), "keys.json") {
+		t.Error("/keys debe decir dónde se cambian los atajos")
+	}
+}
+
+func entryTexts(v *agentView) []string {
+	var out []string
+	for _, e := range v.entries {
+		out = append(out, e.text)
+	}
+	return out
 }

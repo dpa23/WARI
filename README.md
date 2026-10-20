@@ -334,7 +334,21 @@ Las CLIs conservan el último modelo que se usó, y lanzar un agente sin elegir 
 
 Teclas: `↑↓` cambian de campo, `←→` cambian el valor, `Enter` crea, `Esc` cancela (y devuelve el mensaje a la entrada). Bajo el agente seleccionado, la lista muestra con qué se lanzó (CLI, modelo, potencia, permisos).
 
-Dentro del chat, WARI entiende `/config` (abre el formulario antes del primer mensaje), `/usage` (tokens y turnos por agente) y `/help`. Los demás comandos con `/` se envían tal cual al agente, pero las CLIs corren sin pantalla y no procesan los suyos.
+Dentro del chat, WARI entiende `/config` (abre el formulario antes del primer mensaje), `/usage` (tokens y turnos por agente), `/theme`, `/keys` (dónde se cambian los atajos) y `/help`. Con la entrada vacía, `↑` y `↓` recorren los mensajes que ya enviaste. Los demás comandos con `/` se envían tal cual al agente, pero las CLIs corren sin pantalla y no procesan los suyos.
+
+### 7.00. Ajustes de apariencia (`settings.json`)
+Un archivo JSON con el tema y los iconos, en el directorio de configuración del usuario (`~/.config/wari/` en Linux, `~/Library/Application Support/wari/` en macOS, `%AppData%\wari\` en Windows) y, encima, en `.wari/settings.json` del proyecto:
+
+```json
+{ "theme": "dark", "icons": "emoji" }
+```
+
+| Ajuste | Valores | Efecto |
+|---|---|---|
+| `theme` | `auto`, `dark`, `light` | `auto` detecta el fondo de la terminal. Prioridad: `WARI_THEME`, el proyecto, el usuario, `COLORFGBG` y la consulta a la terminal. |
+| `icons` | `auto`, `nerd`, `emoji`, `off` | Los iconos del árbol. Manda sobre `auto` pero no sobre `-icons` ni `WARI_ICONS`. |
+
+Desde el chat, `/theme` muestra el tema vigente y `/theme dark`, `/theme light` o `/theme auto` lo cambian y lo guardan en tu `settings.json` (dark y light se aplican al momento). Un campo desconocido o un valor inválido se avisa por stderr y se ignora el archivo.
 
 ### 7.1. Atajos de teclado (`keys.json`)
 
