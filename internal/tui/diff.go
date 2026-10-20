@@ -207,23 +207,29 @@ func hunkRange(start, n int) string {
 // diffText compone el texto del diff de un archivo contra su checkpoint, o un
 // mensaje si no hay diferencias o es binario.
 func diffText(rel string, turn int, old, cur []byte) string {
+	return diffTextBase(rel, fmt.Sprintf("checkpoint, turno %d", turn), "el checkpoint", old, cur)
+}
+
+// diffTextBase es diffText con el nombre de la base de comparación ("checkpoint,
+// turno 2", "git HEAD") y cómo llamarla en los mensajes ("el checkpoint").
+func diffTextBase(rel, base, baseName string, old, cur []byte) string {
 	if bytes.IndexByte(old, 0) >= 0 || bytes.IndexByte(cur, 0) >= 0 {
 		return "(archivo binario: sin vista de diff)"
 	}
-	oldName := fmt.Sprintf("a/%s (checkpoint, turno %d)", rel, turn)
+	oldName := fmt.Sprintf("a/%s (%s)", rel, base)
 	newName := "b/" + rel + " (actual)"
 	switch {
 	case old == nil && cur == nil:
-		return "(el archivo no existía en el checkpoint ni existe ahora)"
+		return "(el archivo no existía en " + baseName + " ni existe ahora)"
 	case old == nil:
-		oldName = "/dev/null (no existía en el checkpoint)"
+		oldName = "/dev/null (no existía en " + baseName + ")"
 	case cur == nil:
 		newName = "/dev/null (ya no existe)"
 	}
 	if d := unifiedDiff(oldName, newName, old, cur); d != "" {
 		return d
 	}
-	return "(sin cambios respecto al checkpoint)"
+	return "(sin cambios respecto a " + baseName + ")"
 }
 
 // renderDiff da color al diff unificado y lo ajusta a width columnas.

@@ -2,6 +2,7 @@ package tui
 
 import (
 	"cmp"
+	"context"
 	"fmt"
 	"math"
 	"strings"
@@ -50,6 +51,8 @@ type (
 		edit     orch.Edit
 		old, cur []byte
 		err      error
+		// git indica que la base es git HEAD y no un checkpoint.
+		git bool
 	}
 	// revertMsg es el resultado de revertir (archivo, turno o agente).
 	revertMsg struct {
@@ -266,7 +269,11 @@ func (m Panel) dispatch(msg tea.Msg) (Panel, tea.Cmd) {
 			if msg.err != nil {
 				m.dv.setText("no se pudo obtener el diff: " + msg.err.Error())
 			} else {
-				m.dv.setText(diffText(msg.edit.Path, msg.edit.Turn, msg.old, msg.cur))
+				if msg.git {
+					m.dv.setText(diffTextBase(msg.edit.Path, "git HEAD, sin checkpoint", "git HEAD", msg.old, msg.cur))
+				} else {
+					m.dv.setText(diffText(msg.edit.Path, msg.edit.Turn, msg.old, msg.cur))
+				}
 			}
 		}
 		return m, nil
@@ -1575,9 +1582,7 @@ func (m Panel) diff() (Panel, tea.Cmd) {
 	v := m.cur()
 	eds := m.savedEdits(v)
 	if len(eds) == 0 {
-		v.add(kindInfo, "no hay ediciones con checkpoint que mostrar")
-		m.refresh()
-		return m, nil
+		return m.diffAgainstGit(v)
 	}
 	idx := len(eds) - 1
 	if m.dv != nil && m.dv.v == v {
@@ -1594,6 +1599,31 @@ func (m Panel) diff() (Panel, tea.Cmd) {
 	return m, func() tea.Msg {
 		old, cur, err := sup.Diff(id, ed.Turn, ed.Path)
 		return diffMsg{id: id, edit: ed, old: old, cur: cur, err: err}
+	}
+}
+
+// diffAgainstGit muestra la última edición sin checkpoint del agente (codex,
+// opencode, un comando de shell) contra su versión en git HEAD. No se puede
+// revertir, pero al menos se ve qué cambió.
+func (m Panel) diffAgainstGit(v *agentView) (Panel, tea.Cmd) {
+	var last *orch.Edit
+	if m.sup != nil && v.id != 0 {
+		eds := m.sup.Edits(v.id)
+		if n := len(eds); n > 0 {
+			last = &eds[n-1]
+		}
+	}
+	if last == nil {
+		v.add(kindInfo, "no hay ediciones que mostrar")
+		m.refresh()
+		return m, nil
+	}
+	ed := *last
+	m.dv = &diffView{v: v, edit: ed, numW: 1, w: m.diffW, h: m.diffH}
+	sup, id := m.sup, v.id
+	return m, func() tea.Msg {
+		old, cur, err := sup.GitDiff(context.Background(), id, ed.Path)
+		return diffMsg{id: id, edit: ed, old: old, cur: cur, err: err, git: true}
 	}
 }
 

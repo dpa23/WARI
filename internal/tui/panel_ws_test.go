@@ -155,7 +155,7 @@ func TestDiffWithoutEditsSaysSo(t *testing.T) {
 	w.say("hola")
 	w.untilState(0, "running")
 	w.press(keyCtrlR)
-	w.wantView("no hay ediciones con checkpoint")
+	w.wantView("no hay ediciones que mostrar")
 }
 
 func TestRevertNeedsConfirmationAndRestoresIdentical(t *testing.T) {

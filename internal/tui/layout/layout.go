@@ -526,7 +526,7 @@ func (m Model) openDiff() (Model, tea.Cmd) {
 	var cmd tea.Cmd
 	m.chat, cmd = m.chat.Diff()
 	if !m.chat.DiffOpen() {
-		m.msg = "no hay ediciones con checkpoint que mostrar"
+		m.msg = "no hay ediciones que mostrar"
 		return m, cmd
 	}
 	m.focus = focusEditor

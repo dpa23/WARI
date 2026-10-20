@@ -895,3 +895,25 @@ func TestInitAsksBackgroundOnlyWhenUnknown(t *testing.T) {
 		t.Error("con el tema resuelto Init no debe consultar a la terminal")
 	}
 }
+
+func TestArrowKeysKeepLayoutInsideScreen(t *testing.T) {
+	root := project(t)
+	for _, size := range [][2]int{{202, 49}, {120, 30}, {80, 24}} {
+		m := newLayout(t, Config{Root: root, File: filepath.Join(root, "notes.txt")}, size[0], size[1])
+		for _, focus := range []func(Model) Model{
+			func(m Model) Model { return m.focusTreePanel() },
+			func(m Model) Model { return m.focusEditorPanel() },
+			func(m Model) Model { return m.focusAgentsPanel() },
+		} {
+			m = focus(m)
+			for _, k := range []tea.KeyPressMsg{
+				press(tea.KeyUp, 0), press(tea.KeyUp, 0), press(tea.KeyDown, 0),
+				press(tea.KeyUp, tea.ModAlt), press(tea.KeyDown, tea.ModAlt),
+				press(tea.KeyPgUp, 0), press(tea.KeyPgDown, 0),
+			} {
+				m, _ = send(m, k)
+				checkDims(t, m, size[0], size[1], "tras "+k.String())
+			}
+		}
+	}
+}

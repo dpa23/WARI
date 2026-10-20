@@ -834,3 +834,34 @@ func TestVistaVaciaLlenaLaPantalla(t *testing.T) {
 		t.Errorf("el cursor está en Y=%d, quiero dentro de la entrada (21-23)", y)
 	}
 }
+
+// El probador vio la interfaz entera desplazarse hacia abajo al pulsar ↑ en
+// una ventana de 202×49: la vista medía más filas o más ancho que la pantalla.
+func TestViewStaysInsideScreenWithWideContent(t *testing.T) {
+	for _, size := range [][2]int{{202, 49}, {120, 30}, {60, 20}} {
+		h := newHarness(t)
+		h.update(tea.WindowSizeMsg{Width: size[0], Height: size[1]})
+		h.submit("hola")
+		long := strings.Repeat("ruta/muy/larga/sin/espacios/", 20)
+		wide := strings.Repeat("日本語🙂emoji ", 40)
+		for i := 0; i < 30; i++ {
+			h.event(agent.TextDelta{Text: fmt.Sprintf("línea %d %s %s\n\n", i, long, wide)})
+			h.event(agent.ToolCall{Name: "Bash", Input: json.RawMessage(fmt.Sprintf(`{"command":"%s %d"}`, wide, i))})
+		}
+		for _, k := range []tea.KeyPressMsg{
+			{Code: tea.KeyUp}, {Code: tea.KeyUp}, {Code: tea.KeyDown},
+			{Code: tea.KeyPgUp}, {Code: tea.KeyPgDown}, {Code: tea.KeyUp, Mod: tea.ModAlt},
+		} {
+			h.press(k)
+			rows := strings.Split(h.m.View().Content, "\n")
+			if len(rows) > size[1] {
+				t.Fatalf("%dx%d tras %s: %d filas > %d", size[0], size[1], k.String(), len(rows), size[1])
+			}
+			for i, r := range rows {
+				if w := lipgloss.Width(r); w > size[0] {
+					t.Fatalf("%dx%d tras %s: fila %d mide %d > %d", size[0], size[1], k.String(), i, w, size[0])
+				}
+			}
+		}
+	}
+}
