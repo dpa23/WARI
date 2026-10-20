@@ -310,3 +310,70 @@ func TestDefaultForDarwinLabels(t *testing.T) {
 		t.Errorf("conflictos en los valores predeterminados: %v", c)
 	}
 }
+
+// Generado por Antigravity (agy, modo plan) y revisado por el líder.
+func TestKeymapLabelEdgeCases(t *testing.T) {
+	t.Run("líder remapeado a ctrl+space en darwin", func(t *testing.T) {
+		km := Keymap{
+			"leader":   {"ctrl+space"},
+			"new_file": {"alt+f"},
+		}
+		if got := km.Label("darwin", "new_file"); got != "ctrl+space f" {
+			t.Errorf("Label(darwin, new_file) = %q, se esperaba %q", got, "ctrl+space f")
+		}
+		if got := km.KeyLabel("darwin", "alt+f"); got != "ctrl+space f" {
+			t.Errorf("KeyLabel(darwin, alt+f) = %q, se esperaba %q", got, "ctrl+space f")
+		}
+	})
+	t.Run("acción inexistente devuelve cadena vacía", func(t *testing.T) {
+		km := Keymap{
+			"save": {"ctrl+s"},
+		}
+		for _, goos := range []string{"darwin", "linux", "windows"} {
+			if got := km.Label(goos, "nonexistent"); got != "" {
+				t.Errorf("Label(%s, nonexistent) = %q, se esperaba %q", goos, got, "")
+			}
+		}
+	})
+	t.Run("en windows y linux no cambia nada", func(t *testing.T) {
+		km := Keymap{
+			"new_file":        {"alt+f", "ctrl+n"},
+			"goto_definition": {"f12", "alt+d"},
+			"agent_next":      {"alt+down"},
+		}
+		for _, goos := range []string{"linux", "windows"} {
+			if got := km.Label(goos, "new_file"); got != "alt+f" {
+				t.Errorf("Label(%s, new_file) = %q, se esperaba %q", goos, got, "alt+f")
+			}
+			if got := km.Label(goos, "goto_definition"); got != "f12" {
+				t.Errorf("Label(%s, goto_definition) = %q, se esperaba %q", goos, got, "f12")
+			}
+			if got := km.KeyLabel(goos, "alt+f"); got != "alt+f" {
+				t.Errorf("KeyLabel(%s, alt+f) = %q, se esperaba %q", goos, got, "alt+f")
+			}
+			if got := km.KeyLabel(goos, "alt+down"); got != "alt+down" {
+				t.Errorf("KeyLabel(%s, alt+down) = %q, se esperaba %q", goos, got, "alt+down")
+			}
+		}
+	})
+	t.Run("acción con solo teclas F en darwin devuelve la primera tecla", func(t *testing.T) {
+		km := Keymap{
+			"debug_keys": {"f1", "f2", "f3"},
+		}
+		if got := km.Label("darwin", "debug_keys"); got != "f1" {
+			t.Errorf("Label(darwin, debug_keys) = %q, se esperaba %q", got, "f1")
+		}
+	})
+	t.Run("alt+down en darwin da ctrl+e down", func(t *testing.T) {
+		km := Keymap{
+			"leader":     {"ctrl+e"},
+			"agent_next": {"alt+down"},
+		}
+		if got := km.KeyLabel("darwin", "alt+down"); got != "ctrl+e down" {
+			t.Errorf("KeyLabel(darwin, alt+down) = %q, se esperaba %q", got, "ctrl+e down")
+		}
+		if got := km.Label("darwin", "agent_next"); got != "ctrl+e down" {
+			t.Errorf("Label(darwin, agent_next) = %q, se esperaba %q", got, "ctrl+e down")
+		}
+	})
+}
