@@ -161,7 +161,7 @@ func TestRealServers(t *testing.T) {
 			defer cancel()
 			if err := c.Initialize(ctx, "file://"+dir); err != nil {
 				if tc.server == "kotlin-language-server" && errors.Is(err, ErrClosed) {
-					// Con JDK 25.0.4.1 el servidor muere al leer la versión de Java
+					// Con JDK 25.0.4.1 (con JDK 21 funciona) el servidor muere al leer la versión de Java
 					// (IllegalArgumentException en JavaVersion.parse): es de ese servidor.
 					t.Skipf("%s no arranca con este JDK: %v", tc.server, err)
 				}

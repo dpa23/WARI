@@ -82,6 +82,12 @@ Para instrucciones específicas de instalación de cada CLI, consulte la documen
   - `jdtls` (Java)
   - `kotlin-language-server` (Kotlin)
   - `csharp-ls` (C#)
+
+  Compatibilidad medida en Linux (redactada por Antigravity a partir de las pruebas reales):
+  - **jdtls** (build `latest` de snapshots): arranca con JDK 25 y falla con JDK 21. Lee `JAVA_HOME`: expórtelo apuntando a Java 25 al lanzarlo.
+  - **kotlin-language-server 1.3.x** (fwcd): funciona con JDK 21 y falla con JDK 25.0.4.1 al leer la versión de Java. Fije `JAVA_HOME` a JDK 21 para este servidor.
+  - **csharp-ls 0.28.0** (`dotnet tool install -g csharp-ls`): requiere el SDK de .NET 10; con solo el SDK 8 la instalación falla.
+  - **Verificación:** la prueba `TestRealServers` ejercita los tres (initialize, completar, definición); se omite con `-short` o si el servidor no está en el PATH.
 - **Depurador DAP**:
   - `netcoredbg` (depuración de C#)
   - `java-debug` (depuración de Java a través de JDTLS)
