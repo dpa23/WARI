@@ -143,7 +143,9 @@ Formato: fecha · decisión · motivo · alternativas descartadas.
 - **Comandos de herramientas**: el resumen admite 600 runas (antes 80).
 - **Chips de estado**: mismo vocabulario en mayúsculas en la fila ancha y la angosta; IDLE con colores adaptativos que contrastan (subagente Sonnet).
 - **Desplazamiento con ↑ en 202×49**: no se reprodujo; dos pruebas (layout y chat con texto ancho y largo) confirman que la vista nunca excede filas ni columnas. Si ocurre en Terminal.app, es de la terminal y no de la vista.
-- **Sin hacer**: aviso de tokens altos de codex, forzar un choque simultáneo real, configurador interactivo de atajos.
+- **Aviso de turno caro**: un turno de 100 mil tokens o más deja una línea en el chat ("este turno gastó 226.3k tokens…"); el gasto alto de codex es su contexto inicial.
+- **Choque simultáneo**: `TestSimultaneousProposalsOnSameFileYieldOneOwnerAndOneConflict` lanza dos propuestas sobre el mismo archivo desde dos goroutines (20 rondas, con `-race`): siempre un dueño y un solo aviso de choque.
+- **Configurador de atajos**: `wari -keys` muestra los vigentes y `wari -keys-init` escribe un `keys.json` con los predeterminados del sistema sin sobrescribir. No hay editor interactivo.
 
 ## 2026-10-18 · Lo que reveló el CI de macOS
 - El CI de `main` falló solo en macOS. Los logs exigen sesión, pero las anotaciones son públicas: el CI ahora vuelca los fallos como anotaciones.

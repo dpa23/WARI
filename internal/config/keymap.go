@@ -257,3 +257,53 @@ func (k Keymap) Conflicts() []string {
 
 	return res
 }
+
+// Describe lista las acciones con sus teclas como se pulsan en goos, una por
+// línea y ordenadas ("new_file  ctrl+e f"). En macOS las teclas con alt+ se
+// muestran como secuencia con líder.
+func (k Keymap) Describe(goos string) []string {
+	actions := make([]string, 0, len(k))
+	width := 0
+	for a := range k {
+		actions = append(actions, a)
+		width = max(width, len(a))
+	}
+	sort.Strings(actions)
+	out := make([]string, 0, len(actions))
+	for _, a := range actions {
+		labels := make([]string, len(k[a]))
+		for i, key := range k[a] {
+			labels[i] = k.KeyLabel(goos, key)
+		}
+		out = append(out, fmt.Sprintf("%-*s  %s", width, a, strings.Join(labels, ", ")))
+	}
+	return out
+}
+
+// ErrKeysExist indica que keys.json ya existe y no se sobrescribe.
+var ErrKeysExist = errors.New("keys.json ya existe")
+
+// WriteTemplate escribe en dir/keys.json los atajos predeterminados de goos
+// como punto de partida para editar. Nunca sobrescribe un archivo existente.
+func WriteTemplate(dir, goos string) (string, error) {
+	path := filepath.Join(dir, "keys.json")
+	if err := os.MkdirAll(dir, 0o750); err != nil {
+		return "", err
+	}
+	data, err := json.MarshalIndent(DefaultFor(goos), "", "  ")
+	if err != nil {
+		return "", err
+	}
+	f, err := os.OpenFile(path, os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0o600)
+	if err != nil {
+		if errors.Is(err, os.ErrExist) {
+			return path, ErrKeysExist
+		}
+		return "", err
+	}
+	defer f.Close()
+	if _, err := f.Write(append(data, '\n')); err != nil {
+		return "", err
+	}
+	return path, nil
+}

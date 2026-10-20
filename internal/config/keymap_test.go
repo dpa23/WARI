@@ -4,6 +4,7 @@ import (
 	"os"
 	"path/filepath"
 	"reflect"
+	"errors"
 	"strings"
 	"testing"
 )
@@ -376,4 +377,30 @@ func TestKeymapLabelEdgeCases(t *testing.T) {
 			t.Errorf("Label(darwin, agent_next) = %q, se esperaba %q", got, "ctrl+e down")
 		}
 	})
+}
+
+func TestDescribeAndWriteTemplate(t *testing.T) {
+	km := DefaultFor("darwin")
+	var found bool
+	for _, line := range km.Describe("darwin") {
+		if strings.HasPrefix(line, "new_file") && strings.HasSuffix(line, "ctrl+e f") {
+			found = true
+		}
+	}
+	if !found {
+		t.Errorf("Describe(darwin) sin 'new_file … ctrl+e f': %v", km.Describe("darwin"))
+	}
+
+	dir := t.TempDir()
+	path, err := WriteTemplate(dir, "darwin")
+	if err != nil {
+		t.Fatal(err)
+	}
+	got, err := Load(dir, "")
+	if err != nil || got["leader"][0] != "ctrl+e" || len(got) != len(km) {
+		t.Fatalf("la plantilla no se carga igual que los predeterminados: %v %d", err, len(got))
+	}
+	if _, err := WriteTemplate(dir, "darwin"); !errors.Is(err, ErrKeysExist) {
+		t.Errorf("segunda escritura = %v, quería ErrKeysExist (%s)", err, path)
+	}
 }

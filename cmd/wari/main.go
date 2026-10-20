@@ -9,6 +9,7 @@ import (
 	"os"
 	"os/signal"
 	"path/filepath"
+	"runtime"
 	"slices"
 	"strings"
 	"syscall"
@@ -60,8 +61,14 @@ func main() {
 			"por omisión está apagado y se enciende con la acción toggle_lsp (alt+l)")
 	iconsFlag := flag.String("icons", envOr("WARI_ICONS", "auto"),
 		"iconos de archivo en el árbol: auto (Nerd Font si la terminal la trae, si no emoji), nerd (requiere una Nerd Font), emoji u off; también WARI_ICONS")
+	showKeys := flag.Bool("keys", false, "muestra los atajos vigentes (los de este sistema más tus keys.json) y sale")
+	keysInit := flag.Bool("keys-init", false, "escribe en tu directorio de configuración un keys.json con los atajos predeterminados de este sistema para editarlo (no sobrescribe) y sale")
 	showVersion := flag.Bool("version", false, "muestra la versión y sale")
 	flag.Parse()
+
+	if *showKeys || *keysInit {
+		os.Exit(runKeys(*keysInit))
+	}
 
 	icons, err := filetree.ParseIconMode(*iconsFlag, os.Getenv)
 	if err != nil {
@@ -370,4 +377,33 @@ func envOr(name, def string) string {
 		return v
 	}
 	return def
+}
+
+// runKeys atiende -keys y -keys-init.
+func runKeys(initTemplate bool) int {
+	if initTemplate {
+		dir, err := config.UserDir()
+		if err != nil {
+			fmt.Fprintln(os.Stderr, "wari:", err)
+			return 1
+		}
+		path, err := config.WriteTemplate(dir, runtime.GOOS)
+		switch {
+		case errors.Is(err, config.ErrKeysExist):
+			fmt.Fprintf(os.Stderr, "wari: %s ya existe; no lo sobrescribo\n", path)
+			return 1
+		case err != nil:
+			fmt.Fprintln(os.Stderr, "wari:", err)
+			return 1
+		}
+		fmt.Println("escrito", path, "(edítalo; solo hace falta dejar las acciones que cambies)")
+		return 0
+	}
+	root, _ := os.Getwd()
+	km := loadKeymap(root)
+	fmt.Printf("atajos para %s (la tecla líder convierte «alt+x» en «líder x» en macOS):\n", runtime.GOOS)
+	for _, line := range km.Describe(runtime.GOOS) {
+		fmt.Println(" ", line)
+	}
+	return 0
 }

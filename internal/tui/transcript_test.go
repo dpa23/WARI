@@ -2,6 +2,7 @@ package tui
 
 import (
 	"encoding/json"
+	"strings"
 	"testing"
 
 	"github.com/dpa23/wari/internal/agent"
@@ -36,5 +37,21 @@ func TestToolCallsIdenticasSeColapsan(t *testing.T) {
 	m.applyEvent(agent.ToolCall{Name: "read_file", Input: json.RawMessage(`{"path":"b.go"}`)})
 	if len(m.entries) != 2 || m.entries[0].text != "⚙ read_file a.go ×3" || m.entries[1].text != "⚙ read_file b.go" {
 		t.Errorf("entradas = %+v", m.entries)
+	}
+}
+
+func TestTurnoCaroAvisa(t *testing.T) {
+	m := &transcript{}
+	m.applyEvent(agent.Usage{InputTokens: 223_958, OutputTokens: 2_319})
+	m.applyEvent(agent.Done{})
+	last := m.entries[len(m.entries)-1]
+	if last.kind != kindInfo || !strings.Contains(last.text, "226") {
+		t.Fatalf("faltó el aviso de turno caro: %+v", m.entries)
+	}
+	n := len(m.entries)
+	m.applyEvent(agent.Usage{InputTokens: 500, OutputTokens: 10})
+	m.applyEvent(agent.Done{})
+	if len(m.entries) != n {
+		t.Errorf("un turno barato no avisa y el contador se reinicia: %+v", m.entries[n:])
 	}
 }

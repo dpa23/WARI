@@ -562,3 +562,40 @@ func TestCloseWithWatcherIsClean(t *testing.T) {
 		t.Fatalf("AttachWorkspace tras Close = %v", err)
 	}
 }
+
+// Dos agentes anuncian la edición del mismo archivo en el mismo instante: debe
+// haber un solo dueño y un solo choque, sin importar quién gane la carrera.
+func TestSimultaneousProposalsOnSameFileYieldOneOwnerAndOneConflict(t *testing.T) {
+	for round := 0; round < 20; round++ {
+		w := newWsEnv(t, false)
+		w.write("x.txt", "X0")
+		a, fa := w.start("agente 1")
+		b, fb := w.start("agente 2")
+
+		start := make(chan struct{})
+		var wg sync.WaitGroup
+		for _, f := range []*fake{fa, fb} {
+			wg.Add(1)
+			go func() {
+				defer wg.Done()
+				<-start
+				f.emit(agent.FileEditProposed{Tool: "Edit", Path: w.path("x.txt")})
+			}()
+		}
+		close(start)
+		wg.Wait()
+
+		n := w.c.waitNotice(t, NoticeConflict, nil)
+		holder := w.s.Holder(w.path("x.txt"))
+		if holder != a && holder != b {
+			t.Fatalf("ronda %d: el dueño %d no es ninguno de los dos", round, holder)
+		}
+		if n.Holder != holder || n.Agent == holder || (n.Agent != a && n.Agent != b) {
+			t.Fatalf("ronda %d: choque %+v con dueño %d", round, n, holder)
+		}
+		waitState(t, w.s, n.Agent, Paused)
+		if got := len(w.c.notices(NoticeConflict)); got != 1 {
+			t.Fatalf("ronda %d: %d avisos de choque, quería 1", round, got)
+		}
+	}
+}

@@ -2,6 +2,7 @@ package tui
 
 import (
 	"errors"
+	"fmt"
 	"regexp"
 	"strconv"
 	"strings"
@@ -9,6 +10,9 @@ import (
 	"github.com/dpa23/wari/internal/agent"
 	"github.com/dpa23/wari/internal/workspace/owner"
 )
+
+// heavyTurnTokens es el gasto de un turno a partir del cual se avisa.
+const heavyTurnTokens = 100_000
 
 // transcript es el historial de un agente y su consumo acumulado. Lo comparten
 // el chat de un solo agente (Model) y el panel multiagente (Panel).
@@ -30,6 +34,8 @@ type transcript struct {
 	// newSessionKey es la tecla que empieza una sesión nueva, para el aviso
 	// de sesión no encontrada.
 	newSessionKey string
+	// turnTokens cuenta los tokens del turno en curso, para avisar de los caros.
+	turnTokens int64
 	// lastTool y lastToolN colapsan las llamadas idénticas consecutivas a una
 	// herramienta en una sola línea ("⚙ read_file x ×2").
 	lastTool  string
@@ -76,6 +82,7 @@ func (m *transcript) applyEvent(ev agent.Event) {
 	case agent.Usage:
 		m.tokensIn += ev.InputTokens
 		m.tokensOut += ev.OutputTokens
+		m.turnTokens += ev.InputTokens + ev.OutputTokens
 		m.costUSD += ev.CostUSD
 	case agent.Error:
 		msg := "error desconocido"
@@ -92,6 +99,10 @@ func (m *transcript) applyEvent(ev agent.Event) {
 		}
 		m.busy = false
 		m.asstOpen = false
+		if m.turnTokens >= heavyTurnTokens {
+			m.add(kindInfo, fmt.Sprintf("este turno gastó %s tokens (el contexto inicial del agente cuenta); con una suscripción pesa en tu límite de uso", compactTokens(m.turnTokens)))
+		}
+		m.turnTokens = 0
 		if ev.IsError {
 			text := "el turno terminó con error"
 			if ev.Result != "" {
