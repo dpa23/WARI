@@ -1022,6 +1022,12 @@ func (v *agentView) stateLabel() string {
 	return v.snap.State.String()
 }
 
+// stateWord es la palabra completa del estado en mayúsculas (RUNNING, IDLE...),
+// el mismo vocabulario que el chip angosto de stateBadge.
+func (v *agentView) stateWord() string {
+	return strings.ToUpper(v.stateLabel())
+}
+
 // formatDuration formatea una duración de forma compacta (p. ej. "45s", "1m30s").
 func formatDuration(d time.Duration) string {
 	d = d.Round(time.Second)
@@ -1073,7 +1079,10 @@ func stateBadge(st orch.State, hasSnap bool) (string, lipgloss.Style) {
 	case orch.Queued:
 		return "Q", lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("6"))
 	case orch.Idle:
-		return "IDLE", lipgloss.NewStyle().Faint(true).Foreground(lipgloss.Color("12"))
+		return "IDLE", lipgloss.NewStyle().Foreground(theme.AdaptiveColor{
+			Light: lipgloss.Color("#1d4ed8"),
+			Dark:  lipgloss.Color("#93c5fd"),
+		})
 	case orch.Stopped:
 		return "STOP", lipgloss.NewStyle().Faint(true)
 	case orch.Failed:
@@ -1083,6 +1092,18 @@ func stateBadge(st orch.State, hasSnap bool) (string, lipgloss.Style) {
 	default:
 		return "?", lipgloss.NewStyle().Faint(true)
 	}
+}
+
+// selectedBadge resalta el chip de la fila seleccionada. IDLE lleva fondo y
+// texto adaptativos propios para que contraste en fondos claros y oscuros;
+// el resto usa vídeo inverso.
+func selectedBadge(st lipgloss.Style, idle bool) lipgloss.Style {
+	if idle {
+		return st.Bold(true).Reverse(false).
+			Foreground(theme.AdaptiveColor{Light: lipgloss.Color("#ffffff"), Dark: lipgloss.Color("#0b1b3a")}).
+			Background(theme.AdaptiveColor{Light: lipgloss.Color("#1d4ed8"), Dark: lipgloss.Color("#93c5fd")})
+	}
+	return st.Reverse(true)
 }
 
 // listLine compone la fila del agente i de la lista.
@@ -1168,7 +1189,7 @@ func (m Panel) listLine(i int) string {
 	if m.width < 50 {
 		badgeText, badgeSt := stateBadge(v.snap.State, v.hasSnap)
 		if i == m.sel {
-			badgeSt = badgeSt.Reverse(true)
+			badgeSt = selectedBadge(badgeSt, v.hasSnap && v.snap.State == orch.Idle)
 		}
 
 		nameW := 8
@@ -1228,7 +1249,7 @@ func (m Panel) listLine(i int) string {
 		return lipgloss.NewStyle().MaxWidth(max(m.width, 1)).Render(bldr.String())
 	}
 
-	bldr.WriteString(st.Render(fmt.Sprintf("%s%-10s %-15s ", marker, truncate(v.name, 10), v.stateLabel())))
+	bldr.WriteString(st.Render(fmt.Sprintf("%s%-10s %-15s ", marker, truncate(v.name, 10), v.stateWord())))
 	bldr.WriteString(turnsSt.Render(turns))
 	bldr.WriteString(st.Render(" · "))
 	bldr.WriteString(tokensSt.Render(tokens + " tok"))

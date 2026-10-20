@@ -224,7 +224,7 @@ func TestTresAgentesConLimiteDosElTerceroQuedaEnCola(t *testing.T) {
 	if n := len(h.made[2].starts); n != 0 {
 		t.Fatalf("el tercero no debe arrancar, starts = %d", n)
 	}
-	for _, want := range []string{"agente 1", "agente 2", "agente 3 ", "queued", "running"} {
+	for _, want := range []string{"agente 1", "agente 2", "agente 3 ", "QUEUED", "RUNNING"} {
 		h.wantView(want)
 	}
 	h.wantView("en cola · ") // línea de estado del tercero
@@ -769,11 +769,11 @@ func TestResponsiveAgentListBadgesAndNoOverflow(t *testing.T) {
 	pWide.width = 80
 	pWide.listH = 5
 	linesWide := pWide.listRows()
-	if !strings.Contains(linesWide[0], "running") {
-		t.Errorf("fila 0 en ancho amplio debe contener 'running': %q", linesWide[0])
+	if !strings.Contains(linesWide[0], "RUNNING") {
+		t.Errorf("fila 0 en ancho amplio debe contener 'RUNNING': %q", linesWide[0])
 	}
-	if !strings.Contains(linesWide[1], "paused") {
-		t.Errorf("fila 1 en ancho amplio debe contener 'paused': %q", linesWide[1])
+	if !strings.Contains(linesWide[1], "PAUSED") {
+		t.Errorf("fila 1 en ancho amplio debe contener 'PAUSED': %q", linesWide[1])
 	}
 
 	// 3. Ningún ancho (de 5 a 120) debe desbordar su ancho
@@ -832,5 +832,26 @@ func TestRevertModalInspectionAndKeyNavigation(t *testing.T) {
 	p, _ = p.Handle(tea.KeyPressMsg{Code: tea.KeyEsc})
 	if p.RevertModalActive() {
 		t.Fatal("Esc debía cancelar el modal de reversión")
+	}
+}
+
+func TestEstadoCoherenteEntreAnchos(t *testing.T) {
+	for _, tc := range []struct {
+		st         orch.State
+		chip, word string
+	}{
+		{orch.Running, "RUN", "RUNNING"},
+		{orch.Paused, "PAU", "PAUSED"},
+		{orch.Idle, "IDLE", "IDLE"},
+		{orch.Stopped, "STOP", "STOPPED"},
+	} {
+		v := &agentView{hasSnap: true, snap: orch.Snapshot{State: tc.st}}
+		chip, _ := stateBadge(tc.st, true)
+		if chip != tc.chip || v.stateWord() != tc.word {
+			t.Errorf("%v: chip=%q word=%q", tc.st, chip, v.stateWord())
+		}
+		if !strings.HasPrefix(v.stateWord(), chip[:min(len(chip), 2)]) {
+			t.Errorf("%v: la palabra %q no corresponde al chip %q", tc.st, v.stateWord(), chip)
+		}
 	}
 }
