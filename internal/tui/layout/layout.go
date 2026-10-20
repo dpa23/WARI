@@ -1209,6 +1209,34 @@ func (m Model) agentsInfo() string {
 	return s
 }
 
+// agentsInfoVariants son las formas de agentsInfo de la más completa a la más
+// corta: con poco ancho se prefiere una forma abreviada entera a cortar la
+// completa a mitad de palabra ("en co").
+func (m Model) agentsInfoVariants() []string {
+	active, queued, limit := m.chat.Counts()
+	out := []string{m.agentsInfo(), fmt.Sprintf("activos %d/%d · en cola %d", active, limit, queued),
+		fmt.Sprintf("act %d/%d · cola %d", active, limit, queued), fmt.Sprintf("%d/%d·%d", active, limit, queued)}
+	return out
+}
+
+// rightVariants antepone right (con la ejecución y la depuración) a las
+// variantes abreviadas de la información de agentes.
+func (m Model) rightVariants(right string) []string {
+	vs := []string{right}
+	return append(vs, m.agentsInfoVariants()[1:]...)
+}
+
+// fitVariant devuelve la primera variante que cabe en w celdas y, si ninguna,
+// la más corta cortada.
+func fitVariant(variants []string, w int) string {
+	for _, v := range variants {
+		if lipgloss.Width(v) <= w {
+			return v
+		}
+	}
+	return variants[len(variants)-1]
+}
+
 // statusBar es la última fila: archivo, estado y atajos principales. A la
 // derecha va siempre agentsInfo; los demás atajos solo si caben, y si no cabe
 // ni eso, el lado izquierdo cede el espacio.
@@ -1278,7 +1306,7 @@ func (m Model) statusBar() string {
 		}
 		rem := m.w - lw - 1
 		if rem > 0 {
-			return st.Render(fit(left+" "+fit(right, rem), m.w))
+			return st.Render(fit(left+" "+fit(fitVariant(m.rightVariants(right), rem), rem), m.w))
 		}
 		return st.Render(fit(left, m.w))
 	}

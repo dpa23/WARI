@@ -373,7 +373,7 @@ func TestErrorYDoneConErrorSeMuestran(t *testing.T) {
 func TestHerramientasEdicionesYDenegados(t *testing.T) {
 	h := newHarness(t)
 	h.submit("uno")
-	long := json.RawMessage(`{"command":"` + strings.Repeat("x", 400) + `"}`)
+	long := json.RawMessage(`{"command":"` + strings.Repeat("x", 1000) + `"}`)
 	h.event(agent.ToolCall{ID: "t1", Name: "Bash", Input: long})
 	h.event(agent.ToolCall{ID: "t2", Name: "Read", Input: json.RawMessage("{\n \"file\": \"a.go\"\n}")})
 	h.event(agent.FileEditProposed{ToolCallID: "t3", Tool: "Edit", Path: "internal/x.go"})

@@ -917,3 +917,17 @@ func TestArrowKeysKeepLayoutInsideScreen(t *testing.T) {
 		}
 	}
 }
+
+func TestStatusBarAlertShortensAgentsInfoWholeWords(t *testing.T) {
+	m := newLayout(t, Config{}, 80, 24)
+	vs := m.agentsInfoVariants()
+	if got := fitVariant(vs, 200); got != vs[0] {
+		t.Errorf("con espacio debe usar la forma completa: %q", got)
+	}
+	if got := fitVariant(vs, 22); got != "act 0/2 · cola 0" {
+		t.Errorf("a 22 celdas = %q", got)
+	}
+	if got := fitVariant(vs, 5); got != "0/2·0" {
+		t.Errorf("a 5 celdas = %q", got)
+	}
+}
