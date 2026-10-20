@@ -319,7 +319,7 @@ Si el argumento posicional es un archivo, WARI toma su directorio contenedor com
 | `-no-index` | `bool` (`false`) | Desactiva el motor interno de indexación de símbolos en segundo plano (árbol de símbolos, ir a definición, autocompletado y tipos de imports). |
 | `-ctags` | `bool` (`false`) | Utiliza la herramienta externa `universal-ctags` (si se encuentra disponible en el PATH) para generar el índice de símbolos, en sustitución del analizador léxico nativo de WARI. |
 | `-lsp` | `bool` (`false`) | Enciende los servidores de lenguaje de fondo (`jdtls`, `kotlin-language-server`, `csharp-ls` si están en PATH) para autocompletado, definiciones y diagnósticos. Por omisión está apagado y puede conmutarse dentro del editor con `alt+l`. |
-| (entorno) `WARI_THEME` | `dark`\|`light` | Fija si el fondo de la terminal es oscuro o claro sin consultarlo. Sin esto WARI usa `COLORFGBG` y, si tampoco está, pregunta a la terminal (en terminales lentas la respuesta tardía puede verse como `^[[?1;2c`). |
+| (entorno) `WARI_THEME` | `dark`\|`light` | Fija si el fondo de la terminal es oscuro o claro sin consultarlo. Sin esto WARI usa `COLORFGBG` y, si tampoco está, asume oscuro y se lo pregunta a la terminal ya dentro del TUI (sin escribir nada suelto en pantalla). |
 | `-icons` | `string` (`auto`) | Iconos junto a cada archivo y carpeta del árbol: `auto` (Nerd Font si la terminal la trae de serie —kitty, WezTerm, Ghostty— y si no emoji, que no necesitan fuente), `nerd` (requiere una Nerd Font; sin ella se ven cuadros), `emoji` u `off`. También `WARI_ICONS` y `WARI_NERD_FONT=1`. |
 | `-version` | `bool` (`false`) | Imprime la versión compilada de WARI y sale. |
 

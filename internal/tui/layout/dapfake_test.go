@@ -18,6 +18,7 @@ import (
 
 	"github.com/dpa23/wari/internal/dap"
 	"github.com/dpa23/wari/internal/proc"
+	"github.com/dpa23/wari/internal/tui/theme"
 )
 
 // TestMain convierte el binario de test en un adaptador DAP falso cuando se
@@ -25,6 +26,7 @@ import (
 // procesos propio, a través de internal/proc.
 func TestMain(m *testing.M) {
 	if os.Getenv("WARI_LAYOUT_DAP") != "1" {
+		theme.SetDark(true) // sin consulta de color de fondo en Init
 		os.Exit(m.Run())
 	}
 	if os.Getenv("WARI_LAYOUT_DAP_CHILD") == "1" {

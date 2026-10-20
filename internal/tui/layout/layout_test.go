@@ -3,6 +3,7 @@ package layout
 import (
 	"context"
 	"fmt"
+	"image/color"
 	"os"
 	"path/filepath"
 	"strings"
@@ -17,6 +18,7 @@ import (
 	"github.com/dpa23/wari/internal/orch"
 	"github.com/dpa23/wari/internal/tui"
 	"github.com/dpa23/wari/internal/tui/filetree"
+	"github.com/dpa23/wari/internal/tui/theme"
 )
 
 // --- Ayudantes --------------------------------------------------------------
@@ -870,5 +872,26 @@ func TestLeaderKeyActsAsAlt(t *testing.T) {
 	m, _ = send(m, text("2")) // sin líder: no cambia el foco
 	if m.focus == focusEditor {
 		t.Error("'2' sin líder no debía mover el foco")
+	}
+}
+
+func TestBackgroundColorMsgUpdatesTheme(t *testing.T) {
+	defer theme.SetDark(true)
+	m := newLayout(t, Config{}, 80, 24)
+	m, _ = send(m, tea.BackgroundColorMsg{Color: color.White})
+	if theme.Dark() {
+		t.Error("un fondo blanco debía dejar el tema claro")
+	}
+	_, _ = send(m, tea.BackgroundColorMsg{Color: color.Black})
+	if !theme.Dark() {
+		t.Error("un fondo negro debía dejar el tema oscuro")
+	}
+}
+
+func TestInitAsksBackgroundOnlyWhenUnknown(t *testing.T) {
+	theme.SetDark(true)
+	defer theme.SetDark(true)
+	if m := newLayout(t, Config{}, 80, 24); m.Init() != nil {
+		t.Error("con el tema resuelto Init no debe consultar a la terminal")
 	}
 }

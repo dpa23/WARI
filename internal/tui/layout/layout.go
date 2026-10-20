@@ -274,6 +274,9 @@ func New(cfg Config) Model {
 // Init implementa tea.Model.
 func (m Model) Init() tea.Cmd {
 	cmds := []tea.Cmd{m.chat.Init(), m.refreshIndex()}
+	if theme.NeedsQuery() {
+		cmds = append(cmds, tea.RequestBackgroundColor)
+	}
 	if m.lsp.on {
 		// El arranque del servidor es un mensaje más: así lo atiende Update.
 		cmds = append(cmds, func() tea.Msg { return lspBootMsg{} })
@@ -312,6 +315,9 @@ func (m Model) updateMsg(msg tea.Msg) (Model, tea.Cmd) {
 		return m2, cmd
 	}
 	switch msg := msg.(type) {
+	case tea.BackgroundColorMsg:
+		theme.SetDark(msg.IsDark())
+		return m, nil
 	case tea.WindowSizeMsg:
 		m.w, m.h = msg.Width, msg.Height
 		m.relayout()
