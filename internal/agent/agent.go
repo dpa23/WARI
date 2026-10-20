@@ -50,11 +50,37 @@ type Task struct {
 	Dir string
 	// SessionID, si no está vacío, reanuda esa sesión de la CLI.
 	SessionID string
-	// Model es el modelo a usar; vacío deja el predeterminado de la CLI.
+	// Model es el modelo a usar. WARI siempre lo fija desde el formulario de
+	// agente nuevo: vacío deja el predeterminado de la CLI, que suele ser el
+	// último modelo que se usó (y puede ser uno caro).
 	Model string
+	// Effort es el nivel de esfuerzo o razonamiento ("low"…"max"); vacío deja
+	// el de la CLI. Las CLIs sin ese flag verificado lo ignoran (ver Info).
+	Effort string
 	// Permissions fija el modo de permisos. El valor cero (PermissionAsk) es
 	// el más seguro: nunca se hereda el modo configurado por el usuario.
 	Permissions PermissionMode
+}
+
+// ModelOption es un modelo que el formulario de agente nuevo ofrece.
+type ModelOption struct {
+	// ID es el valor que se pasa a la CLI.
+	ID string
+	// Label es el nombre para mostrar y Note una pista corta (potencia, costo).
+	Label, Note string
+}
+
+// Info describe lo que el formulario de agente nuevo ofrece de una CLI. Cada
+// adaptador publica la suya; solo contiene lo verificado con `<cli> --help`.
+type Info struct {
+	// Name es el nombre de la CLI ("claude", "agy"…).
+	Name string
+	// Models son los modelos sugeridos; el usuario también puede escribir otro.
+	Models []ModelOption
+	// ModelHint explica el formato de un modelo escrito a mano.
+	ModelHint string
+	// Efforts son los niveles de esfuerzo que acepta; vacío si la CLI no tiene.
+	Efforts []string
 }
 
 // PermissionMode es el modo de permisos normalizado. Cada adaptador lo

@@ -88,6 +88,9 @@ func Args(t agent.Task) []string {
 	if t.Model != "" {
 		args = append(args, "--model="+t.Model)
 	}
+	if t.Effort != "" {
+		args = append(args, "--effort="+t.Effort)
+	}
 	switch t.Permissions {
 	case agent.PermissionAcceptEdits:
 		args = append(args, "--mode=accept-edits")
@@ -96,4 +99,22 @@ func Args(t agent.Task) []string {
 		args = append(args, "--mode=plan")
 	}
 	return args
+}
+
+// Info es lo que el formulario de agente nuevo ofrece de agy. Los modelos son
+// los de `agy models` (la lista depende de la cuenta).
+func Info() agent.Info {
+	return agent.Info{
+		Name: "agy",
+		Models: []agent.ModelOption{
+			{ID: "gemini-3.8-flash-low", Label: "Gemini 3.8 Flash (Low)", Note: "el más ligero"},
+			{ID: "gemini-3.8-flash-medium", Label: "Gemini 3.8 Flash (Medium)", Note: "equilibrado"},
+			{ID: "gemini-3.8-flash-high", Label: "Gemini 3.8 Flash (High)", Note: "más razonamiento"},
+			{ID: "claude-sonnet-4-6", Label: "Claude Sonnet 4.6 (Thinking)", Note: "gasta cuota de Claude"},
+			{ID: "claude-opus-4-6-thinking", Label: "Claude Opus 4.6 (Thinking)", Note: "gasta mucha cuota de Claude"},
+			{ID: "gpt-oss-120b-medium", Label: "GPT-OSS 120B (Medium)"},
+		},
+		ModelHint: "ids de `agy models`",
+		Efforts:   []string{"low", "medium", "high", "xhigh", "max"},
+	}
 }

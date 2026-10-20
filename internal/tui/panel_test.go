@@ -487,7 +487,7 @@ func TestListaDeAgentesMuestraTodoYRecorta(t *testing.T) {
 	if len(h.m.views) != 10 || h.m.sel != 9 {
 		t.Fatalf("views=%d sel=%d", len(h.m.views), h.m.sel)
 	}
-	if h.m.listH != maxListRows {
+	if h.m.listH != maxListRows+1 { // las filas de agente y la de detalle del seleccionado
 		t.Fatalf("listH = %d", h.m.listH)
 	}
 	// El seleccionado siempre está visible en la lista.
@@ -754,14 +754,15 @@ func TestResponsiveAgentListBadgesAndNoOverflow(t *testing.T) {
 	pNarrow.width = 35
 	pNarrow.listH = 5
 	linesNarrow := pNarrow.listRows()
-	if len(linesNarrow) < 2 {
-		t.Fatalf("se esperaban al menos 2 filas, se obtuvieron %d", len(linesNarrow))
+	// Fila 0: agente 1; fila 1: su detalle (está seleccionado); fila 2: agente 2.
+	if len(linesNarrow) < 3 {
+		t.Fatalf("se esperaban al menos 3 filas, se obtuvieron %d", len(linesNarrow))
 	}
 	if !strings.Contains(linesNarrow[0], "RUN") {
 		t.Errorf("fila 0 en ancho estrecho debe contener el badge 'RUN': %q", linesNarrow[0])
 	}
-	if !strings.Contains(linesNarrow[1], "PAU") {
-		t.Errorf("fila 1 en ancho estrecho debe contener el badge 'PAU': %q", linesNarrow[1])
+	if !strings.Contains(linesNarrow[2], "PAU") {
+		t.Errorf("fila 2 en ancho estrecho debe contener el badge 'PAU': %q", linesNarrow[2])
 	}
 
 	// 2. En ancho amplio (>= 50), debe renderizar el texto completo del estado ("running", "paused")
@@ -772,8 +773,8 @@ func TestResponsiveAgentListBadgesAndNoOverflow(t *testing.T) {
 	if !strings.Contains(linesWide[0], "RUNNING") {
 		t.Errorf("fila 0 en ancho amplio debe contener 'RUNNING': %q", linesWide[0])
 	}
-	if !strings.Contains(linesWide[1], "PAUSED") {
-		t.Errorf("fila 1 en ancho amplio debe contener 'PAUSED': %q", linesWide[1])
+	if !strings.Contains(linesWide[2], "PAUSED") {
+		t.Errorf("fila 2 en ancho amplio debe contener 'PAUSED': %q", linesWide[2])
 	}
 
 	// 3. Ningún ancho (de 5 a 120) debe desbordar su ancho

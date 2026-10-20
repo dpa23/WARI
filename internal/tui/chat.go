@@ -46,6 +46,12 @@ type Config struct {
 	Supervisor *orch.Supervisor
 	NewAgent   func() agent.Agent
 	Budget     orch.Budget
+	// Agents e Infos son las CLIs que ofrece el formulario de agente nuevo (por
+	// nombre) y lo que ofrece cada una; AgentName es la de NewAgent. Sin Infos
+	// no hay formulario: los agentes usan Task tal cual.
+	Agents    map[string]func() agent.Agent
+	Infos     map[string]agent.Info
+	AgentName string
 	// Pipeline, si no es nil, es el pipeline de goals (fase 7) que el panel
 	// muestra y controla; debe correr sobre Supervisor. Lo cierra quien lo
 	// creó.

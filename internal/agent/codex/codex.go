@@ -112,3 +112,10 @@ func Args(t agent.Task) []string {
 	}
 	return append(args, "--", t.Prompt)
 }
+
+// Info es lo que el formulario de agente nuevo ofrece de codex. No hay lista de
+// modelos ni nivel de esfuerzo verificados (la CLI no está instalada en la
+// máquina de desarrollo): el modelo se escribe a mano y Task.Effort se ignora.
+func Info() agent.Info {
+	return agent.Info{Name: "codex", ModelHint: "nombre del modelo, como en `codex --model`"}
+}

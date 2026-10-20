@@ -3,6 +3,7 @@ package agy
 import (
 	"errors"
 	"slices"
+	"strings"
 	"testing"
 
 	"github.com/dpa23/wari/internal/agent"
@@ -88,5 +89,16 @@ func TestDriverDetectsMissingConversation(t *testing.T) {
 	d.want = ""
 	if _, err := d.Parse(started("cualquiera")); err != nil {
 		t.Errorf("un turno nuevo (sin sesión pedida) dio error: %v", err)
+	}
+}
+
+func TestArgsEffort(t *testing.T) {
+	args := Args(agent.Task{Prompt: "x", Model: "gemini-3.8-flash-low", Effort: "high"})
+	joined := strings.Join(args, " ")
+	if !strings.Contains(joined, "--model=gemini-3.8-flash-low") || !strings.Contains(joined, "--effort=high") {
+		t.Errorf("args = %v", args)
+	}
+	if strings.Contains(strings.Join(Args(agent.Task{Prompt: "x"}), " "), "--effort") {
+		t.Error("sin Effort no debe haber --effort")
 	}
 }

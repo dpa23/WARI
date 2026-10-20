@@ -97,6 +97,16 @@ type agentView struct {
 
 	// nEdits cuenta las ediciones propuestas (para mostrar el atajo del diff).
 	nEdits int
+
+	// cli es la CLI del agente; taskModel, effort, perm y role son lo que
+	// eligió en el formulario antes de su primer mensaje. configured indica que
+	// ya los eligió (o que no hay formulario).
+	cli        string
+	taskModel  string
+	effort     string
+	perm       *agent.PermissionMode
+	role       string
+	configured bool
 }
 
 func (v *agentView) state() (orch.State, bool) { return v.snap.State, v.hasSnap }
@@ -165,9 +175,11 @@ type Panel struct {
 
 	// Pipeline (pipeline.go): el Runner, su último estado, las filas que ocupa
 	// en el panel, el gate abierto y el modo de edición del prompt.
-	pipe      *pipeline.Runner
-	ps        pipeline.Snapshot
-	pipeH     int
+	pipe  *pipeline.Runner
+	ps    pipeline.Snapshot
+	pipeH int
+	// form es el formulario de agente nuevo, si está abierto.
+	form      *agentForm
 	gate      *gateView
 	gateEdit  bool
 	gateDraft string
@@ -321,6 +333,9 @@ func (m Panel) cur() *agentView { return m.views[m.sel] }
 
 // handleKey procesa las teclas con los bindings de KeyMap.
 func (m Panel) handleKey(msg tea.KeyPressMsg) (Panel, tea.Cmd) {
+	if m.form != nil {
+		return m.formKey(msg)
+	}
 	if m.rm != nil {
 		switch {
 		case key.Matches(msg, m.keys.Cancel):
@@ -437,6 +452,13 @@ func (m *Panel) addView() *agentView {
 		follow:     true,
 		transcript: transcript{newSessionKey: m.keys.AgentNew.Help().Key, root: m.cfg.Task.Dir},
 	}
+	v.cli = m.cfg.AgentName
+	// Con -model en la línea de comandos el primer agente ya está elegido; sin
+	// formulario (sin Infos) nunca se pregunta.
+	v.configured = len(m.cfg.Infos) == 0 || (m.created == 1 && m.cfg.Task.Model != "")
+	if m.created == 1 && m.cfg.Task.Model != "" {
+		v.taskModel = m.cfg.Task.Model
+	}
 	if m.cfg.NewAgent != nil {
 		v.ag = m.cfg.NewAgent()
 	}
@@ -447,9 +469,12 @@ func (m *Panel) addView() *agentView {
 // newAgent crea un agente nuevo y lo selecciona. Empieza a correr con el
 // primer mensaje que se le envíe.
 func (m Panel) newAgent() (Panel, tea.Cmd) {
-	m.addView()
+	v := m.addView()
 	m.layout(m.width, m.height)
 	m.selectView(len(m.views) - 1)
+	if !v.configured {
+		m = m.openForm(v, "", true)
+	}
 	return m, nil
 }
 
@@ -487,8 +512,17 @@ func (m Panel) send() (Panel, tea.Cmd) {
 	}
 	text := strings.TrimSpace(m.input.Value())
 	v := m.cur()
+	if strings.HasPrefix(text, "/") {
+		if m2, handled := m.slash(text); handled {
+			return m2, nil
+		}
+	}
 	if text == "" || m.sup == nil || v.inFlight() {
 		return m, nil
+	}
+	if v.id == 0 && !v.configured {
+		m.input.Reset()
+		return m.openForm(v, text, false), nil
 	}
 	if v.id == 0 {
 		if v.ag == nil {
@@ -496,6 +530,14 @@ func (m Panel) send() (Panel, tea.Cmd) {
 		}
 		task := m.cfg.Task
 		task.Prompt = text
+		if v.role == roleOrchestrator {
+			task.Prompt = orchestratorPreamble + text
+		}
+		if v.taskModel != "" {
+			task.Model = v.taskModel
+		}
+		task.Effort = v.effort
+		task.Permissions = m.effectivePermissions(v)
 		id := m.sup.Submit(v.name, v.ag, task, m.cfg.Budget)
 		if id == 0 {
 			v.add(kindError, "no se pudo enviar: "+orch.ErrClosed.Error())
@@ -978,7 +1020,9 @@ func (m *Panel) layout(w, h int) {
 	w = max(w, minWidth)
 	avail := max(h-minChatRows, 0)
 	m.pipeH = m.pipelineRows(avail)
-	m.listH = min(len(m.views), maxListRows, max(avail-m.pipeH, 0))
+	// Una fila por agente y una de detalle (CLI, modelo, potencia) para el
+	// seleccionado.
+	m.listH = min(len(m.views)+1, maxListRows+1, max(avail-m.pipeH, 0))
 	m.histH, m.statH, m.inH = splitRows(h - m.pipeH - m.listH)
 	m.vp.SetWidth(w)
 	m.vp.SetHeight(max(m.histH, 1))
@@ -1278,21 +1322,56 @@ func (m Panel) listLine(i int) string {
 	return lipgloss.NewStyle().MaxWidth(max(m.width, 1)).Render(bldr.String())
 }
 
-// listRows son las filas visibles de la lista, con el seleccionado dentro.
+// listRows son las filas visibles de la lista: una por agente y, bajo el
+// seleccionado, su fila de detalle.
 func (m Panel) listRows() []string {
-	n := len(m.views)
 	if m.listH == 0 {
 		return nil
 	}
+	lines := make([]string, 0, len(m.views)+1)
+	selAt := 0
+	for i := range m.views {
+		if i == m.sel {
+			selAt = len(lines)
+		}
+		lines = append(lines, m.listLine(i))
+		if i == m.sel {
+			lines = append(lines, m.detailLine(m.views[i]))
+		}
+	}
 	top := 0
-	if n > m.listH {
-		top = max(0, min(m.sel-m.listH/2, n-m.listH))
+	if len(lines) > m.listH {
+		top = max(0, min(selAt-m.listH/2, len(lines)-m.listH))
 	}
-	rows := make([]string, 0, m.listH)
-	for i := top; i < top+m.listH && i < n; i++ {
-		rows = append(rows, m.listLine(i))
+	return lines[top:min(len(lines), top+m.listH)]
+}
+
+// detailLine es la fila bajo el agente seleccionado: CLI, modelo, potencia,
+// permisos y rol, para ver de un vistazo con qué se lanza (o se lanzó).
+func (m Panel) detailLine(v *agentView) string {
+	st := lipgloss.NewStyle().Faint(true)
+	if !v.configured {
+		return st.MaxWidth(max(m.width, 1)).Render("    sin configurar: se pedirá CLI y modelo al enviar")
 	}
-	return rows
+	parts := []string{cmpOr(v.cli, "—")}
+	model := cmpOr(v.model, v.taskModel)
+	if model != "" {
+		parts = append(parts, model)
+	}
+	if v.effort != "" {
+		parts = append(parts, "potencia "+v.effort)
+	}
+	switch p := m.effectivePermissions(v); {
+	case v.role == roleOrchestrator:
+		parts = append(parts, "ORQUESTADOR · solo lee")
+	case p == agent.PermissionAcceptEdits:
+		parts = append(parts, "edita sin preguntar")
+	case p == agent.PermissionPlan:
+		parts = append(parts, "solo planea")
+	default:
+		parts = append(parts, "pregunta")
+	}
+	return st.MaxWidth(max(m.width, 1)).Render("    " + strings.Join(parts, " · "))
 }
 
 // stateText es el texto de estado del agente seleccionado.
@@ -1411,8 +1490,11 @@ func (m Panel) statusLine() string {
 	if m.dv != nil && m.dv.v == v {
 		parts = append(parts, part{fmt.Sprintf("diff %s (turno %d)", m.dv.edit.Path, m.dv.edit.Turn), 1})
 	}
-	if m.cfg.Task.Permissions == agent.PermissionAcceptEdits {
+	if m.effectivePermissions(v) == agent.PermissionAcceptEdits {
 		parts = append(parts, part{"edita sin preguntar", 2})
+	}
+	if v.cli != "" {
+		parts = append(parts, part{v.cli, 3})
 	}
 	if v.model != "" {
 		parts = append(parts, part{v.model, 4})
@@ -1475,7 +1557,11 @@ func (m Panel) statusLine() string {
 func (m Panel) Body() string {
 	rows := append(m.pipeRows(), m.listRows()...)
 	if m.histH > 0 {
-		rows = append(rows, m.vp.View())
+		if m.form != nil {
+			rows = append(rows, m.formRows(m.width, m.histH)...)
+		} else {
+			rows = append(rows, m.vp.View())
+		}
 	}
 	if m.statH > 0 {
 		rows = append(rows, m.statusLine())
@@ -1500,7 +1586,7 @@ func (m Panel) View() tea.View {
 // Cursor devuelve la posición del cursor relativa a la esquina superior
 // izquierda del panel, o nil si no tiene foco.
 func (m Panel) Cursor() *tea.Cursor {
-	if m.blurred || m.panelModal() {
+	if m.blurred || m.panelModal() || m.form != nil {
 		return nil
 	}
 	c := m.input.Cursor()

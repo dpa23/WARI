@@ -108,7 +108,7 @@ func main() {
 		}
 		budget := orch.Budget{MaxTurns: *maxTurns, MaxDuration: *maxTime, MaxTokens: *maxTokens}
 		loops := orch.LoopLimits{SameTool: *loopCalls, IdleTurns: *loopTurns}
-		os.Exit(runTUI(newAgent, agent.Task{Model: *model, Permissions: perms}, root, file, *maxActive, budget, loops, newIndex(root, *noIndex, *useCtags), *lspOn, icons))
+		os.Exit(runTUI(*agentName, newAgent, agent.Task{Model: *model, Permissions: perms}, root, file, *maxActive, budget, loops, newIndex(root, *noIndex, *useCtags), *lspOn, icons))
 	}
 }
 
@@ -120,6 +120,15 @@ var agentFactories = pipeline.Registry{
 	"agy":      func() agent.Agent { return agy.New("") },
 	"codex":    func() agent.Agent { return codex.New("") },
 	"opencode": func() agent.Agent { return opencode.New("") },
+}
+
+// agentInfos es lo que el formulario de agente nuevo ofrece de cada CLI. Añadir
+// una CLI es añadir su entrada aquí y en agentFactories.
+var agentInfos = map[string]agent.Info{
+	"claude":   claude.Info(),
+	"agy":      agy.Info(),
+	"codex":    codex.Info(),
+	"opencode": opencode.Info(),
 }
 
 // agentNames devuelve los nombres de agentFactories, ordenados.
@@ -177,7 +186,7 @@ func loadKeymap(root string) config.Keymap {
 // bucle de eventos), no debe quedar ningún agente vivo: el defer cierra el
 // supervisor, que cierra a cada agente y mata su turno en curso con todos sus
 // descendientes.
-func runTUI(newAgent func() agent.Agent, task agent.Task, root, file string, maxActive int, budget orch.Budget, loops orch.LoopLimits, idx *index.Index, lspOn bool, icons filetree.IconMode) int {
+func runTUI(agentName string, newAgent func() agent.Agent, task agent.Task, root, file string, maxActive int, budget orch.Budget, loops orch.LoopLimits, idx *index.Index, lspOn bool, icons filetree.IconMode) int {
 	sup := orch.New(maxActive)
 	defer sup.Close()
 	sup.SetLoopLimits(loops)
@@ -215,6 +224,9 @@ func runTUI(newAgent func() agent.Agent, task agent.Task, root, file string, max
 		Chat: tui.Config{
 			Supervisor: sup,
 			NewAgent:   newAgent,
+			AgentName:  agentName,
+			Agents:     agentFactories,
+			Infos:      agentInfos,
 			Task:       task,
 			Budget:     budget,
 			Pipeline:   runner,

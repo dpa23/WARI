@@ -132,3 +132,10 @@ func Args(t agent.Task) []string {
 	args = append(args, "--", t.Prompt)
 	return args
 }
+
+// Info es lo que el formulario de agente nuevo ofrece de opencode. El modelo
+// lleva el formato de `opencode run --model` y Task.Effort se ignora (su
+// equivalente es la variante, que va dentro del modelo tras "#").
+func Info() agent.Info {
+	return agent.Info{Name: "opencode", ModelHint: "proveedor/modelo o proveedor/modelo#variante"}
+}

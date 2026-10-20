@@ -298,7 +298,7 @@ Si el argumento posicional es un archivo, WARI toma su directorio contenedor com
 | Opción | Tipo / Valor predeterminado | Descripción |
 |---|---|---|
 | `-agent` | `string` (`"claude"`) | CLI que se usará para el chat interactivo y el modo `-prompt`. Opciones válidas: `claude`, `agy`, `codex`, `opencode`. Los pasos de `.wari/pipeline.json` definen su propio agente con el campo `"agent"`. |
-| `-model` | `string` (`""`) | Modelo específico a solicitar a la CLI (si se deja vacío, la CLI utiliza su modelo predeterminado). |
+| `-model` | `string` (`""`) | Modelo del primer agente. Si se deja vacío, WARI **pregunta** en el formulario de agente nuevo antes del primer mensaje: nunca usa el modelo que la CLI recuerde del último uso. |
 | `-prompt` | `string` (`""`) | Ejecución en modo desatendido (sin interfaz TUI): lanza un turno con el agente seleccionado, envía este texto, vuelca los eventos por `stderr`, la respuesta final por `stdout` y sale del programa. |
 | `-kill-after` | `duration` (`0`) | Utilizado únicamente junto con `-prompt`: termina el turno y todos sus subprocesos si se supera esta duración de tiempo (ej. `-kill-after 30s`). |
 | `-max-active` | `int` (`2`) | Número máximo de agentes que pueden estar ejecutándose activamente en paralelo. Los agentes adicionales esperan en cola. Debe ser al menos 1. |
@@ -320,6 +320,21 @@ Si el argumento posicional es un archivo, WARI toma su directorio contenedor com
 ---
 
 ## 7. Configuración
+
+### 7.0. Agentes: CLI, modelo, potencia y rol
+Las CLIs conservan el último modelo que se usó, y lanzar un agente sin elegir podía gastar uno caro por accidente. Por eso WARI **siempre pregunta**: al enviar el primer mensaje de un agente (o al crear otro con `ctrl+t`) se abre el formulario de agente nuevo en el panel de agentes.
+
+| Campo | Qué elige |
+|---|---|
+| CLI | `claude`, `agy`, `codex` u `opencode`. |
+| Modelo | Uno de los sugeridos (con una nota de potencia o cuota) o uno escrito a mano. **Obligatorio.** |
+| Potencia | El esfuerzo (`low` … `max`) en `claude` y `agy`, que lo admiten. En `codex` y `opencode` no hay un flag verificado y se ignora. |
+| Permisos | Preguntar (la CLI sin pantalla niega las ediciones), editar sin preguntar, o solo planear y leer. |
+| Rol | Trabajador, u Orquestador: planifica y reparte, y solo lee. Se le indica que siga la skill `.agents/skills/wari-orquestador`. |
+
+Teclas: `↑↓` cambian de campo, `←→` cambian el valor, `Enter` crea, `Esc` cancela (y devuelve el mensaje a la entrada). Bajo el agente seleccionado, la lista muestra con qué se lanzó (CLI, modelo, potencia, permisos).
+
+Dentro del chat, WARI entiende `/config` (abre el formulario antes del primer mensaje), `/usage` (tokens y turnos por agente) y `/help`. Los demás comandos con `/` se envían tal cual al agente, pero las CLIs corren sin pantalla y no procesan los suyos.
 
 ### 7.1. Atajos de teclado (`keys.json`)
 

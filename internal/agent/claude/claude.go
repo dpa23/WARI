@@ -52,6 +52,9 @@ func Args(t agent.Task) []string {
 	if t.Model != "" {
 		args = append(args, "--model", t.Model)
 	}
+	if t.Effort != "" {
+		args = append(args, "--effort", t.Effort)
+	}
 	switch t.Permissions {
 	case agent.PermissionAcceptEdits:
 		args = append(args, "--permission-mode", "acceptEdits")
@@ -64,4 +67,19 @@ func Args(t agent.Task) []string {
 	// llega como NeedsApproval en lugar de bloquear el turno.
 	args = append(args, "--permission-prompts", "none")
 	return append(args, "--", t.Prompt)
+}
+
+// Info es lo que el formulario de agente nuevo ofrece de claude. Los alias
+// salen de `claude --help` (--model acepta un alias o el nombre completo).
+func Info() agent.Info {
+	return agent.Info{
+		Name: "claude",
+		Models: []agent.ModelOption{
+			{ID: "sonnet", Label: "Sonnet", Note: "equilibrado"},
+			{ID: "opus", Label: "Opus", Note: "potente, gasta más cuota"},
+			{ID: "fable", Label: "Fable", Note: "el más potente, gasta mucha cuota"},
+		},
+		ModelHint: "alias (sonnet, opus, fable) o nombre completo",
+		Efforts:   []string{"low", "medium", "high", "xhigh", "max"},
+	}
 }

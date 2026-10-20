@@ -2,6 +2,7 @@ package claude
 
 import (
 	"slices"
+	"strings"
 	"testing"
 
 	"github.com/dpa23/wari/internal/agent"
@@ -45,5 +46,19 @@ func TestArgs(t *testing.T) {
 				t.Errorf("Args = %q, quiero que termine con %q", got, tt.want)
 			}
 		})
+	}
+}
+
+func TestArgsEffortAndInfo(t *testing.T) {
+	args := Args(agent.Task{Prompt: "x", Model: "sonnet", Effort: "low"})
+	joined := strings.Join(args, " ")
+	if !strings.Contains(joined, "--model sonnet") || !strings.Contains(joined, "--effort low") {
+		t.Errorf("args = %v", args)
+	}
+	if strings.Contains(strings.Join(Args(agent.Task{Prompt: "x"}), " "), "--effort") {
+		t.Error("sin Effort no debe haber --effort")
+	}
+	if info := Info(); info.Name != "claude" || len(info.Models) == 0 || len(info.Efforts) == 0 {
+		t.Errorf("info = %+v", info)
 	}
 }
