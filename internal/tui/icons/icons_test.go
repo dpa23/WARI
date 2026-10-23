@@ -89,11 +89,12 @@ func TestParseMode(t *testing.T) {
 		{"EMOJI", nil, Emoji, false},
 		{"ascii", nil, ASCII, false},
 		{"off", nil, Off, false},
-		{"auto", nil, Emoji, false},
-		{"", map[string]string{"TERM": "xterm-kitty"}, Nerd, false},
+		{"auto", nil, Nerd, false},
+		{"", map[string]string{"TERM": "alacritty"}, Nerd, false},
 		{"auto", map[string]string{"TERM_PROGRAM": "WezTerm"}, Nerd, false},
-		{"auto", map[string]string{"TERM_PROGRAM": "ghostty"}, Nerd, false},
 		{"auto", map[string]string{"WARI_NERD_FONT": "1"}, Nerd, false},
+		{"auto", map[string]string{"WARI_NERD_FONT": "0"}, Emoji, false},
+		{"auto", map[string]string{"TERM": "dumb"}, Emoji, false},
 		{"raro", nil, Off, true},
 	}
 	for _, c := range casos {
@@ -102,7 +103,7 @@ func TestParseMode(t *testing.T) {
 			t.Errorf("ParseMode(%q,%v) = %d,%v", c.v, c.env, got, err)
 		}
 	}
-	if m, err := ParseMode("auto", nil); err != nil || m != Emoji {
+	if m, err := ParseMode("auto", nil); err != nil || m != Nerd {
 		t.Errorf("env nil: %d %v", m, err)
 	}
 }

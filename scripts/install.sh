@@ -13,3 +13,5 @@ case ":$PATH:" in
 *":$dest:"*) ;;
 *) echo "aviso: $dest no está en el PATH; agrega 'export PATH=\"$dest:\$PATH\"' a tu shell" ;;
 esac
+
+echo "iconos: WARI usa Nerd Font; si tu terminal no la tiene, scripts/install-font.sh la instala desde assets/fonts (sin red)"

@@ -481,11 +481,12 @@ func TestParseIconMode(t *testing.T) {
 		{"off", nil, IconsOff, false},
 		{"nerd", nil, IconsNerd, false},
 		{"emoji", nil, IconsEmoji, false},
-		{"auto", nil, IconsEmoji, false},
-		{"", map[string]string{"TERM": "xterm-256color"}, IconsEmoji, false},
+		{"auto", nil, IconsNerd, false},
+		{"", map[string]string{"TERM": "alacritty"}, IconsNerd, false},
 		{"auto", map[string]string{"TERM": "xterm-kitty"}, IconsNerd, false},
-		{"auto", map[string]string{"TERM_PROGRAM": "WezTerm"}, IconsNerd, false},
 		{"auto", map[string]string{"WARI_NERD_FONT": "1"}, IconsNerd, false},
+		{"auto", map[string]string{"WARI_NERD_FONT": "0"}, IconsEmoji, false},
+		{"auto", map[string]string{"TERM": "linux"}, IconsEmoji, false},
 		{"raro", nil, IconsOff, true},
 	}
 	for _, c := range cases {

@@ -129,9 +129,10 @@ func CLI(name string) string { return lookup(clis, name) }
 // UI devuelve el glifo de un elemento de la interfaz en el modo actual.
 func UI(name string) string { return lookup(ui, name) }
 
-// ParseMode interpreta auto, nerd, emoji, ascii u off. "auto" elige Nerd si la
-// terminal trae esos glifos de serie (kitty, WezTerm, Ghostty) o lo pide
-// WARI_NERD_FONT=1, y si no emoji. Un valor desconocido es un error.
+// ParseMode interpreta auto, nerd, emoji, ascii u off. "auto" elige Nerd (la
+// fuente viene en assets/fonts; scripts/install-font.sh la instala) salvo con
+// WARI_NERD_FONT=0 o en una consola TERM=linux/dumb, donde cae a emoji. Un
+// valor desconocido es un error.
 func ParseMode(v string, env func(string) string) (Mode, error) {
 	switch strings.ToLower(strings.TrimSpace(v)) {
 	case "off", "no", "false", "0", "none":
@@ -146,12 +147,14 @@ func ParseMode(v string, env func(string) string) (Mode, error) {
 		if env == nil {
 			env = func(string) string { return "" }
 		}
-		term := strings.ToLower(env("TERM") + " " + env("TERM_PROGRAM"))
-		if env("WARI_NERD_FONT") == "1" || strings.Contains(term, "kitty") ||
-			strings.Contains(term, "wezterm") || strings.Contains(term, "ghostty") {
-			return Nerd, nil
+		// Nerd Font es lo oficial y viene en el repo (assets/fonts); solo se
+		// cae a emoji si se pide (WARI_NERD_FONT=0) o en una consola sin
+		// glifos propios (TERM=linux o dumb).
+		term := strings.ToLower(env("TERM"))
+		if env("WARI_NERD_FONT") == "0" || term == "linux" || term == "dumb" {
+			return Emoji, nil
 		}
-		return Emoji, nil
+		return Nerd, nil
 	}
 	return Off, fmt.Errorf("icons: %q no es auto, nerd, emoji, ascii ni off", v)
 }
