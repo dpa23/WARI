@@ -15,6 +15,7 @@ import (
 	"github.com/dpa23/wari/internal/term"
 	"github.com/dpa23/wari/internal/tui/icons"
 	"github.com/dpa23/wari/internal/tui/theme"
+	"github.com/dpa23/wari/internal/workspace/worktree"
 )
 
 // Un agente en terminal es la CLI interactiva de verdad dentro de un terminal
@@ -32,12 +33,16 @@ type LaunchTerminalMsg struct {
 	Path                     string
 	Args                     []string
 	Dir                      string
+	// Isolated pide un worktree propio para el agente; el layout lo crea.
+	Isolated bool
 }
 
 // TermAgent es una CLI corriendo en un terminal.
 type TermAgent struct {
 	Name, CLI, Model, Effort, Role string
-	pane                           *term.Pane
+	// WT es el worktree propio del agente; nil si edita el proyecto.
+	WT   *worktree.Info
+	pane *term.Pane
 }
 
 // StartTermAgent lanza la CLI de req con el tamaño dado. notify se llama,

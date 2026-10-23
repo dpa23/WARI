@@ -3,6 +3,9 @@
 package layout
 
 import (
+	"os"
+	"os/exec"
+	"path/filepath"
 	"strings"
 	"syscall"
 	"testing"
@@ -174,5 +177,107 @@ func TestNarrowScreenZoomsTheNewAgent(t *testing.T) {
 	defer m.closeTerms()
 	if g := m.geometry(); g.body(id).W == 0 {
 		t.Fatalf("el agente debe verse aunque la pantalla sea estrecha: %+v", g.lay)
+	}
+}
+
+// gitRepo crea un repositorio con un commit y devuelve su ruta real.
+func gitRepo(t *testing.T) string {
+	t.Helper()
+	if _, err := exec.LookPath("git"); err != nil {
+		t.Skip("sin git")
+	}
+	root := t.TempDir()
+	if r, err := filepath.EvalSymlinks(root); err == nil {
+		root = r
+	}
+	for _, args := range [][]string{
+		{"init", "-q", "-b", "main"},
+		{"config", "user.email", "t@t"}, {"config", "user.name", "t"},
+	} {
+		c := exec.Command("git", append([]string{"-C", root}, args...)...)
+		if out, err := c.CombinedOutput(); err != nil {
+			t.Fatalf("git %v: %v\n%s", args, err, out)
+		}
+	}
+	if err := os.WriteFile(filepath.Join(root, "a.txt"), []byte("a\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	for _, args := range [][]string{{"add", "-A"}, {"commit", "-q", "-m", "inicial"}} {
+		c := exec.Command("git", append([]string{"-C", root}, args...)...)
+		if out, err := c.CombinedOutput(); err != nil {
+			t.Fatalf("git %v: %v\n%s", args, err, out)
+		}
+	}
+	return root
+}
+
+func TestIsolatedAgentGetsAWorktreeAndMergesBack(t *testing.T) {
+	root := gitRepo(t)
+	m := newLayout(t, Config{Root: root}, 170, 40)
+	m.setChatOn(false)
+	req := shReq("wt")
+	req.Isolated = true
+	m, _ = m.update(req)
+	a, id := m.focusedTerm()
+	if a == nil || a.WT == nil {
+		t.Fatalf("el agente debía tener worktree: msg=%q", m.msg)
+	}
+	defer m.closeTerms()
+	if !strings.HasPrefix(a.WT.Path, filepath.Join(root, ".wari", "worktrees")) || a.Process() == nil {
+		t.Fatalf("ruta del worktree inesperada: %s", a.WT.Path)
+	}
+	if !strings.Contains(m.title(id), "⎇ wari/") {
+		t.Errorf("el título debe mostrar la rama: %q", m.title(id))
+	}
+
+	// El agente edita SU árbol: el proyecto no cambia hasta fusionar.
+	if err := os.WriteFile(filepath.Join(a.WT.Path, "nuevo.txt"), []byte("n\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := os.Stat(filepath.Join(root, "nuevo.txt")); err == nil {
+		t.Fatal("el proyecto no debía ver el archivo antes de fusionar")
+	}
+	// Cerrar con cambios pendientes se niega.
+	m = m.closeTile(id)
+	if !m.ts.tree.Has(id) || !strings.Contains(m.msg, "sin fusionar") {
+		t.Fatalf("cerrar con cambios debía negarse: %q", m.msg)
+	}
+	// d escribe el parche y lo abre en el editor.
+	m = m.worktreeDiff(id)
+	if !m.hasEd || !strings.HasSuffix(m.ed.Path(), ".patch") {
+		t.Fatalf("d debía abrir el parche: hasEd=%v msg=%q", m.hasEd, m.msg)
+	}
+	// m pide confirmación y la segunda fusiona.
+	m = m.worktreeMerge(id)
+	if _, err := os.Stat(filepath.Join(root, "nuevo.txt")); err == nil {
+		t.Fatal("la primera m solo debe pedir confirmación")
+	}
+	m = m.worktreeMerge(id)
+	if b, err := os.ReadFile(filepath.Join(root, "nuevo.txt")); err != nil || string(b) != "n\n" {
+		t.Fatalf("el proyecto debía recibir el archivo: %v %q (msg=%q)", err, b, m.msg)
+	}
+	// Ya fusionado no queda nada pendiente: cerrar mata la CLI y borra el worktree.
+	path := a.WT.Path
+	m = m.closeTile(id)
+	m = m.closeTile(id)
+	if m.ts.tree.Has(id) {
+		t.Fatalf("debía cerrarse: %q", m.msg)
+	}
+	if _, err := os.Stat(path); err == nil {
+		t.Error("el worktree sin cambios debía borrarse")
+	}
+}
+
+func TestIsolatedAgentRefusedOutsideGit(t *testing.T) {
+	m := newLayout(t, Config{Root: t.TempDir()}, 170, 40)
+	m.setChatOn(false)
+	req := shReq("x")
+	req.Isolated = true
+	m, _ = m.update(req)
+	if a, _ := m.focusedTerm(); a != nil {
+		t.Fatal("sin git no debía lanzarse el agente aislado")
+	}
+	if !strings.Contains(m.msg, "no se creó el agente") {
+		t.Errorf("debía explicar por qué: %q", m.msg)
 	}
 }

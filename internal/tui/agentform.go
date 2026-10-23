@@ -33,6 +33,7 @@ const (
 	fieldPerm
 	fieldRole
 	fieldMode
+	fieldSpace
 	numFields
 )
 
@@ -41,6 +42,9 @@ var (
 	permModes  = []agent.PermissionMode{agent.PermissionAsk, agent.PermissionAcceptEdits, agent.PermissionPlan}
 	roleLabels = []string{"Trabajador", "Orquestador (planifica y reparte; en modo planear)"}
 	modeLabels = []string{"Terminal: la CLI real, con todo lo suyo", "Chat de WARI sin pantalla (solo eventos)"}
+	// spaceLabels: por omisión el agente edita el proyecto (tu servidor de
+	// desarrollo ve sus cambios al instante); el worktree es opcional.
+	spaceLabels = []string{"Proyecto: edita aquí, se ve en caliente", "Worktree aislado: rama wari/…, la fusionas tú"}
 )
 
 type agentForm struct {
@@ -56,6 +60,7 @@ type agentForm struct {
 	perm   int
 	role   int
 	mode   int // 0 terminal, 1 chat sin pantalla
+	space  int // 0 el proyecto; 1 un worktree propio (solo en modo terminal)
 	focus  int
 	err    string
 }
@@ -118,6 +123,8 @@ func (f *agentForm) shift(d int) {
 		if f.info().Launch != nil {
 			f.mode = cycle(f.mode, len(modeLabels))
 		}
+	case fieldSpace:
+		f.space = cycle(f.space, len(spaceLabels))
 	}
 }
 
@@ -306,6 +313,7 @@ func (m Panel) formConfirm() (Panel, tea.Cmd) {
 	pending := f.pending
 	if f.terminalMode() {
 		req, err := m.launchRequest(v, pending)
+		req.Isolated = f.space == 1
 		if err != nil {
 			f.err = "no se pudo lanzar " + info.Name + ": " + err.Error()
 			return m, nil
@@ -413,6 +421,10 @@ func (m Panel) formRows(w, h int) []string {
 	if info.Launch == nil {
 		modeText = "Chat de WARI (esta CLI no tiene modo terminal)"
 	}
+	spaceText := spaceLabels[f.space]
+	if !f.terminalMode() {
+		spaceText = spaceLabels[0] + " (el worktree es del modo terminal)"
+	}
 	type row struct {
 		label, value string
 		field        int
@@ -424,6 +436,7 @@ func (m Panel) formRows(w, h int) []string {
 		{"Permisos", perm, fieldPerm},
 		{"Rol", roleLabels[f.role], fieldRole},
 		{"Modo", modeText, fieldMode},
+		{"Espacio", spaceText, fieldSpace},
 	}
 	note := ""
 	switch {

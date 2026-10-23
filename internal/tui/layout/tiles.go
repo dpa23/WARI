@@ -1,15 +1,20 @@
 package layout
 
 import (
+	"context"
 	"fmt"
+	"os"
+	"path/filepath"
 	"sort"
 	"strings"
+	"time"
 
 	tea "charm.land/bubbletea/v2"
 	"charm.land/lipgloss/v2"
 
 	"github.com/dpa23/wari/internal/tui"
 	"github.com/dpa23/wari/internal/tui/tile"
+	"github.com/dpa23/wari/internal/workspace/worktree"
 )
 
 // El área de trabajo es un árbol de tiles libres (internal/tui/tile): el
@@ -35,6 +40,9 @@ const (
 	// Prioridades: con poca pantalla se ocultan primero el chat, luego el árbol
 	// y luego los agentes; el editor nunca.
 	prioChat, prioTree, prioTerm, prioEditor = 10, 20, 50, 100
+	// minFreeForWorktree es el disco libre que se exige para crear un worktree
+	// (cada uno duplica target/, bin/ y obj/ al compilar).
+	minFreeForWorktree = 512 << 20
 	// wideSplit es el ancho desde el que un tile nuevo va al lado y no debajo.
 	wideSplit = 150
 )
@@ -57,6 +65,9 @@ type tiling struct {
 	// cierre espera confirmación (tiene una CLI viva).
 	mode       bool
 	closeArmed tile.ID
+	// mergeArmed es el tile cuya fusión espera confirmación; discardArmed, el
+	// de un descarte.
+	mergeArmed, discardArmed tile.ID
 	// place es dónde irá el próximo agente: se decide al pedirlo.
 	place placement
 	// drag es el divisor que se está arrastrando con el ratón.
@@ -185,6 +196,23 @@ func (m Model) focusedTerm() (*tui.TermAgent, tile.ID) {
 // launchTerm coloca un agente nuevo en un tile y lo lanza.
 func (m Model) launchTerm(req tui.LaunchTerminalMsg) (Model, tea.Cmd) {
 	ts := m.ts
+	var wt *worktree.Info
+	if req.Isolated {
+		ctx, cancel := gitCtx()
+		defer cancel()
+		if err := worktree.Available(ctx, m.root, minFreeForWorktree); err != nil {
+			m.msg = "no se creó el agente: " + err.Error()
+			return m, nil
+		}
+		worktree.Prune(ctx, m.root) // restos de un WARI que se cerró de golpe
+		info, err := worktree.Create(ctx, m.root, fmt.Sprintf("%s-%d", req.CLI, ts.count+1), worktree.LoadInclude(m.root))
+		if err != nil {
+			m.msg = "no se pudo crear el worktree: " + err.Error()
+			return m, nil
+		}
+		wt = &info
+		req.Dir = info.Path
+	}
 	id := ts.next
 	ts.next++
 	ts.count++
@@ -226,11 +254,17 @@ func (m Model) launchTerm(req tui.LaunchTerminalMsg) (Model, tea.Cmd) {
 	})
 	if err != nil {
 		_ = ts.tree.Close(id)
+		if wt != nil {
+			ctx, cancel := gitCtx()
+			_ = wt.Remove(ctx)
+			cancel()
+		}
 		m.syncFocus()
 		m.msg = "no se pudo lanzar " + req.CLI + ": " + err.Error()
 		m.relayout()
 		return m, nil
 	}
+	a.WT = wt
 	ts.terms[id] = a
 	m = m.focusTile(id)
 	m.relayout()
@@ -283,6 +317,15 @@ func (m Model) closeTile(id tile.ID) Model {
 	if a == nil {
 		return m
 	}
+	if a.WT != nil {
+		ctx, cancel := gitCtx()
+		changes, err := a.WT.Changes(ctx)
+		cancel()
+		if err == nil && len(changes) > 0 {
+			m.msg = fmt.Sprintf("%s tiene %d cambios sin fusionar: m los fusiona, r los descarta y cierra, d los muestra", a.WT.Branch, len(changes))
+			return m
+		}
+	}
 	select {
 	case <-a.Done():
 	default:
@@ -294,6 +337,7 @@ func (m Model) closeTile(id tile.ID) Model {
 	}
 	ts.closeArmed = 0
 	_ = a.Close()
+	m.removeWorktree(a)
 	delete(ts.terms, id)
 	_ = ts.tree.Close(id)
 	m.syncFocus()
@@ -305,7 +349,135 @@ func (m Model) closeTile(id tile.ID) Model {
 func (m Model) closeTerms() {
 	for _, a := range m.ts.terms {
 		_ = a.Close()
+		// Un worktree sin cambios no deja rastro; con cambios se conserva
+		// (git worktree list) para no perder trabajo.
+		if a.WT != nil {
+			ctx, cancel := gitCtx()
+			if ch, err := a.WT.Changes(ctx); err == nil && len(ch) == 0 {
+				_ = a.WT.Remove(ctx)
+			}
+			cancel()
+		}
 	}
+}
+
+// gitCtx es el plazo de las operaciones de git hechas desde una tecla.
+func gitCtx() (context.Context, context.CancelFunc) {
+	return context.WithTimeout(context.Background(), 30*time.Second)
+}
+
+// removeWorktree borra el worktree del agente, si lo tiene.
+func (m Model) removeWorktree(a *tui.TermAgent) {
+	if a.WT == nil {
+		return
+	}
+	ctx, cancel := gitCtx()
+	defer cancel()
+	_ = a.WT.Remove(ctx)
+}
+
+// worktreeOf devuelve el agente del tile id si tiene worktree; si no, avisa.
+func (m *Model) worktreeOf(id tile.ID) *tui.TermAgent {
+	a := m.ts.terms[id]
+	if a == nil || a.WT == nil {
+		m.msg = "este tile no tiene worktree: el agente edita el proyecto directamente"
+		return nil
+	}
+	return a
+}
+
+// worktreeDiff escribe el parche del agente y lo abre en el editor.
+func (m Model) worktreeDiff(id tile.ID) Model {
+	a := m.worktreeOf(id)
+	if a == nil {
+		return m
+	}
+	ctx, cancel := gitCtx()
+	defer cancel()
+	patch, err := a.WT.Patch(ctx)
+	if err != nil {
+		m.msg = "no se pudo calcular el diff: " + err.Error()
+		return m
+	}
+	if strings.TrimSpace(patch) == "" {
+		m.msg = a.WT.Branch + ": sin cambios todavía"
+		return m
+	}
+	dir := filepath.Join(os.TempDir(), "wari-diffs")
+	if err := os.MkdirAll(dir, 0o700); err != nil {
+		m.msg = "no se pudo escribir el diff: " + err.Error()
+		return m
+	}
+	path := filepath.Join(dir, a.WT.Name+".patch")
+	if err := os.WriteFile(path, []byte(patch), 0o600); err != nil {
+		m.msg = "no se pudo escribir el diff: " + err.Error()
+		return m
+	}
+	m.openFile(path)
+	m.msg = "diff de " + a.WT.Branch + " (solo lectura útil: el parche se regenera al pedirlo)"
+	return m
+}
+
+// worktreeMerge fusiona la rama del agente en el árbol principal; pide
+// repetir la tecla porque cambia tus archivos.
+func (m Model) worktreeMerge(id tile.ID) Model {
+	a := m.worktreeOf(id)
+	if a == nil {
+		return m
+	}
+	ts := m.ts
+	ctx, cancel := gitCtx()
+	defer cancel()
+	if ts.mergeArmed != id {
+		ch, err := a.WT.Changes(ctx)
+		if err != nil {
+			m.msg = "no se pudo leer el worktree: " + err.Error()
+			return m
+		}
+		ts.mergeArmed = id
+		m.msg = fmt.Sprintf("%d archivos de %s se fusionarán en tu proyecto (git merge --no-ff): repite m para confirmar", len(ch), a.WT.Branch)
+		return m
+	}
+	ts.mergeArmed = 0
+	res, err := a.WT.Merge(ctx)
+	switch {
+	case err != nil:
+		m.msg = "error al fusionar: " + err.Error()
+	case !res.Merged && len(res.Conflicts) > 0:
+		m.msg = "no se fusionó, tu proyecto queda intacto. Chocan: " + strings.Join(res.Conflicts, ", ")
+	case !res.Merged:
+		m.msg = "no se fusionó: " + firstLine(res.Message)
+	default:
+		if adv, aerr := a.WT.Advance(ctx); aerr == nil {
+			*a.WT = adv
+		}
+		m.msg = "fusionado " + a.WT.Branch + " en tu proyecto: " + firstLine(res.Message)
+	}
+	return m
+}
+
+// worktreeDiscard descarta el worktree del agente (y mata su CLI) tras repetir
+// la tecla.
+func (m Model) worktreeDiscard(id tile.ID) Model {
+	a := m.worktreeOf(id)
+	if a == nil {
+		return m
+	}
+	ts := m.ts
+	if ts.discardArmed != id {
+		ts.discardArmed = id
+		m.msg = "r otra vez: se pierde el trabajo de " + a.WT.Branch + " y se mata su CLI"
+		return m
+	}
+	ts.discardArmed = 0
+	_ = a.Close()
+	m.removeWorktree(a)
+	delete(ts.terms, id)
+	_ = ts.tree.Close(id)
+	m.syncFocus()
+	m.relayout()
+	m.msg = "worktree descartado"
+	return m
 }
 
 // --- Geometría ---------------------------------------------------------------
@@ -396,6 +568,9 @@ func (m Model) title(id tile.ID) string {
 	}
 	word, _ := a.Chip()
 	t := fmt.Sprintf("%s %s · %s · %s", a.Glyph(), a.Name, a.Label(), word)
+	if a.WT != nil {
+		t += " · ⎇ " + a.WT.Branch
+	}
 	if x := a.Title(); x != "" {
 		t += " · " + x
 	}
@@ -619,7 +794,7 @@ func (m Model) enterTileMode() Model {
 }
 
 // tileModeHint es la ayuda que la barra de estado muestra en modo tiles.
-const tileModeHint = "TILES hjkl foco · HJKL mover · ←↑↓→ tamaño · v|s partir · n nuevo · z zoom · x cerrar · esc"
+const tileModeHint = "TILES hjkl foco · HJKL mover · ←↑↓→ tamaño · v|s partir · n nuevo · z zoom · x cerrar · d diff · m fusionar · r descartar · esc"
 
 // tileModeKey atiende una tecla en modo tiles.
 func (m Model) tileModeKey(k tea.KeyPressMsg) (Model, tea.Cmd) {
@@ -630,6 +805,12 @@ func (m Model) tileModeKey(k tea.KeyPressMsg) (Model, tea.Cmd) {
 	s := k.String()
 	if s != "x" {
 		ts.closeArmed = 0
+	}
+	if s != "m" {
+		ts.mergeArmed = 0
+	}
+	if s != "r" {
+		ts.discardArmed = 0
 	}
 	focusDirs := map[string]tile.Dir{"h": tile.Left, "j": tile.Down, "k": tile.Up, "l": tile.Right}
 	moveDirs := map[string]tile.Dir{"H": tile.Left, "J": tile.Down, "K": tile.Up, "L": tile.Right}
@@ -668,6 +849,13 @@ func (m Model) tileModeKey(k tea.KeyPressMsg) (Model, tea.Cmd) {
 		return m.tileZoom(), nil
 	case s == "x":
 		return m.closeTile(t.Focus()), nil
+	case s == "d":
+		ts.mode = false
+		return m.worktreeDiff(t.Focus()), nil
+	case s == "m":
+		return m.worktreeMerge(t.Focus()), nil
+	case s == "r":
+		return m.worktreeDiscard(t.Focus()), nil
 	case s == "e":
 		ts.mode = false
 		return m.focusEditorPanel(), nil
