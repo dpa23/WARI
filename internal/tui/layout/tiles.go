@@ -60,6 +60,10 @@ type tiling struct {
 	// que ya hay un Cmd esperándolo (solo hace falta uno).
 	ch        chan struct{}
 	listening bool
+	// ticking indica que el repintado periódico de estados está armado; se
+	// apaga cuando muere la última CLI y se vuelve a armar en el siguiente
+	// lanzamiento.
+	ticking bool
 
 	// mode es el modo tiles (atajos de una letra); closeArmed, el tile cuyo
 	// cierre espera confirmación (tiene una CLI viva).
@@ -268,12 +272,16 @@ func (m Model) launchTerm(req tui.LaunchTerminalMsg) (Model, tea.Cmd) {
 	ts.terms[id] = a
 	m = m.focusTile(id)
 	m.relayout()
-	var cmd tea.Cmd
+	var cmds []tea.Cmd
 	if !ts.listening {
 		ts.listening = true
-		cmd = tea.Batch(listenTerms(ts.ch), tui.TickPanes())
+		cmds = append(cmds, listenTerms(ts.ch))
 	}
-	return m, cmd
+	if !ts.ticking {
+		ts.ticking = true
+		cmds = append(cmds, tui.TickPanes())
+	}
+	return m, tea.Batch(cmds...)
 }
 
 // termChangedMsg avisa de que la pantalla de algún terminal cambió.
@@ -321,7 +329,12 @@ func (m Model) closeTile(id tile.ID) Model {
 		ctx, cancel := gitCtx()
 		changes, err := a.WT.Changes(ctx)
 		cancel()
-		if err == nil && len(changes) > 0 {
+		if err != nil {
+			// Sin saber si hay trabajo pendiente no se borra nada.
+			m.msg = "no se pudo comprobar los cambios de " + a.WT.Branch + " (" + firstLine(err.Error()) + "): r lo descarta a propósito"
+			return m
+		}
+		if len(changes) > 0 {
 			m.msg = fmt.Sprintf("%s tiene %d cambios sin fusionar: m los fusiona, r los descarta y cierra, d los muestra", a.WT.Branch, len(changes))
 			return m
 		}
@@ -337,7 +350,9 @@ func (m Model) closeTile(id tile.ID) Model {
 	}
 	ts.closeArmed = 0
 	_ = a.Close()
-	m.removeWorktree(a)
+	if err := m.removeWorktree(a); err != nil {
+		m.msg = "tile cerrado, pero el worktree quedó: " + firstLine(err.Error())
+	}
 	delete(ts.terms, id)
 	_ = ts.tree.Close(id)
 	m.syncFocus()
@@ -367,13 +382,13 @@ func gitCtx() (context.Context, context.CancelFunc) {
 }
 
 // removeWorktree borra el worktree del agente, si lo tiene.
-func (m Model) removeWorktree(a *tui.TermAgent) {
+func (m Model) removeWorktree(a *tui.TermAgent) error {
 	if a.WT == nil {
-		return
+		return nil
 	}
 	ctx, cancel := gitCtx()
 	defer cancel()
-	_ = a.WT.Remove(ctx)
+	return a.WT.Remove(ctx)
 }
 
 // worktreeOf devuelve el agente del tile id si tiene worktree; si no, avisa.
@@ -386,21 +401,33 @@ func (m *Model) worktreeOf(id tile.ID) *tui.TermAgent {
 	return a
 }
 
-// worktreeDiff escribe el parche del agente y lo abre en el editor.
+// worktreeDiff escribe el parche y lo abre en el editor. Con un agente que
+// tiene worktree es el de su rama; con uno que edita el proyecto en vivo es
+// el de todo lo sin confirmar respecto a HEAD (no se sabe qué agente tocó
+// qué, pero se ve qué cambió).
 func (m Model) worktreeDiff(id tile.ID) Model {
-	a := m.worktreeOf(id)
+	a := m.ts.terms[id]
 	if a == nil {
+		m.msg = "este tile no es un agente"
 		return m
 	}
 	ctx, cancel := gitCtx()
 	defer cancel()
-	patch, err := a.WT.Patch(ctx)
+	var patch, name, what string
+	var err error
+	if a.WT != nil {
+		patch, err = a.WT.Patch(ctx)
+		name, what = a.WT.Name, a.WT.Branch
+	} else {
+		patch, err = worktree.ProjectPatch(ctx, m.root)
+		name, what = "proyecto", "el proyecto (todos los agentes en vivo y tus cambios)"
+	}
 	if err != nil {
-		m.msg = "no se pudo calcular el diff: " + err.Error()
+		m.msg = "no se pudo calcular el diff: " + firstLine(err.Error())
 		return m
 	}
 	if strings.TrimSpace(patch) == "" {
-		m.msg = a.WT.Branch + ": sin cambios todavía"
+		m.msg = what + ": sin cambios todavía"
 		return m
 	}
 	dir := filepath.Join(os.TempDir(), "wari-diffs")
@@ -408,13 +435,13 @@ func (m Model) worktreeDiff(id tile.ID) Model {
 		m.msg = "no se pudo escribir el diff: " + err.Error()
 		return m
 	}
-	path := filepath.Join(dir, a.WT.Name+".patch")
+	path := filepath.Join(dir, name+".patch")
 	if err := os.WriteFile(path, []byte(patch), 0o600); err != nil {
 		m.msg = "no se pudo escribir el diff: " + err.Error()
 		return m
 	}
 	m.openFile(path)
-	m.msg = "diff de " + a.WT.Branch + " (solo lectura útil: el parche se regenera al pedirlo)"
+	m.msg = "diff de " + what + " contra HEAD"
 	return m
 }
 
@@ -471,12 +498,15 @@ func (m Model) worktreeDiscard(id tile.ID) Model {
 	}
 	ts.discardArmed = 0
 	_ = a.Close()
-	m.removeWorktree(a)
+	err := m.removeWorktree(a)
 	delete(ts.terms, id)
 	_ = ts.tree.Close(id)
 	m.syncFocus()
 	m.relayout()
 	m.msg = "worktree descartado"
+	if err != nil {
+		m.msg = "tile cerrado, pero el worktree quedó: " + firstLine(err.Error())
+	}
 	return m
 }
 
@@ -672,7 +702,7 @@ func (m Model) tileBody(id tile.ID, g geom, r tile.Rect) []string {
 // mueve, la rueda se entrega al tile bajo el puntero.
 func (m Model) mouse(msg tea.Msg) (Model, tea.Cmd) {
 	ts := m.ts
-	if m.helpOpen || m.pal.open {
+	if m.helpOpen || m.pal.open || m.chat.FormActive() || m.run.confirm != nil {
 		return m, nil
 	}
 	switch e := msg.(type) {
@@ -690,10 +720,14 @@ func (m Model) mouse(msg tea.Msg) (Model, tea.Cmd) {
 			ts.drag = &d
 			return m, nil
 		}
-		ts.closeArmed = 0
+		ts.closeArmed, ts.mergeArmed, ts.discardArmed = 0, 0, 0
 		return m.focusTile(hit.Tile), nil
 	case tea.MouseMotionMsg:
 		if ts.drag == nil {
+			return m, nil
+		}
+		if e.Button != tea.MouseLeft { // se soltó fuera de la ventana
+			ts.drag = nil
 			return m, nil
 		}
 		ts.tree.DragDivider(*ts.drag, e.X, e.Y)
@@ -717,7 +751,9 @@ func (m Model) mouse(msg tea.Msg) (Model, tea.Cmd) {
 		}
 		if a := ts.terms[hit.Tile]; a != nil {
 			r := g.body(hit.Tile)
-			a.Wheel(e.X-r.X, e.Y-r.Y, e.Button == tea.MouseWheelUp)
+			if e.X >= r.X && e.Y >= r.Y { // la fila del título no es de la CLI
+				a.Wheel(e.X-r.X, e.Y-r.Y, e.Button == tea.MouseWheelUp)
+			}
 		}
 	}
 	return m, nil

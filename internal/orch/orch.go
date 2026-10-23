@@ -485,6 +485,14 @@ func (s *Supervisor) Close() {
 	wg.Wait()
 	close(s.agentsClosed)
 	s.wg.Wait()
+	// Con los agentes cerrados nadie más guarda: se suelta el almacén de
+	// checkpoints (su descriptor de raíz).
+	s.mu.Lock()
+	store := s.ws.Store
+	s.mu.Unlock()
+	if c, ok := store.(interface{ Close() error }); ok {
+		_ = c.Close()
+	}
 
 	s.mu.Lock()
 	s.closed = true

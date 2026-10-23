@@ -371,6 +371,19 @@ func (r *Runner) runTurn(t *turnState, resumeID string) {
 		}
 	}
 
+	// Un resultado "exitoso" seguido de una salida con error no es un éxito
+	// (informe de revisión H07): prevalece el código de salida.
+	var exitErr error
+	if done != nil && !done.IsError && waitErr != nil {
+		d := *done
+		d.IsError = true
+		done = &d
+		exitErr = fmt.Errorf("%s terminó con error tras anunciar el resultado (%v)", name, waitErr)
+		if tail := strings.TrimSpace(p.Stderr()); tail != "" {
+			exitErr = fmt.Errorf("%w: %s", exitErr, tail)
+		}
+	}
+
 	r.mu.Lock()
 	closing := r.status == agent.StatusDone
 	cancelled := t.cancelled()
@@ -394,6 +407,9 @@ func (r *Runner) runTurn(t *turnState, resumeID string) {
 	// (verificado con claude 2.1.302).
 	if resumeID != "" && !started && (done == nil || done.IsError) {
 		r.emit(t, agent.Error{Err: fmt.Errorf("%w: %s", agent.ErrSessionNotFound, resumeID)})
+	}
+	if exitErr != nil {
+		r.emit(t, agent.Error{Err: exitErr})
 	}
 	if done == nil {
 		err := fmt.Errorf("%s terminó sin resultado (%v)", name, waitErr)

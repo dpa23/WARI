@@ -599,3 +599,27 @@ func TestSimultaneousProposalsOnSameFileYieldOneOwnerAndOneConflict(t *testing.T
 		}
 	}
 }
+
+// closingStore es un Checkpointer que cuenta cuántas veces se cierra.
+type closingStore struct{ closed int }
+
+func (*closingStore) Save(string, int, string) error                   { return nil }
+func (*closingStore) RevertFile(string, int, string) error             { return nil }
+func (*closingStore) RevertTurn(string, int) error                     { return nil }
+func (*closingStore) RevertAgent(string) error                         { return nil }
+func (*closingStore) Diff(string, int, string) ([]byte, []byte, error) { return nil, nil, nil }
+func (c *closingStore) Close() error                                   { c.closed++; return nil }
+
+// El supervisor suelta el almacén de checkpoints al cerrarse (informe H12).
+func TestSupervisorCloseClosesTheCheckpointStore(t *testing.T) {
+	store := &closingStore{}
+	sup := New(1)
+	if err := sup.AttachWorkspace(Workspace{Root: t.TempDir(), Store: store, RunID: "t-"}); err != nil {
+		t.Fatal(err)
+	}
+	sup.Close()
+	sup.Close()
+	if store.closed != 1 {
+		t.Fatalf("el almacén debía cerrarse una vez, se cerró %d", store.closed)
+	}
+}

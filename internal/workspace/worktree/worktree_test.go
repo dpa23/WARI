@@ -442,3 +442,79 @@ func TestPruneRemovesOnlyDeadOwnersWithNothingToLose(t *testing.T) {
 		}
 	}
 }
+
+func TestAvailableRejectsASubfolderOfTheRepo(t *testing.T) {
+	root := newRepo(t)
+	sub := filepath.Join(root, "backend")
+	if err := os.Mkdir(sub, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := Available(context.Background(), sub, 0); err == nil || !strings.Contains(err.Error(), "subcarpeta") {
+		t.Fatalf("una subcarpeta del repo debía rechazarse: %v", err)
+	}
+	if err := Available(context.Background(), root, 0); err != nil {
+		t.Fatalf("la raíz debía valer: %v", err)
+	}
+}
+
+func TestMergeRefusesWhenTheAuthorHasStagedChanges(t *testing.T) {
+	root := newRepo(t)
+	info := mustCreate(t, root, "idx")
+	ctx := context.Background()
+	write(t, filepath.Join(info.Path, "agente.txt"), "a\n")
+	write(t, filepath.Join(root, "mio.txt"), "mío\n")
+	run(t, root, "add", "mio.txt")
+	res, err := info.Merge(ctx)
+	if err != nil || res.Merged || !strings.Contains(res.Message, "índice") {
+		t.Fatalf("debía rechazar con cambios en el índice: %+v %v", res, err)
+	}
+	if got := run(t, root, "status", "--porcelain"); !strings.Contains(got, "A  mio.txt") {
+		t.Fatalf("el índice del autor debía quedar intacto: %q", got)
+	}
+	if _, err := os.Stat(filepath.Join(root, "agente.txt")); err == nil {
+		t.Fatal("no debía haberse fusionado nada")
+	}
+}
+
+func TestPruneKeepsADetachedBranch(t *testing.T) {
+	root := newRepo(t)
+	ctx := context.Background()
+	d := mustCreate(t, root, "suelta")
+	p, err := d.ownerPath(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(p, []byte("2147483646"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	run(t, d.Path, "switch", "--detach", "-q")
+	if n := Prune(ctx, root); n != 0 {
+		t.Fatalf("una rama desacoplada no debía borrarse (borró %d)", n)
+	}
+}
+
+func TestCreateReservesTheNameAtomically(t *testing.T) {
+	root := newRepo(t)
+	a := mustCreate(t, root, "mismo")
+	b := mustCreate(t, root, "mismo")
+	if a.Path == b.Path || a.Branch == b.Branch {
+		t.Fatalf("dos worktrees con el mismo nombre deben ser distintos: %s %s", a.Path, b.Path)
+	}
+}
+
+func TestProjectChangesAndPatchSeeLiveEdits(t *testing.T) {
+	root := newRepo(t)
+	ctx := context.Background()
+	if ch, err := ProjectChanges(ctx, root); err != nil || len(ch) != 0 {
+		t.Fatalf("un proyecto limpio no tiene cambios: %v %v", ch, err)
+	}
+	write(t, filepath.Join(root, "nuevo.txt"), "n\n")
+	ch, err := ProjectChanges(ctx, root)
+	if err != nil || len(ch) != 1 || ch[0].Path != "nuevo.txt" {
+		t.Fatalf("cambios = %v, %v", ch, err)
+	}
+	patch, err := ProjectPatch(ctx, root)
+	if err != nil || !strings.Contains(patch, "+n") {
+		t.Fatalf("el parche debía incluir el archivo nuevo: %q %v", patch, err)
+	}
+}

@@ -74,6 +74,18 @@ func Available(ctx context.Context, root string, minFree uint64) error {
 		}
 		return fmt.Errorf("%s no está dentro de un repositorio git", root)
 	}
+	if top, _, err := git(ctx, root, 1<<16, "rev-parse", "--show-toplevel"); err == nil {
+		got, want := filepath.Clean(strings.TrimSpace(string(top))), filepath.Clean(root)
+		if g, err := filepath.EvalSymlinks(got); err == nil {
+			got = g
+		}
+		if w, err := filepath.EvalSymlinks(want); err == nil {
+			want = w
+		}
+		if got != want {
+			return fmt.Errorf("el proyecto es una subcarpeta del repositorio %s: abre WARI en la raíz del repositorio para usar worktrees", got)
+		}
+	}
 	if _, _, err := git(ctx, root, 1<<16, "rev-parse", "--verify", "-q", "HEAD^{commit}"); err != nil {
 		return errors.New("el repositorio no tiene ningún commit; haz uno antes de usar worktrees")
 	}
@@ -151,17 +163,20 @@ func Create(ctx context.Context, root, name string, include []string) (Info, err
 			cand = clean + "-" + strconv.Itoa(n)
 		}
 		path := filepath.Join(parent, cand)
-		if _, err := os.Lstat(path); err == nil {
-			continue
-		} else if !errors.Is(err, fs.ErrNotExist) {
-			return Info{}, err
-		}
 		exists, err := branchExists(ctx, root, "wari/"+cand)
 		if err != nil {
 			return Info{}, err
 		}
 		if exists {
 			continue
+		}
+		// Mkdir es atómico: dos WARI sobre el mismo proyecto no eligen el
+		// mismo nombre. `git worktree add` acepta un directorio vacío.
+		if err := os.Mkdir(path, 0o755); err != nil {
+			if errors.Is(err, fs.ErrExist) {
+				continue
+			}
+			return Info{}, err
 		}
 		info.Name, info.Path, info.Branch = cand, path, "wari/"+cand
 		break
@@ -238,6 +253,11 @@ func Prune(ctx context.Context, root string) int {
 			continue
 		}
 		if st, _, err := git(ctx, i.Path, 1<<16, "status", "--porcelain"); err != nil || strings.TrimSpace(string(st)) != "" {
+			continue
+		}
+		// Una rama desacoplada (git switch --detach) puede tener commits que
+		// ninguna rama referencia: no es seguro borrarla.
+		if ref, _, err := git(ctx, i.Path, 1<<16, "symbolic-ref", "-q", "HEAD"); err != nil || strings.TrimSpace(string(ref)) != "refs/heads/"+i.Branch {
 			continue
 		}
 		if ahead, _, err := git(ctx, root, 1<<16, "rev-list", "--count", "HEAD.."+i.Branch); err != nil || strings.TrimSpace(string(ahead)) != "0" {
@@ -452,6 +472,21 @@ func (i Info) Changes(ctx context.Context) ([]Change, error) {
 	if err := i.valid(); err != nil {
 		return nil, err
 	}
+	return i.changes(ctx)
+}
+
+// ProjectChanges son los cambios sin confirmar del propio proyecto respecto a
+// HEAD (lo de todos los agentes que editan en vivo, y lo tuyo).
+func ProjectChanges(ctx context.Context, root string) ([]Change, error) {
+	return Info{Root: root, Path: root, Base: "HEAD"}.changes(ctx)
+}
+
+// ProjectPatch es el diff unificado de ProjectChanges, con los archivos nuevos.
+func ProjectPatch(ctx context.Context, root string) (string, error) {
+	return Info{Root: root, Path: root, Base: "HEAD"}.patch(ctx)
+}
+
+func (i Info) changes(ctx context.Context) ([]Change, error) {
 	out, _, err := git(ctx, i.Path, maxGitOut, "diff", "--no-color", "--no-ext-diff", "--no-renames", "--name-status", "-z", i.Base, "--")
 	if err != nil {
 		return nil, err
@@ -534,6 +569,10 @@ func (i Info) Patch(ctx context.Context) (string, error) {
 	if err := i.valid(); err != nil {
 		return "", err
 	}
+	return i.patch(ctx)
+}
+
+func (i Info) patch(ctx context.Context) (string, error) {
 	out, _, err := git(ctx, i.Path, maxGitOut, "diff", "--no-color", "--no-ext-diff", "--no-renames", i.Base, "--")
 	if err != nil {
 		return "", err
@@ -575,6 +614,14 @@ func (i Info) Merge(ctx context.Context) (MergeResult, error) {
 		return MergeResult{Message: "el árbol principal tiene una fusión sin concluir; termínala o abórtala primero"}, nil
 	}
 
+	// Lo que el autor tiene en el índice acabaría dentro del commit de la
+	// fusión o se mezclaría al abortarla: se rechaza antes de tocar nada.
+	if _, _, err := git(ctx, i.Root, 1<<16, "diff", "--cached", "--quiet"); err != nil {
+		if exitCode(err) == 1 {
+			return MergeResult{Message: "tu proyecto tiene cambios en el índice (staged): confírmalos o sácalos con git restore --staged antes de fusionar"}, nil
+		}
+		return MergeResult{}, err
+	}
 	if err := i.commitPending(ctx); err != nil {
 		return MergeResult{}, err
 	}
@@ -717,9 +764,8 @@ func (i Info) rollbackAdd() {
 	}
 	os.RemoveAll(i.Path)
 	git(ctx, i.Root, maxGitOut, "worktree", "prune")
-	if ok, err := branchExists(ctx, i.Root, i.Branch); err == nil && ok {
-		git(ctx, i.Root, maxGitOut, "branch", "-D", i.Branch)
-	}
+	// La rama no se borra aquí: si `worktree add` falló porque otra instancia
+	// de WARI ya la creó, es suya.
 }
 
 // valid comprueba que Path esté dentro de <Root>/.wari/worktrees/ y que la

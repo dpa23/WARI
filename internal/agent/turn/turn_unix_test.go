@@ -601,3 +601,21 @@ func TestFinisherCompletesTurnWithoutResultEvent(t *testing.T) {
 	}
 	t.Fatal("no llegó Done")
 }
+
+// Un resultado "exitoso" seguido de una salida con error no es un éxito.
+func TestSuccessfulResultThenNonZeroExitIsAnError(t *testing.T) {
+	r, _ := newRunner(t, "echo done\nexit 7")
+	startTurn(t, r, agent.Task{Prompt: "x"})
+	evs := collectUntil(t, r, isDone)
+	var sawErr bool
+	for _, ev := range evs {
+		if e, ok := ev.(agent.Error); ok && strings.Contains(e.Err.Error(), "terminó con error") {
+			sawErr = true
+		}
+	}
+	d, _ := evs[len(evs)-1].(agent.Done)
+	if !sawErr || !d.IsError {
+		t.Fatalf("debía informar el error de salida y marcar Done con IsError: err=%v done=%+v", sawErr, d)
+	}
+	waitStatus(t, r, agent.StatusError)
+}

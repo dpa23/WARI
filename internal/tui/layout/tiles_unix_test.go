@@ -281,3 +281,96 @@ func TestIsolatedAgentRefusedOutsideGit(t *testing.T) {
 		t.Errorf("debía explicar por qué: %q", m.msg)
 	}
 }
+
+func TestCloseRefusesWhenChangesCannotBeChecked(t *testing.T) {
+	root := gitRepo(t)
+	m := newLayout(t, Config{Root: root}, 170, 40)
+	m.setChatOn(false)
+	req := shReq("x")
+	req.Isolated = true
+	m, _ = m.update(req)
+	a, id := m.focusedTerm()
+	if a == nil || a.WT == nil {
+		t.Fatalf("sin worktree: %q", m.msg)
+	}
+	defer m.closeTerms()
+	// Se rompe el worktree: Changes falla y no se sabe si hay trabajo.
+	if err := os.RemoveAll(a.WT.Path); err != nil {
+		t.Fatal(err)
+	}
+	m = m.closeTile(id)
+	m = m.closeTile(id)
+	if !m.ts.tree.Has(id) || !strings.Contains(m.msg, "no se pudo comprobar") {
+		t.Fatalf("sin poder comprobar los cambios no debía cerrarse: has=%v msg=%q", m.ts.tree.Has(id), m.msg)
+	}
+}
+
+func TestTabReachesAnAgentThatDoesNotFit(t *testing.T) {
+	m := newLayout(t, Config{}, 90, 18)
+	m.setChatOn(false)
+	m, _, one := launch(t, m, "uno")
+	defer m.closeTerms()
+	m, _, two := launch(t, m, "dos")
+	// A 90 columnas solo cabe uno: el otro está vivo pero sin sitio.
+	var hidden tile.ID
+	for _, id := range []tile.ID{one, two} {
+		if m.geometry().body(id).W == 0 {
+			hidden = id
+		}
+	}
+	if hidden == 0 {
+		t.Skip("caben los dos; la prueba no aplica")
+	}
+	for range 6 {
+		m = m.moveFocus(1)
+		if m.ts.tree.Focus() == hidden && m.geometry().body(hidden).W > 0 {
+			return
+		}
+	}
+	t.Fatalf("tab nunca llegó al agente %d sin sitio", hidden)
+}
+
+func TestStateTickRearmsOnNextLaunch(t *testing.T) {
+	m := newLayout(t, Config{}, 170, 40)
+	m.setChatOn(false)
+	m, cmd := m.update(shReq("a"))
+	if cmd == nil || !m.ts.ticking {
+		t.Fatalf("el primer lanzamiento debe armar el tick: cmd=%v ticking=%v", cmd != nil, m.ts.ticking)
+	}
+	a, id := m.focusedTerm()
+	m = m.closeTile(id)
+	m = m.closeTile(id) // confirmación: la CLI sigue viva
+	_ = a
+	m, _ = m.update(tui.PaneTickMsg{}) // sin CLIs vivas el tick se apaga
+	if m.ts.ticking {
+		t.Fatal("sin CLIs el tick debía apagarse")
+	}
+	m, cmd = m.update(shReq("b"))
+	defer m.closeTerms()
+	if cmd == nil || !m.ts.ticking {
+		t.Fatal("el siguiente lanzamiento debía volver a armar el tick")
+	}
+}
+
+func TestDiffOfAnAgentEditingTheProjectLive(t *testing.T) {
+	root := gitRepo(t)
+	m := newLayout(t, Config{Root: root}, 170, 40)
+	m.setChatOn(false)
+	m, _, id := launch(t, m, "vivo")
+	defer m.closeTerms()
+	m = m.worktreeDiff(id)
+	if m.hasEd || !strings.Contains(m.msg, "sin cambios") {
+		t.Fatalf("sin cambios no debe abrir nada: %q", m.msg)
+	}
+	// La CLI edita el proyecto: el diff lo muestra contra HEAD.
+	if err := os.WriteFile(filepath.Join(root, "a.txt"), []byte("a\ncambio del agente\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	m = m.worktreeDiff(id)
+	if !m.hasEd || !strings.HasSuffix(m.ed.Path(), "proyecto.patch") {
+		t.Fatalf("d debía abrir el parche del proyecto: %q", m.msg)
+	}
+	if b, err := os.ReadFile(m.ed.Path()); err != nil || !strings.Contains(string(b), "+cambio del agente") {
+		t.Fatalf("el parche no incluye la edición: %v %q", err, b)
+	}
+}

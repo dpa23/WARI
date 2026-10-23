@@ -3,6 +3,8 @@ package main
 
 import (
 	"context"
+	"crypto/rand"
+	"encoding/hex"
 	"errors"
 	"flag"
 	"fmt"
@@ -91,6 +93,9 @@ func main() {
 		fmt.Fprintf(os.Stderr, "wari: -agent %q desconocido (opciones: %s)\n", *agentName, strings.Join(agentNames(), ", "))
 		os.Exit(2)
 	case *prompt != "":
+		if perms == agent.PermissionAcceptEdits {
+			fmt.Fprintln(os.Stderr, "wari: aviso: -prompt -accept-edits no guarda checkpoints; las ediciones de este turno no se podrán revertir con WARI (usa git)")
+		}
 		os.Exit(runTurn(newAgent(), agent.Task{Prompt: *prompt, Model: *model, Permissions: perms}, *killAfter))
 	case *killAfter > 0:
 		fmt.Fprintln(os.Stderr, "wari: -kill-after solo se usa junto con -prompt")
@@ -253,7 +258,11 @@ func runTUI(agentName string, newAgent func() agent.Agent, task agent.Task, root
 	sup := orch.New(maxActive)
 	defer sup.Close()
 	sup.SetLoopLimits(loops)
-	attachWorkspace(sup, root)
+	// Con -accept-edits, sin checkpoints no se edita: un agente con permiso
+	// de escribir y sin copia previa puede dejar trabajo sin respaldo.
+	if !attachWorkspace(sup, root, task.Permissions == agent.PermissionAcceptEdits) {
+		return 2
+	}
 	runner := loadPipeline(sup, root, task, budget)
 	if runner != nil {
 		defer runner.Close()
@@ -360,24 +369,41 @@ func loadPipeline(sup *orch.Supervisor, root string, task agent.Task, budget orc
 
 // attachWorkspace activa la seguridad de cambios: checkpoints en
 // root/.wari/checkpoints, propiedad de archivos y watcher del árbol. Si algo
-// falla, avisa y sigue sin eso: los agentes siguen funcionando.
-func attachWorkspace(sup *orch.Supervisor, root string) {
+// falla, avisa y sigue sin eso: los agentes siguen funcionando. Con
+// needStore (se les deja editar sin preguntar) la falta de checkpoints no se
+// tolera: devuelve false.
+func attachWorkspace(sup *orch.Supervisor, root string, needStore bool) bool {
 	ws := orch.Workspace{
 		Root: root,
 		// Los IDs de agente vuelven a empezar en 1 en cada ejecución: la
-		// marca de tiempo evita mezclar checkpoints de ejecuciones distintas.
-		RunID:  time.Now().Format("20060102-150405-"),
+		// marca de tiempo y un sufijo aleatorio evitan mezclar checkpoints de
+		// ejecuciones distintas, incluso iniciadas en el mismo segundo.
+		RunID:  newRunID(),
 		Watch:  true,
 		Ignore: filetree.IgnoreFunc(root),
 	}
 	if store, err := checkpoint.Open(root); err != nil {
+		if needStore {
+			fmt.Fprintln(os.Stderr, "wari: sin checkpoints no se permite -accept-edits:", err)
+			return false
+		}
 		fmt.Fprintln(os.Stderr, "wari: aviso: sin checkpoints:", err)
 	} else {
-		ws.Store = store
+		ws.Store = store // el supervisor lo cierra al cerrarse
 	}
 	if err := sup.AttachWorkspace(ws); err != nil {
 		fmt.Fprintln(os.Stderr, "wari: aviso: sin watcher del árbol:", err)
 	}
+	return true
+}
+
+// newRunID es la marca de una ejecución: fecha y hora más 4 bytes aleatorios.
+func newRunID() string {
+	b := make([]byte, 4)
+	if _, err := rand.Read(b); err != nil {
+		return time.Now().Format("20060102-150405.000000000-")
+	}
+	return time.Now().Format("20060102-150405-") + hex.EncodeToString(b) + "-"
 }
 
 // runTurn ejecuta un turno: la respuesta va a stdout y el resto de los

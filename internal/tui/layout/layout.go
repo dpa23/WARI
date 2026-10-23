@@ -352,6 +352,7 @@ func (m Model) updateMsg(msg tea.Msg) (Model, tea.Cmd) {
 		if m.anyTermLive() {
 			return m, tui.TickPanes()
 		}
+		m.ts.ticking = false // el siguiente lanzamiento lo vuelve a armar
 		return m, nil
 	case tea.PasteMsg:
 		if m.helpOpen || m.diffShown() {
@@ -830,9 +831,8 @@ func (m Model) moveFocus(dir int) Model {
 	g := m.geometry()
 	var order []stop
 	for _, id := range m.ts.tree.IDs() {
-		if g.body(id).W <= 0 {
-			continue
-		}
+		// También los tiles sin sitio (ocultos o tapados por un zoom): si no,
+		// un agente que no cabe quedaría vivo e inalcanzable.
 		order = append(order, stop{m.kindOf(id), id})
 		if id == idEditor && g.dockH > 0 {
 			order = append(order, stop{focusDock, idEditor})
@@ -849,8 +849,13 @@ func (m Model) moveFocus(dir int) Model {
 	}
 	next := order[(cur+dir+len(order))%len(order)]
 	_ = m.ts.tree.SetFocus(next.id)
+	if g.body(next.id).W == 0 {
+		// Sin sitio: se maximiza para poder verlo.
+		_ = m.ts.tree.Zoom(next.id)
+	}
 	m.focus = next.f
 	m.applyFocus()
+	m.relayout()
 	return m
 }
 
