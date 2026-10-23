@@ -127,7 +127,7 @@ var nameIcons = map[string]icon{
 	"makefile": iconGear, "license": iconText, "go.mod": iconGo, "go.sum": iconLock,
 	"pom.xml": iconMaven, "build.gradle": iconGradle, "build.gradle.kts": iconGradle,
 	"settings.gradle": iconGradle, "settings.gradle.kts": iconGradle, "gradlew": iconGradle,
-	"package.json": iconNPM, "package-lock.json": iconNPM, ".env": iconEnv,
+	".nvmrc": iconNode, ".node-version": iconNode, "package.json": iconNPM, "package-lock.json": iconNPM, ".env": iconEnv,
 	"application.yml": iconSpring, "application.yaml": iconSpring, "application.properties": iconSpring,
 }
 
