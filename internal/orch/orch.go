@@ -489,6 +489,7 @@ func (s *Supervisor) Close() {
 	// checkpoints (su descriptor de raíz).
 	s.mu.Lock()
 	store := s.ws.Store
+	s.ws.Store = nil // lo que llegue después ve "sin checkpoints", no un almacén cerrado
 	s.mu.Unlock()
 	if c, ok := store.(interface{ Close() error }); ok {
 		_ = c.Close()

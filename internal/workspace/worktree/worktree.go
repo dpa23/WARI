@@ -16,6 +16,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"runtime"
 	"sort"
 	"strconv"
 	"strings"
@@ -82,7 +83,7 @@ func Available(ctx context.Context, root string, minFree uint64) error {
 		if w, err := filepath.EvalSymlinks(want); err == nil {
 			want = w
 		}
-		if got != want {
+		if !samePath(got, want) {
 			return fmt.Errorf("el proyecto es una subcarpeta del repositorio %s: abre WARI en la raíz del repositorio para usar worktrees", got)
 		}
 	}
@@ -764,8 +765,12 @@ func (i Info) rollbackAdd() {
 	}
 	os.RemoveAll(i.Path)
 	git(ctx, i.Root, maxGitOut, "worktree", "prune")
-	// La rama no se borra aquí: si `worktree add` falló porque otra instancia
-	// de WARI ya la creó, es suya.
+	// Si `worktree add` creó la rama y falló después, no debe quedar huérfana.
+	// Si la creó otra instancia de WARI y su worktree está en uso, git se
+	// niega a borrarla ("checked out"), así que esto no le quita la suya.
+	if ok, err := branchExists(ctx, i.Root, i.Branch); err == nil && ok {
+		git(ctx, i.Root, maxGitOut, "branch", "-D", i.Branch)
+	}
 }
 
 // valid comprueba que Path esté dentro de <Root>/.wari/worktrees/ y que la
@@ -864,4 +869,14 @@ func (i Info) Advance(ctx context.Context) (Info, error) {
 	}
 	i.Base = sha
 	return i, nil
+}
+
+// samePath compara dos rutas; en Windows y macOS los sistemas de archivos no
+// distinguen mayúsculas (git en Windows devuelve la letra de unidad en
+// minúscula).
+func samePath(a, b string) bool {
+	if runtime.GOOS == "windows" || runtime.GOOS == "darwin" {
+		return strings.EqualFold(a, b)
+	}
+	return a == b
 }

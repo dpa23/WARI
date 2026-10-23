@@ -374,3 +374,33 @@ func TestDiffOfAnAgentEditingTheProjectLive(t *testing.T) {
 		t.Fatalf("el parche no incluye la edición: %v %q", err, b)
 	}
 }
+
+// Con un zoom activo, tab recorre los tiles y cada uno se ve al llegar a él;
+// no se queda atrapado ni apaga el zoom a medias.
+func TestTabWithZoomKeepsEachTileVisible(t *testing.T) {
+	m := newLayout(t, Config{}, 170, 40)
+	m.setChatOn(false)
+	m, _, one := launch(t, m, "uno")
+	defer m.closeTerms()
+	m, _, two := launch(t, m, "dos")
+	m = m.focusTile(one)
+	m = m.tileZoom() // maximiza uno
+	if m.ts.tree.Zoomed() != one {
+		t.Fatalf("zoom en %d, quería %d", m.ts.tree.Zoomed(), one)
+	}
+	seen := map[tile.ID]bool{}
+	for range 8 {
+		m = m.moveFocus(1)
+		f := m.ts.tree.Focus()
+		if m.geometry().body(f).W == 0 {
+			t.Fatalf("el tile %d con foco no se ve", f)
+		}
+		if m.ts.tree.Zoomed() != f {
+			t.Fatalf("el zoom debía seguir al foco (%d), está en %d", f, m.ts.tree.Zoomed())
+		}
+		seen[f] = true
+	}
+	if !seen[one] || !seen[two] || !seen[idEditor] {
+		t.Fatalf("tab debía recorrer todos los tiles: %v", seen)
+	}
+}

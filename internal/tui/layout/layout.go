@@ -848,9 +848,9 @@ func (m Model) moveFocus(dir int) Model {
 		}
 	}
 	next := order[(cur+dir+len(order))%len(order)]
-	_ = m.ts.tree.SetFocus(next.id)
-	if g.body(next.id).W == 0 {
-		// Sin sitio: se maximiza para poder verlo.
+	_ = m.ts.tree.SetFocus(next.id) // con un zoom activo, el zoom lo sigue
+	if m.geometry().body(next.id).W == 0 {
+		// Sin sitio (y sin zoom que lo traiga): se maximiza para verlo.
 		_ = m.ts.tree.Zoom(next.id)
 	}
 	m.focus = next.f
