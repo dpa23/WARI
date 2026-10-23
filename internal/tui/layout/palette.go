@@ -25,7 +25,8 @@ const (
 	cmdSave            = "save"
 	cmdToggleTree      = "toggle_tree"
 	cmdToggleAgents    = "toggle_agents"
-	cmdZoomAgents      = "zoom_agents"
+	cmdTileZoom        = "tile_zoom"
+	cmdTileMode        = "tile_mode"
 	cmdNewSession      = "new_session"
 	cmdAgentPause      = "agent_pause"
 	cmdAgentStop       = "agent_stop"
@@ -114,7 +115,8 @@ func (m Model) paletteItems() []item {
 		newItem(cmdFocusChat, "Ir al panel de agentes", hint("focus_agents")),
 		newItem(cmdFocusDock, "Ir al panel de salida y depuración (pila y variables)", hint("focus_dock")),
 		newItem(cmdQuit, "Salir", hint("quit")),
-		newItem(cmdZoomAgents, "Ensanchar el panel de agentes (lateral, ancho, completo)", hint("zoom_agents")),
+		newItem(cmdTileZoom, "Maximizar / restaurar el tile con foco", hint("tile_zoom")),
+		newItem(cmdTileMode, "Modo tiles (partir, mover, redimensionar, cerrar)", hint("tile_mode")),
 		newItem(cmdAgentPause, "Pausar o reanudar agente", hint("agent_pause")),
 		newItem(cmdAgentStop, "Detener agente", hint("agent_stop")),
 		newItem(cmdDiffFile, "Ver diff", hint("diff_file")),
@@ -287,58 +289,60 @@ func (m Model) runCommand(id string) (Model, tea.Cmd) {
 	case id == cmdResolveConflict:
 		return m.resolveConflict()
 	case id == cmdToggleTree:
-		m.treeOn = !m.treeOn
+		m.setTreeOn(!m.treeOn())
 		m.relayout()
 	case id == cmdToggleAgents:
-		m.chatOn = !m.chatOn
+		m.setChatOn(!m.chatOn())
 		m.relayout()
-	case id == cmdZoomAgents:
-		m = m.zoomAgents()
+	case id == cmdTileZoom:
+		m = m.tileZoom()
+	case id == cmdTileMode:
+		m = m.enterTileMode()
 	case id == cmdNewSession:
 		var cmd tea.Cmd
 		m.chat, cmd = m.chat.NewSession()
 		return m, cmd
 	case id == cmdAgentPause:
-		if !m.chatOn {
-			m.chatOn = true
+		if !m.chatOn() {
+			m.setChatOn(true)
 			m.relayout()
 		}
 		var cmd tea.Cmd
 		m.chat, cmd = m.chat.Pause()
 		return m, cmd
 	case id == cmdAgentStop:
-		if !m.chatOn {
-			m.chatOn = true
+		if !m.chatOn() {
+			m.setChatOn(true)
 			m.relayout()
 		}
 		var cmd tea.Cmd
 		m.chat, cmd = m.chat.Stop()
 		return m, cmd
 	case id == cmdDiffFile:
-		if !m.chatOn {
-			m.chatOn = true
+		if !m.chatOn() {
+			m.setChatOn(true)
 			m.relayout()
 		}
 		return m.openDiff()
 	case id == cmdRevertFile:
-		if !m.chatOn {
-			m.chatOn = true
+		if !m.chatOn() {
+			m.setChatOn(true)
 			m.relayout()
 		}
 		var cmd tea.Cmd
 		m.chat, cmd = m.chat.RevertFile()
 		return m, cmd
 	case id == cmdRevertTurn:
-		if !m.chatOn {
-			m.chatOn = true
+		if !m.chatOn() {
+			m.setChatOn(true)
 			m.relayout()
 		}
 		var cmd tea.Cmd
 		m.chat, cmd = m.chat.RevertTurn()
 		return m, cmd
 	case id == cmdRevertAgent:
-		if !m.chatOn {
-			m.chatOn = true
+		if !m.chatOn() {
+			m.setChatOn(true)
 			m.relayout()
 		}
 		var cmd tea.Cmd

@@ -44,7 +44,7 @@ func diffLayout(t *testing.T, w, h int) (m Model, root, target, original string)
 		t.Fatal(err)
 	}
 	var made []*efake
-	m = New(Config{Root: root, File: filepath.Join(root, "notes.txt"), Chat: tui.Config{
+	m = New(Config{ShowChat: true, Root: root, File: filepath.Join(root, "notes.txt"), Chat: tui.Config{
 		Supervisor: sup,
 		NewAgent:   func() agent.Agent { f := newEfake(); made = append(made, f); return f },
 	}})
@@ -81,9 +81,9 @@ func diffLayout(t *testing.T, w, h int) (m Model, root, target, original string)
 func centerColumn(m Model) string {
 	g := m.geometry()
 	var sb strings.Builder
-	for _, l := range strings.Split(screen(m), "\n")[g.headH : g.headH+g.bodyH] {
+	for _, l := range strings.Split(screen(m), "\n")[g.ed.Y : g.ed.Y+g.bodyH] {
 		r := []rune(l)
-		lo, hi := min(g.edX, len(r)), min(g.edX+g.edW, len(r))
+		lo, hi := min(g.ed.X, len(r)), min(g.ed.X+g.ed.W, len(r))
 		sb.WriteString(string(r[lo:hi]) + "\n")
 	}
 	return sb.String()

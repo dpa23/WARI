@@ -705,7 +705,7 @@ func (m *Model) jumpToFrame(i int) {
 			default:
 				prior := m.focus
 				m.openFile(p)
-				m.focus = prior
+				m.setFocus(prior)
 				m.applyFocus()
 			}
 		}

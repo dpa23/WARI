@@ -277,7 +277,7 @@ func (m *Model) jumpTo(s index.Symbol) {
 		}
 	}
 	m.ed.GoTo(s.Line, s.Col)
-	m.focus = focusEditor
+	m.setFocus(focusEditor)
 	m.relayout()
 	m.msg = fmt.Sprintf("%s:%d", m.display(path), s.Line+1)
 }

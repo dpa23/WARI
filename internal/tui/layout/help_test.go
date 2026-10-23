@@ -218,39 +218,39 @@ func TestPaletteAgentActionsAndHints(t *testing.T) {
 
 	// 3. Ejecución de comandos de agentes desde la paleta
 	// Con chat cerrado, ejecutar una acción de agente debe abrir el chat y relayout
-	m.chatOn = false
+	m.setChatOn(false)
 	m, _ = m.runCommand(cmdAgentPause)
-	if !m.chatOn {
+	if !m.chatOn() {
 		t.Error("runCommand(cmdAgentPause) debió mostrar el panel de chat")
 	}
 
-	m.chatOn = false
+	m.setChatOn(false)
 	m, _ = m.runCommand(cmdDiffFile)
-	if !m.chatOn {
+	if !m.chatOn() {
 		t.Error("runCommand(cmdDiffFile) debió mostrar el panel de chat")
 	}
 
-	m.chatOn = false
+	m.setChatOn(false)
 	m, _ = m.runCommand(cmdRevertFile)
-	if !m.chatOn {
+	if !m.chatOn() {
 		t.Error("runCommand(cmdRevertFile) debió mostrar el panel de chat")
 	}
 
-	m.chatOn = false
+	m.setChatOn(false)
 	m, _ = m.runCommand(cmdRevertTurn)
-	if !m.chatOn {
+	if !m.chatOn() {
 		t.Error("runCommand(cmdRevertTurn) debió mostrar el panel de chat")
 	}
 
-	m.chatOn = false
+	m.setChatOn(false)
 	m, _ = m.runCommand(cmdRevertAgent)
-	if !m.chatOn {
+	if !m.chatOn() {
 		t.Error("runCommand(cmdRevertAgent) debió mostrar el panel de chat")
 	}
 
-	m.chatOn = false
+	m.setChatOn(false)
 	m, _ = m.runCommand(cmdAgentStop)
-	if !m.chatOn {
+	if !m.chatOn() {
 		t.Error("runCommand(cmdAgentStop) debió mostrar el panel de chat")
 	}
 }

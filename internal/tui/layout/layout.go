@@ -100,6 +100,7 @@ import (
 	"github.com/dpa23/wari/internal/tui/editorview"
 	"github.com/dpa23/wari/internal/tui/filetree"
 	"github.com/dpa23/wari/internal/tui/icons"
+	"github.com/dpa23/wari/internal/tui/tile"
 )
 
 const (
@@ -111,23 +112,14 @@ const (
 	sepWidth    = 1
 )
 
-// chatMode es cuánto espacio ocupa el panel de agentes: una columna lateral,
-// una columna ancha o la pantalla entera. La CLI real de un agente necesita
-// ancho para dibujar su interfaz; en una columna de 40 celdas no se usa.
-type chatMode int
-
-const (
-	chatSide chatMode = iota
-	chatWide
-	chatFull
-)
-
 type focus int
 
 const (
 	focusTree focus = iota
 	focusEditor
 	focusChat
+	// focusTerm es un agente en terminal; cuál lo dice el tile con foco.
+	focusTerm
 	// focusDock es el dock de salida y depuración bajo el editor (ver dock.go).
 	focusDock
 )
@@ -167,6 +159,9 @@ type Config struct {
 	Sandbox Sandbox
 	// Debug configura la depuración (fase 14).
 	Debug DebugConfig
+	// ShowChat muestra el panel de chat al arrancar; por omisión está oculto
+	// (los agentes en terminal van en sus propios tiles).
+	ShowChat bool
 	// Chat configura el panel de agentes (Keymap y Task.Dir los completa el
 	// layout).
 	Chat tui.Config
@@ -183,11 +178,10 @@ type Model struct {
 	hasEd bool
 	chat  tui.Panel
 
-	w, h           int
-	treeOn, chatOn bool
-	// chatMode es el ancho del panel de agentes (ver zoomAgents).
-	chatMode chatMode
-	focus    focus
+	w, h int
+	// ts es el área de trabajo en tiles (tiles.go).
+	ts    *tiling
+	focus focus
 
 	msg         string // mensaje de la barra de estado
 	pendingOpen string // archivo cuya apertura espera confirmación
@@ -272,8 +266,7 @@ func New(cfg Config) Model {
 		chat:   tui.NewPanel(chatCfg),
 		w:      80,
 		h:      24,
-		treeOn: true,
-		chatOn: true,
+		ts:     newTiling(),
 		focus:  focusTree,
 	}
 	m.tree.SetIcons(cfg.Icons)
@@ -284,6 +277,9 @@ func New(cfg Config) Model {
 		icons.Use(icons.Emoji)
 	default:
 		icons.Use(icons.ASCII)
+	}
+	if cfg.ShowChat {
+		m.setChatOn(true)
 	}
 	if cfg.File != "" {
 		m.openFile(cfg.File)
@@ -346,6 +342,17 @@ func (m Model) updateMsg(msg tea.Msg) (Model, tea.Cmd) {
 		return m, nil
 	case tea.KeyPressMsg:
 		return m.handleKey(msg)
+	case tea.MouseClickMsg, tea.MouseMotionMsg, tea.MouseReleaseMsg, tea.MouseWheelMsg:
+		return m.mouse(msg)
+	case tui.LaunchTerminalMsg:
+		return m.launchTerm(msg)
+	case termChangedMsg:
+		return m, listenTerms(m.ts.ch)
+	case tui.PaneTickMsg:
+		if m.anyTermLive() {
+			return m, tui.TickPanes()
+		}
+		return m, nil
 	case tea.PasteMsg:
 		if m.helpOpen || m.diffShown() {
 			return m, nil // con el diff en el centro, el editor no recibe nada
@@ -416,6 +423,16 @@ func (m Model) handleKeyFrom(k tea.KeyPressMsg, viaLeader bool) (Model, tea.Cmd)
 		return m.runConfirmKey(k)
 	}
 
+	// El formulario de agente nuevo está superpuesto: se queda con las teclas.
+	if m.chat.FormActive() {
+		var cmd tea.Cmd
+		m.chat, cmd = m.chat.Handle(k)
+		return m, cmd
+	}
+	if m.ts.mode {
+		return m.tileModeKey(k)
+	}
+
 	// Tecla líder: la tecla siguiente se trata como si llevara alt, para los
 	// teclados sin alt utilizable (macOS) y las terminales que se comen Option.
 	if m.leaderArmed {
@@ -437,8 +454,7 @@ func (m Model) handleKeyFrom(k tea.KeyPressMsg, viaLeader bool) (Model, tea.Cmd)
 	// sus atajos y sus comandos "/". Solo se atienden aquí las teclas de pasar
 	// el foco a otro panel y la tecla líder (arriba). Para salir de WARI se
 	// pasa el foco a otro panel y se usa su tecla de salir.
-	if !viaLeader && m.focus == focusChat && m.chat.TerminalActive() &&
-		!(m.is(k, "focus_tree") || m.is(k, "focus_editor") || m.is(k, "focus_agents") || m.is(k, "zoom_agents")) {
+	if !viaLeader && m.focus == focusTerm && !m.isTileKey(k) {
 		return m.routeToFocused(k)
 	}
 
@@ -475,18 +491,24 @@ func (m Model) handleKeyFrom(k tea.KeyPressMsg, viaLeader bool) (Model, tea.Cmd)
 	case m.is(k, "focus_agents"):
 		return m.focusAgentsPanel(), nil
 	case m.is(k, "toggle_tree"):
-		m.treeOn = !m.treeOn
+		m.setTreeOn(!m.treeOn())
 		m.relayout()
 		return m, nil
 	case m.is(k, "toggle_agents"):
-		m.chatOn = !m.chatOn
+		m.setChatOn(!m.chatOn())
 		m.relayout()
-		if m.chatOn {
+		if m.chatOn() {
 			m = m.focusPanel(focusChat) // al abrirlo se escribe en él
 		}
 		return m, nil
-	case m.is(k, "zoom_agents"):
-		return m.zoomAgents(), nil
+	case m.is(k, "tile_zoom"):
+		return m.tileZoom(), nil
+	case m.is(k, "tile_mode"):
+		return m.enterTileMode(), nil
+	case m.is(k, "tile_left"), m.is(k, "tile_right"), m.is(k, "tile_up"), m.is(k, "tile_down"):
+		return m.tileFocusDir(k), nil
+	case m.is(k, "agent_new"):
+		return m.newAgent()
 	case m.is(k, "save"):
 		return m.save()
 	case m.is(k, "new_file"):
@@ -569,35 +591,15 @@ func (m Model) openDiff() (Model, tea.Cmd) {
 		m.msg = "no hay ediciones que mostrar"
 		return m, cmd
 	}
-	m.focus = focusEditor
+	m.setFocus(focusEditor)
 	m.applyFocus()
 	return m, cmd
 }
 
-// zoomAgents recorre los anchos del panel de agentes (lateral, ancho, pantalla
-// completa) y le da el foco.
-func (m Model) zoomAgents() Model {
-	m.chatOn = true
-	m.chatMode = (m.chatMode + 1) % 3
-	m.relayout()
-	return m.focusPanel(focusChat)
-}
-
-// leaveZoom vuelve el panel de agentes a columna lateral si estaba a pantalla
-// completa: lo pide quien quiere ver el árbol o el editor.
-func (m Model) leaveZoom() Model {
-	if m.chatMode == chatFull {
-		m.chatMode = chatWide
-		m.relayout()
-	}
-	return m
-}
-
 // focusTreePanel da el foco al árbol de archivos, desplegándolo si estaba oculto.
 func (m Model) focusTreePanel() Model {
-	m = m.leaveZoom()
-	if !m.treeOn {
-		m.treeOn = true
+	if !m.treeOn() {
+		m.setTreeOn(true)
 		m.relayout()
 	}
 	return m.focusPanel(focusTree)
@@ -605,14 +607,13 @@ func (m Model) focusTreePanel() Model {
 
 // focusEditorPanel da el foco al editor.
 func (m Model) focusEditorPanel() Model {
-	m = m.leaveZoom()
 	return m.focusPanel(focusEditor)
 }
 
 // focusAgentsPanel da el foco al panel de agentes, desplegándolo si estaba oculto.
 func (m Model) focusAgentsPanel() Model {
-	if !m.chatOn {
-		m.chatOn = true
+	if !m.chatOn() {
+		m.setChatOn(true)
 		m.relayout()
 	}
 	return m.focusPanel(focusChat)
@@ -620,7 +621,7 @@ func (m Model) focusAgentsPanel() Model {
 
 // focusDockPanel da el foco al dock de salida y depuración, si está abierto.
 func (m Model) focusDockPanel() Model {
-	if !m.geometry().visible(focusDock) {
+	if !m.geometry().visible(focusDock, 0) {
 		m.msg = "no hay panel de salida ni de depuración abierto"
 		return m
 	}
@@ -658,6 +659,15 @@ func (m Model) routeToFocused(msg tea.Msg) (Model, tea.Cmd) {
 		}
 	case focusChat:
 		m.chat, cmd = m.chat.Handle(msg)
+	case focusTerm:
+		if a, _ := m.focusedTerm(); a != nil {
+			switch e := msg.(type) {
+			case tea.KeyPressMsg:
+				a.SendKey(e)
+			case tea.PasteMsg:
+				a.Paste(e.Content)
+			}
+		}
 	case focusDock:
 		if k, ok := msg.(tea.KeyPressMsg); ok {
 			return m.dockKey(k)
@@ -671,8 +681,8 @@ func (m Model) routeToFocused(msg tea.Msg) (Model, tea.Cmd) {
 // lo muestra y le da el foco.
 func (m Model) pipelineKey(k tea.KeyPressMsg) (Model, tea.Cmd) {
 	var cmd tea.Cmd
-	if m.is(k, "gate_edit") && !m.chatOn {
-		m.chatOn = true
+	if m.is(k, "gate_edit") && !m.chatOn() {
+		m.setChatOn(true)
 		m.relayout()
 	}
 	m.chat, cmd = m.chat.Handle(k)
@@ -704,8 +714,8 @@ func (m Model) isResolveConflict(k tea.KeyPressMsg) bool {
 // resolveConflict despliega el panel de agentes si está oculto, le da el foco
 // y activa la resolución asistida del choque en el agente pausado.
 func (m Model) resolveConflict() (Model, tea.Cmd) {
-	if !m.chatOn {
-		m.chatOn = true
+	if !m.chatOn() {
+		m.setChatOn(true)
 		m.relayout()
 	}
 	m = m.focusPanel(focusChat)
@@ -740,116 +750,43 @@ func (m Model) quit() (Model, tea.Cmd) {
 
 // --- Foco y geometría -------------------------------------------------------
 
-// geom es el reparto del espacio.
-type geom struct {
-	showTree, showChat bool
-	// showEd es falso con el panel de agentes a pantalla completa.
-	showEd              bool
-	treeX, treeW        int
-	edX, edW            int
-	chatX, chatW        int
-	headH, bodyH, statH int
-	// dockH es la altura del dock bajo el editor (0 si no se muestra); el
-	// editor ocupa el resto de bodyH.
-	dockH int
-}
-
-// geometry reparte m.w x m.h. Árbol ~25% y agentes ~35%; si el editor
-// quedaría con menos de editorMin celdas, se pliegan primero los agentes y
-// luego el árbol. Con poca altura se omiten la barra de estado y los títulos.
-func (m Model) geometry() geom {
-	var g geom
-	w, h := max(m.w, 0), max(m.h, 0)
-	if h >= 2 {
-		g.statH = 1
-	}
-	if h-g.statH >= 3 {
-		g.headH = 1
-	}
-	g.bodyH = max(h-g.statH-g.headH, 0)
-	if m.dock.open {
-		g.dockH = dockHeight(g.bodyH)
-	}
-
-	tw := min(max(w*25/100, 16), 40)
-	cw := min(max(w*35/100, 24), 90)
-	g.showTree, g.showChat, g.showEd = m.treeOn, m.chatOn, true
-	switch {
-	case m.chatOn && m.chatMode == chatFull:
-		// A pantalla completa solo se ve el panel de agentes.
-		g.showTree, g.showEd = false, false
-		g.chatX, g.chatW = 0, w
-		return g
-	case m.chatMode == chatWide:
-		cw = max(w*60/100, 24)
-	}
-	rest := func() int {
-		r := w
-		if g.showTree {
-			r -= tw + sepWidth
-		}
-		if g.showChat {
-			r -= cw + sepWidth
-		}
-		return r
-	}
-	if g.showTree && g.showChat && rest() < editorMin {
-		g.showChat = false
-	}
-	if g.showTree && rest() < editorMin {
-		g.showTree = false
-	}
-	if g.showChat && rest() < editorMin {
-		g.showChat = false
-	}
-	g.edW = rest()
-	x := 0
-	if g.showTree {
-		g.treeX, g.treeW = 0, tw
-		x = tw + sepWidth
-	}
-	g.edX = x
-	if g.showChat {
-		g.chatX, g.chatW = x+g.edW+sepWidth, cw
-	}
-	return g
-}
-
-// visible indica si el panel f se está mostrando.
-func (g geom) visible(f focus) bool {
-	switch f {
-	case focusTree:
-		return g.showTree
-	case focusChat:
-		return g.showChat
-	case focusDock:
-		return g.dockH > 0
-	case focusEditor:
-		return g.showEd
-	}
-	return true
-}
-
 // relayout aplica la geometría a los componentes y al foco.
 func (m *Model) relayout() {
 	g := m.geometry()
-	if !g.visible(m.focus) {
-		m.focus = focusEditor
-		if !g.showEd {
-			m.focus = focusChat
+	if !g.visible(m.focus, m.ts.tree.Focus()) {
+		// El foco quedó en un tile que no se ve: pasa al editor o, si
+		// tampoco se ve, al primer tile visible.
+		if m.focus == focusDock {
+			m.focus = focusEditor // el dock se cerró
 		}
+		if g.showEd {
+			_ = m.ts.tree.SetFocus(idEditor)
+		} else {
+			for _, id := range m.ts.tree.IDs() {
+				if g.body(id).W > 0 {
+					_ = m.ts.tree.SetFocus(id)
+					break
+				}
+			}
+		}
+		m.syncFocus()
 	}
 	if g.showTree {
-		m.tree.SetSize(g.treeW, g.bodyH)
+		m.tree.SetSize(g.tree.W, g.tree.H)
 	}
 	if m.hasEd && g.showEd {
-		m.ed.SetSize(g.edW, g.bodyH-g.dockH)
+		m.ed.SetSize(g.ed.W, g.ed.H-g.dockH)
 	}
 	if g.showEd {
-		m.chat.SetDiffArea(g.edW, g.bodyH-g.dockH)
+		m.chat.SetDiffArea(g.ed.W, g.ed.H-g.dockH)
 	}
 	if g.showChat {
-		m.chat.SetSize(g.chatW, g.bodyH)
+		m.chat.SetSize(g.chat.W, g.chat.H)
+	}
+	for id, a := range m.ts.terms {
+		if r := g.body(id); r.W > 0 && r.H > 0 {
+			a.Resize(r.W, r.H)
+		}
 	}
 	m.applyFocus()
 }
@@ -865,37 +802,54 @@ func (m *Model) applyFocus() {
 	}
 	set(m.focus == focusTree, m.tree.Focus, m.tree.Blur)
 	if m.hasEd {
-		set(m.focus == focusEditor, m.ed.Focus, m.ed.Blur)
+		set(m.focus == focusEditor || m.focus == focusDock, m.ed.Focus, m.ed.Blur)
 	}
 	set(m.focus == focusChat, m.chat.Focus, m.chat.Blur)
 }
 
-// focusPanel pasa el foco a f si el panel es visible.
+// focusPanel pasa el foco al panel f si se ve.
 func (m Model) focusPanel(f focus) Model {
-	if m.geometry().visible(f) {
+	if f == focusTerm {
+		return m
+	}
+	if m.geometry().visible(f, 0) {
+		_ = m.ts.tree.SetFocus(treeFocusFor(f))
 		m.focus = f
 		m.applyFocus()
 	}
 	return m
 }
 
-// moveFocus avanza (dir > 0) o retrocede el foco entre los paneles visibles.
+// moveFocus avanza (dir > 0) o retrocede el foco entre los tiles visibles
+// (el dock cuenta como uno más, tras el editor).
 func (m Model) moveFocus(dir int) Model {
+	type stop struct {
+		f  focus
+		id tile.ID
+	}
 	g := m.geometry()
-	order := []focus{focusTree, focusEditor, focusDock, focusChat}
+	var order []stop
+	for _, id := range m.ts.tree.IDs() {
+		if g.body(id).W <= 0 {
+			continue
+		}
+		order = append(order, stop{m.kindOf(id), id})
+		if id == idEditor && g.dockH > 0 {
+			order = append(order, stop{focusDock, idEditor})
+		}
+	}
+	if len(order) == 0 {
+		return m
+	}
 	cur := 0
-	for i, f := range order {
-		if f == m.focus {
+	for i, st := range order {
+		if st.f == m.focus && (st.f != focusTerm || st.id == m.ts.tree.Focus()) {
 			cur = i
 		}
 	}
-	for range order {
-		cur = (cur + dir + len(order)) % len(order)
-		if g.visible(order[cur]) {
-			m.focus = order[cur]
-			break
-		}
-	}
+	next := order[(cur+dir+len(order))%len(order)]
+	_ = m.ts.tree.SetFocus(next.id)
+	m.focus = next.f
 	m.applyFocus()
 	return m
 }
@@ -918,7 +872,7 @@ func (m *Model) openFile(path string) {
 	}
 	if m.hasEd && m.ed.Path() == path {
 		m.chat = m.chat.CloseDiff()
-		m.focus = focusEditor
+		m.setFocus(focusEditor)
 		m.pendingOpen = ""
 		m.relayout()
 		return
@@ -945,7 +899,7 @@ func (m *Model) openFile(path string) {
 	m.ed.SetImports(m.allImps)
 	m.hasEd = true
 	m.chat = m.chat.CloseDiff()
-	m.focus = focusEditor
+	m.setFocus(focusEditor)
 	m.tree.Reveal(path)
 	m.relayout()
 	m.applyDebugMarks()
@@ -976,6 +930,7 @@ func notText(path string) string {
 func (m Model) View() tea.View {
 	v := tea.NewView(m.render())
 	v.AltScreen = true
+	v.MouseMode = tea.MouseModeCellMotion
 	v.WindowTitle = "WARI"
 	v.Cursor = m.cursor()
 	return v
@@ -1199,72 +1154,11 @@ func (m Model) render() string {
 	if m.w <= 0 || m.h <= 0 {
 		return ""
 	}
-	type col struct {
-		head string
-		body []string
-		w    int
-	}
-	var cols []col
-	if g.showTree {
-		cols = append(cols, col{"Archivos", block(m.tree.View(), g.treeW, g.bodyH), g.treeW})
-	}
-	body := m.placeholder()
-	if m.hasEd {
-		body = m.ed.View()
-	}
-	edLines := block(body, g.edW, g.bodyH-g.dockH)
-	if m.diffShown() {
-		edLines = block(strings.Join(m.chat.DiffLines(g.edW, g.bodyH-g.dockH), "\n"), g.edW, g.bodyH-g.dockH)
-	}
-	if g.dockH > 0 {
-		edLines = append(edLines, m.dockView(g.edW, g.dockH)...)
-	}
-	if g.showEd {
-		cols = append(cols, col{m.editorTitle(), edLines, g.edW})
-	}
-	if g.showChat {
-		cols = append(cols, col{"Agentes", block(m.chat.Body(), g.chatW, g.bodyH), g.chatW})
-	}
-	focusCol := map[focus]int{}
-	i := 0
-	for _, f := range []focus{focusTree, focusEditor, focusChat} {
-		if g.visible(f) {
-			focusCol[f] = i
-			i++
-		}
-	}
-	sep := sepStyle.Render("│")
-	// El dock tiene su propio título dentro de la columna del editor: con el
-	// foco en él, ningún título de columna se resalta.
-	focusedCol := -1
-	if fc, ok := focusCol[m.focus]; ok {
-		focusedCol = fc
-	}
-
-	rows := make([]string, 0, m.h)
-	if g.headH > 0 {
-		var sb strings.Builder
-		for ci, c := range cols {
-			if ci > 0 {
-				sb.WriteString(sep)
-			}
-			sb.WriteString(header(c.head, ci == focusedCol, c.w))
-		}
-		rows = append(rows, sb.String())
-	}
-	for r := 0; r < g.bodyH; r++ {
-		var sb strings.Builder
-		for ci, c := range cols {
-			if ci > 0 {
-				sb.WriteString(sep)
-			}
-			sb.WriteString(c.body[r])
-		}
-		rows = append(rows, sb.String())
-	}
+	rows := m.renderTiles(g)
 	if g.statH > 0 {
 		rows = append(rows, m.statusBar())
 	}
+	m.formOverlay(rows)
 
 	if m.pal.open {
 		for i, l := range m.pal.view(m.w, len(rows)) {
@@ -1347,7 +1241,11 @@ func (m Model) statusBar() string {
 	if d := m.cursorDiagnostic(); d != "" {
 		left += " │ " + d
 	}
-	if m.msg != "" {
+	if m.ts.mode {
+		left = " " + tileModeHint // el modo manda: nada más cabe junto a su ayuda
+		st = alertStyle
+	}
+	if m.msg != "" && !m.ts.mode {
 		left += " │ " + m.msg
 	}
 	var hints []string
@@ -1415,21 +1313,28 @@ func (m Model) cursor() *tea.Cursor {
 	}
 	g := m.geometry()
 	var c *tea.Cursor
-	var x0 int
+	var r tile.Rect
 	switch m.focus {
 	case focusEditor:
 		if m.hasEd && !m.diffShown() {
-			c, x0 = m.ed.Cursor(), g.edX
+			c, r = m.ed.Cursor(), g.ed
 		}
 	case focusChat:
-		c, x0 = m.chat.Cursor(), g.chatX
+		c, r = m.chat.Cursor(), g.chat
+	case focusTerm:
+		id := m.ts.tree.Focus()
+		if a := m.ts.terms[id]; a != nil {
+			if x, y, ok := a.Cursor(); ok {
+				c, r = tea.NewCursor(x, y), g.body(id)
+			}
+		}
 	}
 	if c == nil {
 		return nil
 	}
-	c.X += x0
-	c.Y += g.headH
-	if c.X < 0 || c.X >= m.w || c.Y < g.headH || c.Y >= g.headH+g.bodyH {
+	c.X += r.X
+	c.Y += r.Y
+	if c.X < r.X || c.X >= r.X+r.W || c.Y < r.Y || c.Y >= r.Y+r.H || c.X >= m.w {
 		return nil
 	}
 	return c

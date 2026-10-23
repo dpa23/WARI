@@ -73,8 +73,8 @@ var (
 	keyCtrlO   = tea.KeyPressMsg{Code: 'o', Mod: tea.ModCtrl}
 	keyCtrlX   = tea.KeyPressMsg{Code: 'x', Mod: tea.ModCtrl}
 	keyCtrlK   = tea.KeyPressMsg{Code: 'k', Mod: tea.ModCtrl}
-	keyAltDown = tea.KeyPressMsg{Code: tea.KeyDown, Mod: tea.ModAlt}
-	keyAltUp   = tea.KeyPressMsg{Code: tea.KeyUp, Mod: tea.ModAlt}
+	keyAltDown = tea.KeyPressMsg{Code: ']', Mod: tea.ModAlt} // agent_next
+	keyAltUp   = tea.KeyPressMsg{Code: '[', Mod: tea.ModAlt} // agent_prev
 )
 
 // phar conduce el panel como lo haría Bubble Tea, con un supervisor real y

@@ -116,7 +116,9 @@ func helpGroups() []helpGroup {
 			items: []helpItem{
 				{"toggle_lsp", "Encender o apagar el LSP"},
 				{"diagnostics", "Diagnósticos del archivo"},
-				{"zoom_agents", "Ensanchar panel de agentes (lateral, ancho, completo)"},
+				{"tile_mode", "Modo tiles: partir, mover, redimensionar, cerrar"},
+				{"tile_zoom", "Maximizar / restaurar el tile con foco"},
+				{"tile_left", "Foco al tile de la izquierda (también ←↑↓→ con alt)"},
 			},
 		},
 	}

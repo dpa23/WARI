@@ -332,3 +332,32 @@ func TestDiscoverFailureKeepsFallback(t *testing.T) {
 		t.Errorf("debe avisar del respaldo:\n%s", rows)
 	}
 }
+
+func TestFormConfirmInTerminalModeAsksTheLayoutToLaunch(t *testing.T) {
+	h, _ := formHarness(t, agent.Task{Dir: t.TempDir()})
+	info := h.m.cfg.Infos["claude"]
+	info.Launch = func(task agent.Task, prompt string) (string, []string, error) {
+		return "/bin/true", []string{"--model", task.Model}, nil
+	}
+	h.m.cfg.Infos["claude"] = info
+
+	m, _ := h.m.openForm(h.m.cur(), "", false)
+	m.form.model = 0
+	m, cmd := m.formConfirm()
+	if m.form != nil {
+		t.Fatal("el formulario debía cerrarse")
+	}
+	if cmd == nil {
+		t.Fatal("debía emitir la petición de lanzar")
+	}
+	req, ok := cmd().(LaunchTerminalMsg)
+	if !ok {
+		t.Fatalf("el mensaje no es LaunchTerminalMsg: %T", cmd())
+	}
+	if req.CLI != "claude" || req.Path != "/bin/true" || len(req.Args) != 2 || req.Args[1] != req.Model || req.Model == "" {
+		t.Errorf("petición inesperada: %+v", req)
+	}
+	if m.cur().configured {
+		t.Error("el panel no aloja el terminal: su agente debe quedar sin configurar")
+	}
+}

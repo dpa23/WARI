@@ -258,3 +258,13 @@ func classify(title string, last, now time.Time) Activity {
 	}
 	return Waiting
 }
+
+// Wheel entrega la rueda del ratón a la CLI en la celda (x, y) del terminal.
+// El emulador solo la codifica si la CLI pidió el ratón; si no, no pasa nada.
+func (t *Pane) Wheel(x, y int, up bool) {
+	b := uv.MouseWheelDown
+	if up {
+		b = uv.MouseWheelUp
+	}
+	t.em.SendMouse(uv.MouseWheelEvent{X: x, Y: y, Button: b})
+}

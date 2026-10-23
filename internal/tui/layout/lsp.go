@@ -750,7 +750,7 @@ func (m *Model) jumpToLocation(l lsp.Location, pending string) {
 	}
 	line, col := m.bufPos(l.Range.Start)
 	m.ed.GoTo(line, col)
-	m.focus = focusEditor
+	m.setFocus(focusEditor)
 	m.relayout()
 	m.msg = fmt.Sprintf("%s:%d", m.display(path), line+1)
 }

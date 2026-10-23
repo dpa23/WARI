@@ -51,6 +51,7 @@ func newLayout(t *testing.T, cfg Config, w, h int) Model {
 		cfg.Root = project(t)
 	}
 	cfg.Chat = tui.Config{}
+	cfg.ShowChat = true // las pruebas parten del panel de chat visible
 	m := New(cfg)
 	m, _ = m.update(tea.WindowSizeMsg{Width: w, Height: h})
 	return m
@@ -144,7 +145,9 @@ func TestInitialLayout(t *testing.T) {
 		t.Errorf("foco inicial = %v", m.focus)
 	}
 	g := m.geometry()
-	if g.treeW != 30 || g.chatW != 42 || g.edW != 120-30-42-2 {
+	// Árbol a la izquierda, editor en medio y chat a la derecha, sin huecos.
+	if !g.showTree || !g.showEd || !g.showChat || g.tree.X != 0 ||
+		g.ed.X != g.tree.W+1 || g.chat.X != g.ed.X+g.ed.W+1 || g.chat.X+g.chat.W != 120 {
 		t.Errorf("reparto = %+v", g)
 	}
 	checkDims(t, m, 120, 30, "inicial")
@@ -224,7 +227,7 @@ func TestFocusCycleAndTabInEditor(t *testing.T) {
 func TestFocusIsVisible(t *testing.T) {
 	m := newLayout(t, Config{}, 120, 30)
 	head := lines(m)[0]
-	if !strings.Contains(head, headFocused.Render(fit(" Archivos", 30))) {
+	if !strings.Contains(head, headFocused.Render(fit(" Archivos", m.geometry().lay.Rects[idTree].W))) {
 		t.Error("el título del panel con foco no tiene el estilo de foco")
 	}
 	m2, _ := send(m, press(tea.KeyTab, 0))
@@ -433,7 +436,7 @@ func TestPaletteOpensFilesAndRunsActions(t *testing.T) {
 	m = typeText(m, "arbol")
 	m = selectCmd(t, m, cmdToggleTree)
 	m, _ = send(m, press(tea.KeyEnter, 0))
-	if m.treeOn {
+	if m.treeOn() {
 		t.Error("la acción de la paleta no alternó el árbol")
 	}
 
@@ -512,12 +515,12 @@ func TestCursorTranslation(t *testing.T) {
 	g := m.geometry()
 	// Editor: gutter de 1 dígito + 2 = 3; cursor en (0,0) del buffer.
 	c := m.View().Cursor
-	if c == nil || c.X != g.edX+3 || c.Y != g.headH {
-		t.Fatalf("cursor del editor = %+v, quería (%d,%d)", c, g.edX+3, g.headH)
+	if c == nil || c.X != g.ed.X+3 || c.Y != g.ed.Y {
+		t.Fatalf("cursor del editor = %+v, quería (%d,%d)", c, g.ed.X+3, g.ed.Y)
 	}
 	m, _ = send(m, press(tea.KeyDown, 0), press(tea.KeyEnd, 0))
 	c = m.View().Cursor
-	if c == nil || c.X != g.edX+3+len("    int x;") || c.Y != g.headH+1 {
+	if c == nil || c.X != g.ed.X+3+len("    int x;") || c.Y != g.ed.Y+1 {
 		t.Fatalf("cursor tras mover = %+v", c)
 	}
 	// Árbol: sin cursor real.
@@ -528,8 +531,8 @@ func TestCursorTranslation(t *testing.T) {
 	// Agentes: cursor dentro de su columna.
 	m, _ = send(m, press(tea.KeyTab, tea.ModShift))
 	c = m.View().Cursor
-	if m.focus != focusChat || c == nil || c.X < g.chatX || c.X >= g.chatX+g.chatW {
-		t.Fatalf("foco=%v cursor del chat = %+v (chatX=%d)", m.focus, c, g.chatX)
+	if m.focus != focusChat || c == nil || c.X < g.chat.X || c.X >= g.chat.X+g.chat.W {
+		t.Fatalf("foco=%v cursor del chat = %+v (chatX=%d)", m.focus, c, g.chat.X)
 	}
 }
 
@@ -542,11 +545,11 @@ func TestKeysComeFromConfig(t *testing.T) {
 	m := newLayout(t, Config{Root: root, File: filepath.Join(root, "notes.txt"), Keymap: km}, 120, 30)
 
 	m, _ = send(m, press('b', tea.ModCtrl)) // ya no es toggle_tree
-	if !m.treeOn {
+	if !m.treeOn() {
 		t.Error("ctrl+b ya no debía alternar el árbol")
 	}
 	m, _ = send(m, press('t', tea.ModCtrl))
-	if m.treeOn {
+	if m.treeOn() {
 		t.Error("ctrl+t debía alternar el árbol")
 	}
 	m, _ = send(m, press('p', tea.ModCtrl))
@@ -831,7 +834,7 @@ func TestStatusBarShowsAgentsAndGlobalStop(t *testing.T) {
 	defer sup.Close()
 	f := &qfake{ch: make(chan agent.Event, 4)}
 	sup.Submit("a", f, agent.Task{Prompt: "x"}, orch.Budget{})
-	m := New(Config{Root: project(t), Chat: tui.Config{Supervisor: sup}})
+	m := New(Config{ShowChat: true, Root: project(t), Chat: tui.Config{Supervisor: sup}})
 	m, _ = m.update(tea.WindowSizeMsg{Width: 120, Height: 24})
 	if !strings.Contains(screen(m), "activos 0/3 · en cola 0") {
 		t.Errorf("el límite del supervisor no se muestra:\n%s", screen(m))
@@ -929,33 +932,5 @@ func TestStatusBarAlertShortensAgentsInfoWholeWords(t *testing.T) {
 	}
 	if got := fitVariant(vs, 5); got != "0/2·0" {
 		t.Errorf("a 5 celdas = %q", got)
-	}
-}
-
-func TestZoomAgentsCyclesWidths(t *testing.T) {
-	m := newLayout(t, Config{Root: project(t)}, 160, 30)
-	side := m.geometry().chatW
-	m, _ = send(m, press('z', tea.ModAlt))
-	if g := m.geometry(); g.chatW <= side || !g.showEd || m.focus != focusChat {
-		t.Fatalf("ancho: chatW=%d (lateral %d) showEd=%v focus=%v", g.chatW, side, g.showEd, m.focus)
-	}
-	m, _ = send(m, press('z', tea.ModAlt))
-	if g := m.geometry(); g.chatW != 160 || g.showEd || g.showTree {
-		t.Fatalf("completo: %+v", g)
-	}
-	for i, l := range strings.Split(screen(m), "\n") {
-		if w := lipgloss.Width(l); w > 160 {
-			t.Fatalf("fila %d mide %d > 160", i, w)
-		}
-	}
-	// alt+2 saca del modo completo y deja ver el editor.
-	m, _ = send(m, press('2', tea.ModAlt))
-	if g := m.geometry(); !g.showEd || m.focus != focusEditor {
-		t.Fatalf("alt+2 no volvió al editor: %+v focus=%v", g, m.focus)
-	}
-	m, _ = send(m, press('z', tea.ModAlt))
-	m, _ = send(m, press('z', tea.ModAlt))
-	if m.chatMode != chatSide {
-		t.Fatalf("tras el ciclo debe volver a lateral, está en %v", m.chatMode)
 	}
 }

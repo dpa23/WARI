@@ -23,7 +23,12 @@ func TestDefault(t *testing.T) {
 		"focus_tree":      {"alt+1"},
 		"focus_editor":    {"alt+2"},
 		"focus_agents":    {"alt+3"},
-		"zoom_agents":     {"alt+z"},
+		"tile_zoom":       {"alt+z"},
+		"tile_mode":       {"alt+h"},
+		"tile_left":       {"alt+left"},
+		"tile_right":      {"alt+right"},
+		"tile_up":         {"alt+up"},
+		"tile_down":       {"alt+down"},
 		"palette":         {"ctrl+p"},
 		"save":            {"ctrl+s"},
 		"undo":            {"ctrl+z"},
@@ -39,8 +44,8 @@ func TestDefault(t *testing.T) {
 		"toggle_tree":     {"ctrl+b"},
 		"toggle_agents":   {"ctrl+g"},
 		"agent_new":       {"ctrl+t"},
-		"agent_next":      {"alt+down"},
-		"agent_prev":      {"alt+up"},
+		"agent_next":      {"alt+]"},
+		"agent_prev":      {"alt+["},
 		"agent_pause":     {"ctrl+o"},
 		"agent_stop":      {"ctrl+x"},
 		"stop_all":        {"ctrl+k"},
@@ -341,7 +346,7 @@ func TestKeymapLabelEdgeCases(t *testing.T) {
 		km := Keymap{
 			"new_file":        {"alt+f", "ctrl+n"},
 			"goto_definition": {"f12", "alt+d"},
-			"agent_next":      {"alt+down"},
+			"agent_next":      {"alt+]"},
 		}
 		for _, goos := range []string{"linux", "windows"} {
 			if got := km.Label(goos, "new_file"); got != "alt+f" {

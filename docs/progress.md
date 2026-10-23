@@ -101,3 +101,6 @@
 
 - CI se ejecuta por primera vez con el primer push que apruebe el autor.
 - Límite conocido: un descendiente que escape del grupo con `setsid` no se controla (ver `docs/decisions.md`).
+
+### Tiling libre (2026-10-22)
+- `internal/tui/tile` (motor), `tui.TermAgent`, `layout/tiles.go`. Agentes en terminal como tiles movibles con teclado y ratón; panel de chat oculto por omisión; iconos Nerd/emoji/ASCII (`internal/tui/icons`) y fuente JetBrainsMono Nerd en `assets/fonts` (`scripts/install-font.sh`). Verificado en herdr con `claude` real (formulario superpuesto, dos agentes, modo tiles, maximizar). Ver `docs/decisions.md`.

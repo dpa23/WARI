@@ -305,16 +305,24 @@ func (m Panel) formConfirm() (Panel, tea.Cmd) {
 	}
 	pending := f.pending
 	if f.terminalMode() {
-		v.configured = true
-		cmd, err := m.startTerminal(v, pending)
+		req, err := m.launchRequest(v, pending)
 		if err != nil {
-			v.configured = false
 			f.err = "no se pudo lanzar " + info.Name + ": " + err.Error()
 			return m, nil
 		}
+		// El terminal no vive en el panel: el layout lo coloca en su tile. La
+		// vista que creó el formulario se quita; la primera se queda sin
+		// configurar para el siguiente mensaje.
 		m.form = nil
+		if f.created && len(m.views) > 1 {
+			m.views = m.views[:len(m.views)-1]
+			m.created--
+			m.sel = len(m.views) - 1
+		} else {
+			v.configured = false
+		}
 		m.layout(m.width, m.height)
-		return m, cmd
+		return m, func() tea.Msg { return req }
 	}
 	v.add(kindInfo, v.configSummary(m.effectivePermissions(v)))
 	m.form = nil
@@ -461,3 +469,10 @@ func (m Panel) formRows(w, h int) []string {
 	}
 	return out
 }
+
+// FormActive indica que el formulario de agente nuevo está abierto: el layout
+// lo dibuja superpuesto (el panel puede estar oculto) y le entrega las teclas.
+func (m Panel) FormActive() bool { return m.form != nil }
+
+// FormLines dibuja el formulario en exactamente h filas de ancho w.
+func (m Panel) FormLines(w, h int) []string { return m.formRows(w, h) }

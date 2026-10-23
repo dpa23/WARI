@@ -55,7 +55,7 @@ func TestStatusBarShowsFileConflictAlert(t *testing.T) {
 		t.Fatal(err)
 	}
 	var made []*efake
-	m := New(Config{Root: root, Chat: tui.Config{
+	m := New(Config{ShowChat: true, Root: root, Chat: tui.Config{
 		Supervisor: sup,
 		NewAgent:   func() agent.Agent { f := newEfake(); made = append(made, f); return f },
 	}})
@@ -91,7 +91,7 @@ func TestStatusBarShowsFileConflictAlert(t *testing.T) {
 	}
 	// La alerta se ve aunque el panel de agentes esté plegado.
 	m, _ = send(m, press('g', tea.ModCtrl))
-	if m.chatOn {
+	if m.chatOn() {
 		t.Fatal("el panel de agentes debía plegarse")
 	}
 	if !strings.Contains(bar(m), "choque") {
@@ -108,7 +108,7 @@ func TestConflictBannerFoldedAndAssistedResolution(t *testing.T) {
 		t.Fatal(err)
 	}
 	var made []*efake
-	m := New(Config{Root: root, Chat: tui.Config{
+	m := New(Config{ShowChat: true, Root: root, Chat: tui.Config{
 		Supervisor: sup,
 		NewAgent:   func() agent.Agent { f := newEfake(); made = append(made, f); return f },
 	}})
@@ -143,7 +143,7 @@ func TestConflictBannerFoldedAndAssistedResolution(t *testing.T) {
 
 	// Plegar panel de agentes
 	m, _ = send(m, press('g', tea.ModCtrl))
-	if m.chatOn {
+	if m.chatOn() {
 		t.Fatal("el panel de agentes debía estar plegado")
 	}
 	// El banner sigue visible con panel plegado
@@ -158,7 +158,7 @@ func TestConflictBannerFoldedAndAssistedResolution(t *testing.T) {
 			m, _ = m.update(msg)
 		}
 	}
-	if !m.chatOn {
+	if !m.chatOn() {
 		t.Fatal("F6 debía desplegar el panel de agentes")
 	}
 	if m.focus != focusChat {
@@ -202,7 +202,7 @@ func TestSaveIsNotAttributedToRunningAgent(t *testing.T) {
 	}
 	f := newEfake()
 	sup.Submit("a", f, agent.Task{Prompt: "x"}, orch.Budget{}) // único agente corriendo
-	m := New(Config{Root: root, File: notes, Chat: tui.Config{Supervisor: sup}})
+	m := New(Config{ShowChat: true, Root: root, File: notes, Chat: tui.Config{Supervisor: sup}})
 	m, _ = m.update(tea.WindowSizeMsg{Width: 120, Height: 30})
 
 	changed := func() []orch.Notice {
@@ -256,7 +256,7 @@ func TestPipelineKeysAreGlobalOnlyWithPipeline(t *testing.T) {
 	}
 	defer r.Close()
 
-	m := New(Config{Root: root, Chat: tui.Config{Supervisor: sup, Pipeline: r, NewAgent: fn}})
+	m := New(Config{ShowChat: true, Root: root, Chat: tui.Config{Supervisor: sup, Pipeline: r, NewAgent: fn}})
 	m, _ = m.update(tea.WindowSizeMsg{Width: 140, Height: 30})
 	m = m.focusPanel(focusTree)
 
@@ -280,7 +280,7 @@ func TestPipelineKeysAreGlobalOnlyWithPipeline(t *testing.T) {
 	}
 
 	// Sin pipeline la tecla no se intercepta.
-	noPipe := New(Config{Root: root, Chat: tui.Config{Supervisor: sup, NewAgent: fn}})
+	noPipe := New(Config{ShowChat: true, Root: root, Chat: tui.Config{Supervisor: sup, NewAgent: fn}})
 	noPipe, _ = noPipe.update(tea.WindowSizeMsg{Width: 140, Height: 30})
 	noPipe = noPipe.focusPanel(focusTree)
 	if _, cmd := send(noPipe, press('e', tea.ModAlt)); cmd != nil {
@@ -325,25 +325,25 @@ func TestDirectPanelFocusEscapingEditor(t *testing.T) {
 	}
 
 	// Con el árbol oculto, alt+1 lo despliega y le da el foco
-	m.treeOn = false
+	m.setTreeOn(false)
 	m.relayout()
-	if m.treeOn {
+	if m.treeOn() {
 		t.Fatal("árbol debía estar plegado")
 	}
 	m, _ = send(m, press('1', tea.ModAlt))
-	if !m.treeOn || m.focus != focusTree {
-		t.Fatalf("alt+1 debió desplegar y enfocar árbol: treeOn=%v focus=%v", m.treeOn, m.focus)
+	if !m.treeOn() || m.focus != focusTree {
+		t.Fatalf("alt+1 debió desplegar y enfocar árbol: treeOn=%v focus=%v", m.treeOn(), m.focus)
 	}
 
 	// Con el chat oculto, alt+3 lo despliega y le da el foco
-	m.chatOn = false
+	m.setChatOn(false)
 	m.relayout()
-	if m.chatOn {
+	if m.chatOn() {
 		t.Fatal("chat debía estar plegado")
 	}
 	m, _ = send(m, press('3', tea.ModAlt))
-	if !m.chatOn || m.focus != focusChat {
-		t.Fatalf("alt+3 debió desplegar y enfocar chat: chatOn=%v focus=%v", m.chatOn, m.focus)
+	if !m.chatOn() || m.focus != focusChat {
+		t.Fatalf("alt+3 debió desplegar y enfocar chat: chatOn=%v focus=%v", m.chatOn(), m.focus)
 	}
 }
 
@@ -358,7 +358,7 @@ func TestTreeMarkersAndEditorHeaderAgentIndicators(t *testing.T) {
 		t.Fatal(err)
 	}
 	var made []*efake
-	m := New(Config{Root: root, Chat: tui.Config{
+	m := New(Config{ShowChat: true, Root: root, Chat: tui.Config{
 		Supervisor: sup,
 		NewAgent:   func() agent.Agent { f := newEfake(); made = append(made, f); return f },
 	}})

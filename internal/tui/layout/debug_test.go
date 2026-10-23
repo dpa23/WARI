@@ -53,7 +53,7 @@ func dbgLayout(t *testing.T, root, file string, cfg DebugConfig) *driver {
 func gutter(m Model, line int) string {
 	g := m.geometry()
 	rows := lines(m)
-	for i := g.headH; i < g.headH+g.bodyH-g.dockH && i < len(rows); i++ {
+	for i := g.ed.Y; i < g.ed.Y+g.bodyH-g.dockH && i < len(rows); i++ {
 		s := strings.TrimLeft(plain(rows[i]), " ")
 		n := 0
 		for n < len(s) && unicode.IsDigit(rune(s[n])) {
@@ -79,7 +79,7 @@ func gutter(m Model, line int) string {
 func execLineHighlighted(m Model, line int) bool {
 	g := m.geometry()
 	rows := lines(m)
-	for i := g.headH; i < g.headH+g.bodyH-g.dockH && i < len(rows); i++ {
+	for i := g.ed.Y; i < g.ed.Y+g.bodyH-g.dockH && i < len(rows); i++ {
 		if strings.HasPrefix(strings.TrimLeft(plain(rows[i]), " "), strconv.Itoa(line)) &&
 			strings.Contains(rows[i], "\x1b[48;2;70;62;20m") {
 			return true

@@ -19,7 +19,6 @@ import (
 	"github.com/dpa23/wari/internal/agent"
 	"github.com/dpa23/wari/internal/orch"
 	"github.com/dpa23/wari/internal/orch/pipeline"
-	"github.com/dpa23/wari/internal/term"
 )
 
 const (
@@ -114,8 +113,6 @@ type agentView struct {
 	perm       *agent.PermissionMode
 	role       string
 	configured bool
-	// pane es la CLI real en un terminal (modo terminal); nil en modo chat.
-	pane *term.Pane
 }
 
 func (v *agentView) state() (orch.State, bool) { return v.snap.State, v.hasSnap }
@@ -201,13 +198,9 @@ type Panel struct {
 	discovered  map[string][]agent.ModelOption
 	discovering map[string]bool
 	discoverErr map[string]string
-	// paneCh avisa de que la pantalla de algún terminal cambió; paneListening
-	// indica que ya hay un Cmd esperándolo (solo hace falta uno).
-	paneCh        chan struct{}
-	paneListening *bool
-	gate          *gateView
-	gateEdit      bool
-	gateDraft     string
+	gate        *gateView
+	gateEdit    bool
+	gateDraft   string
 }
 
 var _ tea.Model = Panel{}
@@ -217,22 +210,20 @@ var _ tea.Model = Panel{}
 func NewPanel(cfg Config) Panel {
 	km := NewKeyMap(cfg.Keymap)
 	m := Panel{
-		cfg:           cfg,
-		keys:          km,
-		styles:        defaultStyles(),
-		sup:           cfg.Supervisor,
-		vp:            newViewport(),
-		input:         newInput(km),
-		spin:          newSpinner(),
-		byID:          make(map[orch.ID]*agentView),
-		listening:     cfg.Supervisor != nil,
-		histPos:       -1,
-		discovered:    make(map[string][]agent.ModelOption),
-		discovering:   make(map[string]bool),
-		discoverErr:   make(map[string]string),
-		paneCh:        make(chan struct{}, 1),
-		paneListening: new(bool),
-		pipe:          cfg.Pipeline,
+		cfg:         cfg,
+		keys:        km,
+		styles:      defaultStyles(),
+		sup:         cfg.Supervisor,
+		vp:          newViewport(),
+		input:       newInput(km),
+		spin:        newSpinner(),
+		byID:        make(map[orch.ID]*agentView),
+		listening:   cfg.Supervisor != nil,
+		histPos:     -1,
+		discovered:  make(map[string][]agent.ModelOption),
+		discovering: make(map[string]bool),
+		discoverErr: make(map[string]string),
+		pipe:        cfg.Pipeline,
 	}
 	if m.pipe != nil {
 		m.ps = m.pipe.Snapshot()
@@ -310,21 +301,6 @@ func (m Panel) dispatch(msg tea.Msg) (Panel, tea.Cmd) {
 	case modelsMsg:
 		return m.onModels(msg), nil
 
-	case paneChangedMsg:
-		return m, listenPane(m.paneCh)
-
-	case paneTickMsg:
-		if m.anyPaneLive() {
-			return m, tickPanes()
-		}
-		return m, nil
-
-	case tea.PasteMsg:
-		if v := m.cur(); v.pane != nil && m.form == nil {
-			v.pane.Paste(msg.Content)
-			return m, nil
-		}
-
 	case diffMsg:
 		if m.dv != nil && m.dv.v.id == msg.id && m.dv.edit == msg.edit {
 			if msg.err != nil {
@@ -384,9 +360,6 @@ func (m Panel) cur() *agentView { return m.views[m.sel] }
 func (m Panel) handleKey(msg tea.KeyPressMsg) (Panel, tea.Cmd) {
 	if m.form != nil {
 		return m.formKey(msg)
-	}
-	if m.cur().pane != nil {
-		return m.terminalKey(msg)
 	}
 	if m.rm != nil {
 		switch {
@@ -924,7 +897,6 @@ func (m Panel) quit() (Panel, tea.Cmd) {
 		return m, nil
 	}
 	m.quitting = true
-	m.ClosePanes()
 	var unsent []agent.Agent
 	for _, v := range m.views {
 		if v.ag != nil {
@@ -1116,20 +1088,11 @@ func (m *Panel) layout(w, h int) {
 	// Una fila por agente y una de detalle (CLI, modelo, potencia) para el
 	// seleccionado.
 	m.listH = min(len(m.views)+1, maxListRows+1, max(avail-m.pipeH, 0))
-	if m.cur().pane != nil {
-		m.listH = min(1, h)
-	}
 	m.histH, m.statH, m.inH = splitRows(h - m.pipeH - m.listH)
 	m.vp.SetWidth(w)
 	m.vp.SetHeight(max(m.histH, 1))
 	m.input.SetWidth(w)
 	m.input.SetHeight(m.inH)
-	cols, rows := m.terminalSize()
-	for _, v := range m.views {
-		if v.pane != nil {
-			v.pane.Resize(cols, rows)
-		}
-	}
 	m.refreshTo(follow)
 }
 
@@ -1261,9 +1224,6 @@ func selectedBadge(st lipgloss.Style, idle bool) lipgloss.Style {
 
 // listLine compone la fila del agente i de la lista.
 func (m Panel) listLine(i int) string {
-	if m.views[i].pane != nil {
-		return m.terminalLine(i)
-	}
 	v := m.views[i]
 	marker := "  "
 	switch {
@@ -1661,12 +1621,6 @@ func (m Panel) statusLine() string {
 // componerlo dentro de un layout.
 func (m Panel) Body() string {
 	rows := append(m.pipeRows(), m.listRows()...)
-	if v := m.cur(); v.pane != nil && m.form == nil {
-		rows = append(m.pipeRows(), m.tabBar())
-		_, h := m.terminalSize()
-		rows = append(rows, m.paneRows(v, m.width, h)...)
-		return lipgloss.JoinVertical(lipgloss.Left, rows...)
-	}
 	if m.histH > 0 {
 		if m.form != nil {
 			rows = append(rows, m.formRows(m.width, m.histH)...)
@@ -1699,14 +1653,6 @@ func (m Panel) View() tea.View {
 func (m Panel) Cursor() *tea.Cursor {
 	if m.blurred || m.panelModal() || m.form != nil {
 		return nil
-	}
-	if v := m.cur(); v.pane != nil {
-		x, y, visible := v.pane.Cursor()
-		if !visible {
-			return nil
-		}
-		c := tea.NewCursor(x, y+m.pipeH+m.listH)
-		return c
 	}
 	c := m.input.Cursor()
 	if c == nil {
