@@ -416,27 +416,47 @@ func (m Model) View() string {
 			}
 			name += "/"
 		}
-		icon := ""
+		ic := iconFor(n.name, n.dir, n.expanded)
+		glyph := ""
 		if m.icons != IconsOff {
-			icon = iconFor(n.name, n.dir, n.expanded).in(m.icons) + " "
+			glyph = ic.in(m.icons)
 		}
-		text := strings.Repeat("  ", max(n.depth-1, 0)) + marker + icon + name
+		// head va antes del icono; tail, después. El icono lleva el color de
+		// marca de su logo (solo con Nerd Font, y no en la fila seleccionada,
+		// que va en vídeo inverso).
+		head := strings.Repeat("  ", max(n.depth-1, 0)) + marker
+		label := name
 		if n == m.root {
-			text = "▾ " + icon + n.name + "/"
+			head, label = "▾ ", n.name+"/"
+		}
+		tail := label
+		if glyph != "" {
+			tail = " " + label
 		}
 		if !n.dir {
 			if mk, ok := m.markerFor(n); ok {
 				if b := mk.badge(); b != "" {
-					text += " " + b
+					tail += " " + b
 				}
 			}
 		}
-		text = fit(text, m.w)
-		switch {
-		case idx == m.cursor:
-			text = sel.Render(text)
-		case n.dir:
-			text = dir.Render(text)
+		var text string
+		colored := m.icons == IconsNerd && ic.color != "" && idx != m.cursor && lipgloss.Width(head+glyph) < m.w
+		if colored {
+			base := lipgloss.NewStyle()
+			if n.dir {
+				base = dir
+			}
+			text = base.Render(head) + lipgloss.NewStyle().Foreground(lipgloss.Color(ic.color)).Render(glyph) +
+				base.Render(fit(tail, m.w-lipgloss.Width(head+glyph)))
+		} else {
+			text = fit(head+glyph+tail, m.w)
+			switch {
+			case idx == m.cursor:
+				text = sel.Render(text)
+			case n.dir:
+				text = dir.Render(text)
+			}
 		}
 		lines[i] = text
 	}

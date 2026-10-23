@@ -26,6 +26,7 @@ import (
 	"github.com/dpa23/wari/internal/agent/codex"
 	"github.com/dpa23/wari/internal/agent/opencode"
 	"github.com/dpa23/wari/internal/config"
+	"github.com/dpa23/wari/internal/fontinstall"
 	"github.com/dpa23/wari/internal/index"
 	"github.com/dpa23/wari/internal/orch"
 	"github.com/dpa23/wari/internal/orch/pipeline"
@@ -255,6 +256,7 @@ func loadKeymap(root string) config.Keymap {
 // descendientes.
 func runTUI(agentName string, newAgent func() agent.Agent, task agent.Task, root, file string, maxActive int, budget orch.Budget, loops orch.LoopLimits, idx *index.Index, lspOn bool, icons filetree.IconMode) int {
 	warnMissingAgent(agentName)
+	ensureIconFont(icons)
 	sup := orch.New(maxActive)
 	defer sup.Close()
 	sup.SetLoopLimits(loops)
@@ -507,4 +509,26 @@ func runKeys(initTemplate bool) int {
 		fmt.Println(" ", line)
 	}
 	return 0
+}
+
+// ensureIconFont deja instalada la fuente de los iconos si hace falta: el
+// binario la trae y el usuario no configura nada fuera de WARI. Se puede
+// desactivar con WARI_NO_FONT_INSTALL=1.
+func ensureIconFont(mode filetree.IconMode) {
+	if mode != filetree.IconsNerd {
+		return
+	}
+	home, err := os.UserHomeDir()
+	if err != nil {
+		return
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 90*time.Second)
+	defer cancel()
+	path, installed, err := fontinstall.Ensure(ctx, home)
+	switch {
+	case err != nil:
+		fmt.Fprintln(os.Stderr, "wari: aviso: no se pudo instalar la fuente de los iconos:", err)
+	case installed:
+		fmt.Fprintf(os.Stderr, "wari: instalé la fuente de los iconos en %s (si ves cuadros, reinicia la terminal; para no instalarla, WARI_NO_FONT_INSTALL=1)\n", path)
+	}
 }

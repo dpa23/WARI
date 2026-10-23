@@ -314,7 +314,7 @@ Si el argumento posicional es un archivo, WARI toma su directorio contenedor com
 | (entorno) `WARI_THEME` | `dark`\|`light` | Fija si el fondo de la terminal es oscuro o claro sin consultarlo. Sin esto WARI usa `COLORFGBG` y, si tampoco está, asume oscuro y se lo pregunta a la terminal ya dentro del TUI (sin escribir nada suelto en pantalla). |
 | `-keys` | `bool` (`false`) | Muestra los atajos vigentes en este sistema (predeterminados más tus `keys.json`) y sale. En macOS las teclas `alt+x` salen como `ctrl+e x`. |
 | `-keys-init` | `bool` (`false`) | Escribe en tu directorio de configuración un `keys.json` con los atajos predeterminados de este sistema, para editarlo, y sale. No sobrescribe uno existente. |
-| `-icons` | `string` (`auto`) | Iconos junto a cada archivo y carpeta del árbol: `auto` (Nerd Font, la oficial: la fuente JetBrainsMono Nerd Font viene en `assets/fonts` y `scripts/install-font.sh` la instala sin red; elígela en la configuración de tu terminal. Cae a emoji con `WARI_NERD_FONT=0` o en una consola `TERM=linux`), `nerd` (siempre Nerd; sin la fuente se ven cuadros), `emoji` u `off`. También `WARI_ICONS`. |
+| `-icons` | `string` (`auto`) | Iconos junto a cada archivo y carpeta del árbol: `auto` (Nerd Font, la oficial: los logos de cada lenguaje van con su color de marca; el binario trae la fuente JetBrainsMono Nerd Font y la instala sola la primera vez si falta —sin red y sin tocar la configuración de la terminal; `WARI_NO_FONT_INSTALL=1` lo evita—. Cae a emoji con `WARI_NERD_FONT=0` o en una consola `TERM=linux`), `nerd` (siempre Nerd; sin la fuente se ven cuadros), `emoji` u `off`. También `WARI_ICONS`. |
 | `-version` | `bool` (`false`) | Imprime la versión compilada de WARI y sale. |
 
 ---

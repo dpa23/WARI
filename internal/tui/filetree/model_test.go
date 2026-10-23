@@ -515,3 +515,37 @@ func TestEmojiIconsKeepWidth(t *testing.T) {
 		}
 	}
 }
+
+func TestNerdIconsCarryTheBrandColorAndKeepWidth(t *testing.T) {
+	root := t.TempDir()
+	for _, f := range []string{"index.php", "Main.java", "notes.txt", "pom.xml", "application-local.yml"} {
+		if err := os.WriteFile(filepath.Join(root, f), []byte("x"), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	m := New(root)
+	m.SetSize(40, 10)
+	m.SetIcons(IconsNerd)
+	m.Blur()
+	view := m.View()
+	if !strings.Contains(view, "") { // el óvalo de PHP
+		t.Errorf("index.php debía llevar el logo de PHP:\n%s", view)
+	}
+	if !strings.Contains(view, "38;2;119;123;180") { // #777bb4
+		t.Errorf("el logo de PHP debía llevar su color de marca:\n%q", view)
+	}
+	for i, l := range strings.Split(view, "\n") {
+		if w := lipgloss.Width(l); w != 40 {
+			t.Errorf("fila %d mide %d, quería 40", i, w)
+		}
+	}
+	// Con emoji no se pinta: el emoji ya trae su color.
+	m.SetIcons(IconsEmoji)
+	if strings.Contains(m.View(), "38;2;") {
+		t.Error("el emoji no debe llevar color de marca")
+	}
+	// Los nombres especiales de Maven y Spring tienen su logo propio.
+	if iconFor("pom.xml", false, false) != iconMaven || iconFor("application-local.yml", false, false) != iconSpring {
+		t.Error("pom.xml y application-*.yml deben tener icono de Maven y de Spring")
+	}
+}
