@@ -25,6 +25,7 @@ const (
 	cmdSave            = "save"
 	cmdToggleTree      = "toggle_tree"
 	cmdToggleAgents    = "toggle_agents"
+	cmdZoomAgents      = "zoom_agents"
 	cmdNewSession      = "new_session"
 	cmdAgentPause      = "agent_pause"
 	cmdAgentStop       = "agent_stop"
@@ -113,6 +114,7 @@ func (m Model) paletteItems() []item {
 		newItem(cmdFocusChat, "Ir al panel de agentes", hint("focus_agents")),
 		newItem(cmdFocusDock, "Ir al panel de salida y depuración (pila y variables)", hint("focus_dock")),
 		newItem(cmdQuit, "Salir", hint("quit")),
+		newItem(cmdZoomAgents, "Ensanchar el panel de agentes (lateral, ancho, completo)", hint("zoom_agents")),
 		newItem(cmdAgentPause, "Pausar o reanudar agente", hint("agent_pause")),
 		newItem(cmdAgentStop, "Detener agente", hint("agent_stop")),
 		newItem(cmdDiffFile, "Ver diff", hint("diff_file")),
@@ -290,6 +292,8 @@ func (m Model) runCommand(id string) (Model, tea.Cmd) {
 	case id == cmdToggleAgents:
 		m.chatOn = !m.chatOn
 		m.relayout()
+	case id == cmdZoomAgents:
+		m = m.zoomAgents()
 	case id == cmdNewSession:
 		var cmd tea.Cmd
 		m.chat, cmd = m.chat.NewSession()

@@ -120,6 +120,7 @@ func baseKeymap() Keymap {
 		"diagnostics":     []string{"alt+m"},
 		"toggle_tree":     []string{"ctrl+b"},
 		"toggle_agents":   []string{"ctrl+g"},
+		"zoom_agents":     []string{"alt+z"},
 		"agent_new":       []string{"ctrl+t"},
 		"agent_next":      []string{"alt+down"},
 		"agent_prev":      []string{"alt+up"},

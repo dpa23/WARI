@@ -931,3 +931,31 @@ func TestStatusBarAlertShortensAgentsInfoWholeWords(t *testing.T) {
 		t.Errorf("a 5 celdas = %q", got)
 	}
 }
+
+func TestZoomAgentsCyclesWidths(t *testing.T) {
+	m := newLayout(t, Config{Root: project(t)}, 160, 30)
+	side := m.geometry().chatW
+	m, _ = send(m, press('z', tea.ModAlt))
+	if g := m.geometry(); g.chatW <= side || !g.showEd || m.focus != focusChat {
+		t.Fatalf("ancho: chatW=%d (lateral %d) showEd=%v focus=%v", g.chatW, side, g.showEd, m.focus)
+	}
+	m, _ = send(m, press('z', tea.ModAlt))
+	if g := m.geometry(); g.chatW != 160 || g.showEd || g.showTree {
+		t.Fatalf("completo: %+v", g)
+	}
+	for i, l := range strings.Split(screen(m), "\n") {
+		if w := lipgloss.Width(l); w > 160 {
+			t.Fatalf("fila %d mide %d > 160", i, w)
+		}
+	}
+	// alt+2 saca del modo completo y deja ver el editor.
+	m, _ = send(m, press('2', tea.ModAlt))
+	if g := m.geometry(); !g.showEd || m.focus != focusEditor {
+		t.Fatalf("alt+2 no volvió al editor: %+v focus=%v", g, m.focus)
+	}
+	m, _ = send(m, press('z', tea.ModAlt))
+	m, _ = send(m, press('z', tea.ModAlt))
+	if m.chatMode != chatSide {
+		t.Fatalf("tras el ciclo debe volver a lateral, está en %v", m.chatMode)
+	}
+}

@@ -313,6 +313,12 @@ func (m Panel) dispatch(msg tea.Msg) (Panel, tea.Cmd) {
 	case paneChangedMsg:
 		return m, listenPane(m.paneCh)
 
+	case paneTickMsg:
+		if m.anyPaneLive() {
+			return m, tickPanes()
+		}
+		return m, nil
+
 	case tea.PasteMsg:
 		if v := m.cur(); v.pane != nil && m.form == nil {
 			v.pane.Paste(msg.Content)
@@ -574,6 +580,8 @@ func (m *Panel) selectView(i int) {
 	cur.yoff = m.vp.YOffset()
 	m.sel = i
 	next := m.cur()
+	// La lista y la barra de pestañas ocupan filas distintas.
+	m.layout(m.width, m.height)
 	m.input.Reset()
 	m.input.SetValue(next.draft)
 	m.refreshTo(next.follow)
@@ -1108,6 +1116,9 @@ func (m *Panel) layout(w, h int) {
 	// Una fila por agente y una de detalle (CLI, modelo, potencia) para el
 	// seleccionado.
 	m.listH = min(len(m.views)+1, maxListRows+1, max(avail-m.pipeH, 0))
+	if m.cur().pane != nil {
+		m.listH = min(1, h)
+	}
 	m.histH, m.statH, m.inH = splitRows(h - m.pipeH - m.listH)
 	m.vp.SetWidth(w)
 	m.vp.SetHeight(max(m.histH, 1))
@@ -1651,6 +1662,7 @@ func (m Panel) statusLine() string {
 func (m Panel) Body() string {
 	rows := append(m.pipeRows(), m.listRows()...)
 	if v := m.cur(); v.pane != nil && m.form == nil {
+		rows = append(m.pipeRows(), m.tabBar())
 		_, h := m.terminalSize()
 		rows = append(rows, m.paneRows(v, m.width, h)...)
 		return lipgloss.JoinVertical(lipgloss.Left, rows...)

@@ -23,6 +23,7 @@ func TestDefault(t *testing.T) {
 		"focus_tree":      {"alt+1"},
 		"focus_editor":    {"alt+2"},
 		"focus_agents":    {"alt+3"},
+		"zoom_agents":     {"alt+z"},
 		"palette":         {"ctrl+p"},
 		"save":            {"ctrl+s"},
 		"undo":            {"ctrl+z"},

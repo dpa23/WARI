@@ -99,6 +99,7 @@ import (
 	"github.com/dpa23/wari/internal/tui"
 	"github.com/dpa23/wari/internal/tui/editorview"
 	"github.com/dpa23/wari/internal/tui/filetree"
+	"github.com/dpa23/wari/internal/tui/icons"
 )
 
 const (
@@ -108,6 +109,17 @@ const (
 	// binarySniff es cuántos bytes iniciales se miran para detectar NUL.
 	binarySniff = 8000
 	sepWidth    = 1
+)
+
+// chatMode es cuánto espacio ocupa el panel de agentes: una columna lateral,
+// una columna ancha o la pantalla entera. La CLI real de un agente necesita
+// ancho para dibujar su interfaz; en una columna de 40 celdas no se usa.
+type chatMode int
+
+const (
+	chatSide chatMode = iota
+	chatWide
+	chatFull
 )
 
 type focus int
@@ -173,7 +185,9 @@ type Model struct {
 
 	w, h           int
 	treeOn, chatOn bool
-	focus          focus
+	// chatMode es el ancho del panel de agentes (ver zoomAgents).
+	chatMode chatMode
+	focus    focus
 
 	msg         string // mensaje de la barra de estado
 	pendingOpen string // archivo cuya apertura espera confirmación
@@ -263,6 +277,14 @@ func New(cfg Config) Model {
 		focus:  focusTree,
 	}
 	m.tree.SetIcons(cfg.Icons)
+	switch cfg.Icons {
+	case filetree.IconsNerd:
+		icons.Use(icons.Nerd)
+	case filetree.IconsEmoji:
+		icons.Use(icons.Emoji)
+	default:
+		icons.Use(icons.ASCII)
+	}
 	if cfg.File != "" {
 		m.openFile(cfg.File)
 	}
@@ -416,7 +438,7 @@ func (m Model) handleKeyFrom(k tea.KeyPressMsg, viaLeader bool) (Model, tea.Cmd)
 	// el foco a otro panel y la tecla líder (arriba). Para salir de WARI se
 	// pasa el foco a otro panel y se usa su tecla de salir.
 	if !viaLeader && m.focus == focusChat && m.chat.TerminalActive() &&
-		!(m.is(k, "focus_tree") || m.is(k, "focus_editor") || m.is(k, "focus_agents")) {
+		!(m.is(k, "focus_tree") || m.is(k, "focus_editor") || m.is(k, "focus_agents") || m.is(k, "zoom_agents")) {
 		return m.routeToFocused(k)
 	}
 
@@ -459,7 +481,12 @@ func (m Model) handleKeyFrom(k tea.KeyPressMsg, viaLeader bool) (Model, tea.Cmd)
 	case m.is(k, "toggle_agents"):
 		m.chatOn = !m.chatOn
 		m.relayout()
+		if m.chatOn {
+			m = m.focusPanel(focusChat) // al abrirlo se escribe en él
+		}
 		return m, nil
+	case m.is(k, "zoom_agents"):
+		return m.zoomAgents(), nil
 	case m.is(k, "save"):
 		return m.save()
 	case m.is(k, "new_file"):
@@ -547,8 +574,28 @@ func (m Model) openDiff() (Model, tea.Cmd) {
 	return m, cmd
 }
 
+// zoomAgents recorre los anchos del panel de agentes (lateral, ancho, pantalla
+// completa) y le da el foco.
+func (m Model) zoomAgents() Model {
+	m.chatOn = true
+	m.chatMode = (m.chatMode + 1) % 3
+	m.relayout()
+	return m.focusPanel(focusChat)
+}
+
+// leaveZoom vuelve el panel de agentes a columna lateral si estaba a pantalla
+// completa: lo pide quien quiere ver el árbol o el editor.
+func (m Model) leaveZoom() Model {
+	if m.chatMode == chatFull {
+		m.chatMode = chatWide
+		m.relayout()
+	}
+	return m
+}
+
 // focusTreePanel da el foco al árbol de archivos, desplegándolo si estaba oculto.
 func (m Model) focusTreePanel() Model {
+	m = m.leaveZoom()
 	if !m.treeOn {
 		m.treeOn = true
 		m.relayout()
@@ -558,6 +605,7 @@ func (m Model) focusTreePanel() Model {
 
 // focusEditorPanel da el foco al editor.
 func (m Model) focusEditorPanel() Model {
+	m = m.leaveZoom()
 	return m.focusPanel(focusEditor)
 }
 
@@ -694,7 +742,9 @@ func (m Model) quit() (Model, tea.Cmd) {
 
 // geom es el reparto del espacio.
 type geom struct {
-	showTree, showChat  bool
+	showTree, showChat bool
+	// showEd es falso con el panel de agentes a pantalla completa.
+	showEd              bool
 	treeX, treeW        int
 	edX, edW            int
 	chatX, chatW        int
@@ -723,7 +773,16 @@ func (m Model) geometry() geom {
 
 	tw := min(max(w*25/100, 16), 40)
 	cw := min(max(w*35/100, 24), 90)
-	g.showTree, g.showChat = m.treeOn, m.chatOn
+	g.showTree, g.showChat, g.showEd = m.treeOn, m.chatOn, true
+	switch {
+	case m.chatOn && m.chatMode == chatFull:
+		// A pantalla completa solo se ve el panel de agentes.
+		g.showTree, g.showEd = false, false
+		g.chatX, g.chatW = 0, w
+		return g
+	case m.chatMode == chatWide:
+		cw = max(w*60/100, 24)
+	}
 	rest := func() int {
 		r := w
 		if g.showTree {
@@ -765,6 +824,8 @@ func (g geom) visible(f focus) bool {
 		return g.showChat
 	case focusDock:
 		return g.dockH > 0
+	case focusEditor:
+		return g.showEd
 	}
 	return true
 }
@@ -774,14 +835,19 @@ func (m *Model) relayout() {
 	g := m.geometry()
 	if !g.visible(m.focus) {
 		m.focus = focusEditor
+		if !g.showEd {
+			m.focus = focusChat
+		}
 	}
 	if g.showTree {
 		m.tree.SetSize(g.treeW, g.bodyH)
 	}
-	if m.hasEd {
+	if m.hasEd && g.showEd {
 		m.ed.SetSize(g.edW, g.bodyH-g.dockH)
 	}
-	m.chat.SetDiffArea(g.edW, g.bodyH-g.dockH)
+	if g.showEd {
+		m.chat.SetDiffArea(g.edW, g.bodyH-g.dockH)
+	}
 	if g.showChat {
 		m.chat.SetSize(g.chatW, g.bodyH)
 	}
@@ -1153,7 +1219,9 @@ func (m Model) render() string {
 	if g.dockH > 0 {
 		edLines = append(edLines, m.dockView(g.edW, g.dockH)...)
 	}
-	cols = append(cols, col{m.editorTitle(), edLines, g.edW})
+	if g.showEd {
+		cols = append(cols, col{m.editorTitle(), edLines, g.edW})
+	}
 	if g.showChat {
 		cols = append(cols, col{"Agentes", block(m.chat.Body(), g.chatW, g.bodyH), g.chatW})
 	}

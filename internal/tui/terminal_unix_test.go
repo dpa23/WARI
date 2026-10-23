@@ -51,8 +51,12 @@ func TestTerminalModeRunsTheRealCLIInsideTheAgent(t *testing.T) {
 	defer h.m.ClosePanes()
 
 	body := waitBody(t, h, "listo modelo=sonnet")
-	if !strings.Contains(body, "RUNNING") {
-		t.Errorf("la lista debe mostrar el estado del terminal:\n%s", body)
+	// Una sola fila de pestañas (número y nombre) en vez de la lista.
+	if first := strings.SplitN(body, "\n", 2)[0]; !strings.Contains(first, "1 ") || !strings.Contains(first, "+") {
+		t.Errorf("la primera fila debe ser la barra de pestañas:\n%s", body)
+	}
+	if h.m.listH != 1 {
+		t.Errorf("con un terminal la lista ocupa 1 fila, ocupa %d", h.m.listH)
 	}
 	if c := h.m.Cursor(); c == nil {
 		t.Error("el cursor del terminal debe verse")

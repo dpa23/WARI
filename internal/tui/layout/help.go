@@ -116,6 +116,7 @@ func helpGroups() []helpGroup {
 			items: []helpItem{
 				{"toggle_lsp", "Encender o apagar el LSP"},
 				{"diagnostics", "Diagnósticos del archivo"},
+				{"zoom_agents", "Ensanchar panel de agentes (lateral, ancho, completo)"},
 			},
 		},
 	}

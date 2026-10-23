@@ -97,3 +97,23 @@ func TestCleanTitle(t *testing.T) {
 		t.Errorf("cleanTitle = %q", got)
 	}
 }
+
+func TestClassifyActivity(t *testing.T) {
+	now := time.Now()
+	old := now.Add(-time.Minute)
+	for _, c := range []struct {
+		title string
+		last  time.Time
+		want  Activity
+	}{
+		{"⠂ Refactor", old, Working},
+		{"✳ Claude Code", now, Waiting},
+		{"claude", now, Working},
+		{"claude", old, Waiting},
+		{"", time.Time{}, Waiting},
+	} {
+		if got := classify(c.title, c.last, now); got != c.want {
+			t.Errorf("classify(%q) = %v, quería %v", c.title, got, c.want)
+		}
+	}
+}

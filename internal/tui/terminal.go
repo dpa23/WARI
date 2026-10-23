@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"strings"
+	"time"
 
 	"charm.land/bubbles/v2/key"
 	tea "charm.land/bubbletea/v2"
@@ -13,6 +14,8 @@ import (
 	"github.com/dpa23/wari/internal/agent"
 	"github.com/dpa23/wari/internal/proc"
 	"github.com/dpa23/wari/internal/term"
+	"github.com/dpa23/wari/internal/tui/icons"
+	"github.com/dpa23/wari/internal/tui/theme"
 )
 
 // Modo terminal: el agente es la CLI interactiva de verdad dentro de un
@@ -31,6 +34,26 @@ func listenPane(ch <-chan struct{}) tea.Cmd {
 		<-ch
 		return paneChangedMsg{}
 	}
+}
+
+// paneTickMsg repinta las pestañas: el estado de una CLI cambia por el paso del
+// tiempo (deja de escribir), no solo cuando escribe.
+type paneTickMsg struct{}
+
+const paneTick = 700 * time.Millisecond
+
+func tickPanes() tea.Cmd {
+	return tea.Tick(paneTick, func(time.Time) tea.Msg { return paneTickMsg{} })
+}
+
+// anyPaneLive indica que algún terminal sigue corriendo.
+func (m Panel) anyPaneLive() bool {
+	for _, v := range m.views {
+		if v.pane != nil && v.pane.Activity() != term.Exited {
+			return true
+		}
+	}
+	return false
 }
 
 // terminalLaunchEnv es el entorno de la CLI: el del usuario, con el tipo de
@@ -80,7 +103,7 @@ func (m Panel) startTerminal(v *agentView, prompt string) (tea.Cmd, error) {
 	// Un solo Cmd espera los avisos de todos los terminales.
 	if !*m.paneListening {
 		*m.paneListening = true
-		return listenPane(m.paneCh), nil
+		return tea.Batch(listenPane(m.paneCh), tickPanes()), nil
 	}
 	return nil, nil
 }
@@ -135,31 +158,94 @@ func (m Panel) terminalKey(msg tea.KeyPressMsg) (Panel, tea.Cmd) {
 	return m, nil
 }
 
-// terminalState es el estado de un agente en terminal para la lista.
-func (v *agentView) terminalState() string {
-	select {
-	case <-v.pane.Done():
-		return "EXITED"
-	default:
-		return "RUNNING"
+// terminalActivity traduce lo que el terminal sabe de la CLI al vocabulario del
+// panel: la palabra y el estilo del chip.
+func (v *agentView) terminalActivity() (word string, st lipgloss.Style) {
+	switch v.pane.Activity() {
+	case term.Working:
+		return "TRABAJA", lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("10"))
+	case term.Exited:
+		return "FIN", lipgloss.NewStyle().Faint(true)
 	}
+	return "ESPERA", lipgloss.NewStyle().Foreground(theme.AdaptiveColor{
+		Light: lipgloss.Color("#1d4ed8"),
+		Dark:  lipgloss.Color("#93c5fd"),
+	})
 }
 
-// terminalLine es la fila de la lista de un agente en terminal: su estado, la
-// CLI y el título que la CLI puso al terminal.
+// tabBar es la fila única que sustituye a la lista de agentes cuando el
+// seleccionado es una CLI en terminal: un terminal necesita las filas para sí.
+// Cada pestaña lleva su número, su estado y su nombre; la seleccionada va en
+// negrita y subrayada. Si no caben todas, los nombres se acortan.
+func (m Panel) tabBar() string {
+	w := max(m.width, 1)
+	n := len(m.views)
+	// Cada pestaña gasta número, estado y dos separadores; "+" gasta 3.
+	nameW := max((w-3-n*7)/max(n, 1), 3)
+	var b strings.Builder
+	used := 0
+	for i, v := range m.views {
+		mark, st := "·", lipgloss.NewStyle().Faint(true)
+		if v.pane != nil {
+			word, wst := v.terminalActivity()
+			mark, st = stateMark(word), wst
+		} else if sw, sst := stateBadge(v.state()); sw != "" {
+			mark, st = stateMark(sw), sst
+		}
+		// Sin anidar estilos: lipgloss estropea las secuencias ANSI de un texto
+		// ya coloreado cuando lo subraya.
+		tab := lipgloss.NewStyle().Faint(i != m.sel).Bold(i == m.sel).Underline(i == m.sel)
+		cell := tab.Render(fmt.Sprintf(" %d ", i+1)) + st.Render(mark) +
+			tab.Render(" "+truncate(cmpOr(v.name, v.cli), nameW)+" ")
+		if used+lipgloss.Width(cell) > w-3 {
+			break
+		}
+		used += lipgloss.Width(cell)
+		b.WriteString(cell)
+	}
+	b.WriteString(lipgloss.NewStyle().Faint(true).Render(" + "))
+	return lipgloss.NewStyle().MaxWidth(w).Render(b.String())
+}
+
+// stateMark es el glifo de un estado, del juego de iconos elegido.
+func stateMark(word string) string {
+	g := icons.Ready
+	switch word {
+	case "TRABAJA", "RUN":
+		g = icons.Working
+	case "ESPERA", "IDLE":
+		g = icons.Waiting
+	case "FIN", "STOP":
+		g = icons.Exited
+	case "ERR":
+		g = icons.Failed
+	case "$!":
+		g = icons.Budget
+	case "PAU":
+		g = icons.Paused
+	case "Q":
+		g = icons.Queued
+	case "NEW":
+		g = icons.New
+	}
+	if s := icons.State(string(g)); s != "" {
+		return s
+	}
+	return "·"
+}
+
+// terminalLine es la fila de la lista de un agente en terminal cuando el
+// seleccionado es un agente de chat: marca, nombre, estado, CLI y título.
 func (m Panel) terminalLine(i int) string {
 	v := m.views[i]
 	marker := "  "
 	if i == m.sel {
 		marker = "▸ "
 	}
-	line := fmt.Sprintf("%s%-10s %-8s %s", marker, truncate(v.name, 10), v.terminalState(), v.cli)
+	word, st := v.terminalActivity()
+	line := fmt.Sprintf("%s%-10s %s %s", marker, truncate(v.name, 10), st.Render(fmt.Sprintf("%-7s", word)), v.cli)
 	if t := strings.TrimSpace(v.pane.Title()); t != "" {
 		line += " · " + t
 	}
-	st := lipgloss.NewStyle().MaxWidth(max(m.width, 1))
-	if i == m.sel {
-		st = st.Bold(true)
-	}
-	return st.Render(line)
+	return lipgloss.NewStyle().MaxWidth(max(m.width, 1)).Render(line)
 }

@@ -176,3 +176,11 @@ Formato: fecha · decisión · motivo · alternativas descartadas.
 - **Decisión:** Claude Code (Opus) lidera y es el único que hace commit; subagentes Sonnet implementan y Haiku hace tareas mecánicas; Antigravity (Gemini 3.8 Flash) revisa los diffs con otra familia de modelos y genera los datos del tier 1. Máximo 2 agentes activos a la vez. Commits locales; push solo a pedido del autor. Detalle en `AGENTS.md` y `CLAUDE.md`.
 - **Motivo:** máquina de 2 núcleos y 5,6 GB; la diversidad de modelos encuentra errores distintos, pero todo hallazgo se verifica (Antigravity adivinó mal flags y nombres de eventos de su propia CLI).
 - **Descartado:** git worktrees por agente (PLAN §3); usar Claude dentro de Antigravity salvo como respaldo de cuota; gpt-oss.
+
+## 2026-10-22 · Refactor del panel de agentes: ancho, pestañas, estado e iconos
+- **Problema** (visto en herdr): la CLI real vivía en una columna de ~40 celdas, la lista de 6 filas le quitaba altura, el estado era solo RUNNING/EXITED, reabrir el panel con `ctrl+g` no le daba el foco y el formulario no marcaba el campo activo sin color.
+- **Ancho**: `zoom_agents` (`alt+z`, también en la paleta) recorre lateral → ancho (60 %) → completo (solo agentes). Pasa aunque la CLI tenga el foco; `alt+1`/`alt+2` salen del modo completo. `geom.showEd` es falso en completo.
+- **Pestañas**: con un agente en terminal la lista se reemplaza por una fila (`1 ● nombre  2 ◐ otro  +`); el terminal recupera las filas. Los estilos no se anidan (lipgloss estropeaba el ANSI de un texto ya coloreado al subrayarlo).
+- **Estado por título y silencio** (`term.Pane.Activity`): título con spinner braille → trabaja; `✳` → espera; si no, escribió hace menos de 1,2 s → trabaja. Es una pista, no una garantía; un tick de 700 ms repinta las pestañas.
+- **Iconos** (`internal/tui/icons`): una tabla Nerd/emoji/ASCII verificada contra la fuente. La fuente (JetBrainsMono Nerd Font Regular y Bold, OFL) viene en `assets/fonts/` y se instala sin red con `scripts/install-font.sh`; no se incrusta en el binario.
+- **Pendiente**: ratón (clic en pestañas), cambio de agente por número, ediciones de agentes en terminal (ctrl+r vacío: no pasan por `orch`), partir `panel.go` (1950 líneas) en vista de lista, chat, terminal y diff. La revisión pesada con `agy` no se hizo: `agy` pide iniciar sesión (Google OAuth) y eso es del autor.

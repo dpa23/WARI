@@ -39,6 +39,7 @@ type Pane struct {
 	curHidden  bool
 	title      string
 	altScreen  bool
+	lastOut    time.Time
 
 	done chan struct{}
 }
@@ -67,6 +68,7 @@ func Start(ctx context.Context, spec proc.Spec, cols, rows int, notify func()) (
 			n, err := p.Stdout().Read(buf)
 			if n > 0 {
 				t.em.Write(buf[:n])
+				t.set(func() { t.lastOut = time.Now() })
 				t.changed()
 			}
 			if err != nil {
@@ -209,4 +211,50 @@ func (t *Pane) Close() error {
 		c.Close()
 	}
 	return err
+}
+
+// Activity es lo que se sabe, sin interpretar la pantalla, de lo que hace la CLI.
+type Activity int
+
+const (
+	// Waiting: la CLI está quieta; normalmente espera tu respuesta.
+	Waiting Activity = iota
+	// Working: la CLI trabaja (su título gira o acaba de escribir).
+	Working
+	// Exited: el proceso terminó.
+	Exited
+)
+
+// busyWindow es cuánto tiempo sin escribir tarda una CLI en considerarse quieta.
+const busyWindow = 1200 * time.Millisecond
+
+// Activity estima el estado a partir del título que la CLI pone (muchas
+// muestran un círculo braille que gira mientras trabajan) y de cuándo escribió
+// por última vez. No lee la pantalla: es una pista, no una garantía.
+func (t *Pane) Activity() Activity {
+	select {
+	case <-t.done:
+		return Exited
+	default:
+	}
+	t.mu.Lock()
+	title, last := cleanTitle(t.title), t.lastOut
+	t.mu.Unlock()
+	return classify(title, last, time.Now())
+}
+
+// classify decide el estado con el título y la hora de la última escritura.
+func classify(title string, last, now time.Time) Activity {
+	if r := []rune(strings.TrimSpace(title)); len(r) > 0 {
+		switch {
+		case r[0] >= 0x2800 && r[0] <= 0x28FF: // spinner braille
+			return Working
+		case r[0] == '✳' || r[0] == '✻':
+			return Waiting
+		}
+	}
+	if !last.IsZero() && now.Sub(last) < busyWindow {
+		return Working
+	}
+	return Waiting
 }

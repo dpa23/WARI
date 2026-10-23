@@ -426,7 +426,11 @@ func (m Panel) formRows(w, h int) []string {
 	}
 	lines := []string{"Agente nuevo: elige CLI, modelo y potencia"}
 	for _, r := range fields {
-		line := fmt.Sprintf("%-9s %s", r.label, opt(f.focus == r.field, r.value))
+		mark := "  "
+		if f.focus == r.field {
+			mark = "▸ "
+		}
+		line := fmt.Sprintf("%s%-9s %s", mark, r.label, opt(f.focus == r.field, r.value))
 		if f.focus == r.field {
 			line = m.styles.status.Reverse(true).Render(truncate(line, w))
 		} else {
